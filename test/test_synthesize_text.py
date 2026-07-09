@@ -52,6 +52,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, os.path.dirname(__file__))
 
 from lintalker.api import build_phoneme_plan
+from lintalker._frontend import split_clauses
 from lintalker._data import (
     Fred_Voice, Kathy_Voice, Princess_Voice, Junior_Voice, Ralph_Voice,
     Whisper_Voice, Zarvox_Voice, Trinoids_Voice, Bubbles_Voice, Boing_Voice,
@@ -78,9 +79,16 @@ def _check(text, voice_name):
     # both sides.
     assert c_frames, f"{voice_name} {text!r}: parse_frames(c_stdout) returned no frames -- harness invocation likely broken"
 
-    phonemes, ctrls, durs, pitch_freq, pitch_time, pitch_flags = build_phoneme_plan(voice_dict, text)
-    vv = setup_python_voice(voice_dict)
-    py_frames, vv = run_python_backend(vv, phonemes, ctrls, durs, pitch_freq, pitch_time, pitch_flags)
+    # Mirror api.synthesize_text()'s real clause-splitting (on `. , ! ?`,
+    # not just sentence-terminal punctuation -- see _frontend.split_clauses)
+    # rather than assembling the whole input as one clause, since a comma
+    # ends a Collect_FE_Tokens cycle in the real engine too.
+    py_frames = []
+    for clause in split_clauses(text):
+        phonemes, ctrls, durs, pitch_freq, pitch_time, pitch_flags = build_phoneme_plan(voice_dict, clause)
+        vv = setup_python_voice(voice_dict)
+        clause_frames, vv = run_python_backend(vv, phonemes, ctrls, durs, pitch_freq, pitch_time, pitch_flags)
+        py_frames.extend(clause_frames)
 
     assert len(py_frames) == len(c_frames), (
         f"{voice_name} {text!r}: frame count mismatch (c={len(c_frames)}, py={len(py_frames)})"
@@ -107,6 +115,41 @@ def test_hello_world_frame_exact_all_voices():
     two with the pre-existing, independently-documented kUseSyncSnd gap."""
     for voice_name in _VOICES:
         _check("hello world", voice_name)
+
+
+def test_comma_clause_boundary_frame_count():
+    """Regression test for a real bug: `Collect_FE_Tokens` ends its cycle
+    on a comma exactly the same way it does on `. ! ?` (confirmed by
+    reading `BackEnd.c:3991-4006` -- a comma sets `gotSentence = true` and
+    returns), so a comma-containing sentence is actually assembled by the
+    real engine as two separate plan-assembly cycles, not one. Before
+    `_frontend.split_clauses`/`api.synthesize_text` were updated to split
+    on commas too, this produced a genuine frame COUNT mismatch (not just
+    a numeric drift) -- e.g. Fred's frame count was 693 instead of the
+    real engine's 694 for this exact sentence.
+
+    NOTE: this only asserts frame count, not full bit-exactness --  a
+    separate, still-open issue causes small (initially +/-1, growing to
+    +/-2 or +/-3) f0 drift over long, multi-syllable sustained pitch
+    ramps in ANY sufficiently long sentence (not specific to commas or to
+    this fix); see docs/architecture.md's "Known gaps" for the
+    reproduction and current understanding."""
+    text = "good morning everyone, welcome to the show."
+    voice_idx, voice_dict = _VOICES["Fred"]
+    c_stdout, c_stderr, wav_path = run_c(voice_idx, text)
+    c_frames = parse_frames(c_stdout)
+    assert c_frames
+
+    py_frames = []
+    for clause in split_clauses(text):
+        phonemes, ctrls, durs, pf, pt, pfl = build_phoneme_plan(voice_dict, clause)
+        vv = setup_python_voice(voice_dict)
+        clause_frames, vv = run_python_backend(vv, phonemes, ctrls, durs, pf, pt, pfl)
+        py_frames.extend(clause_frames)
+
+    assert len(py_frames) == len(c_frames), (
+        f"frame count mismatch (c={len(c_frames)}, py={len(py_frames)})"
+    )
 
 
 def test_note_driven_singing_voices_frame_exact():

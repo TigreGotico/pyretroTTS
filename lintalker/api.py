@@ -157,39 +157,47 @@ def build_phoneme_plan(voice_dict: dict, text: str):
 
 
 def synthesize_text(voice_dict: dict, text: str) -> bytes:
-    """Synthesize English text (one or more sentences) into raw 16-bit PCM
-    audio. See `build_phoneme_plan` for the single-sentence pipeline this
-    composes, and its known gaps.
+    """Synthesize English text (one or more clauses/sentences) into raw
+    16-bit PCM audio. See `build_phoneme_plan` for the single-clause
+    pipeline this composes, and its known gaps.
 
-    Multi-sentence input is split on sentence-terminal punctuation
-    (`_frontend.split_sentences`) and each sentence is synthesized
-    independently (a fresh `VoiceVar`/baseline pitch per sentence) via
+    Input is split on `. , ! ?` (`_frontend.split_clauses`) -- NOT just
+    sentence-terminal `. ! ?` -- and each clause is synthesized
+    independently (a fresh `VoiceVar`/baseline pitch per clause) via
     `build_phoneme_plan` + `synthesize_phonemes`, then the PCM is
-    concatenated. This is a documented approximation, not a port of the
-    real engine's multi-sentence handling: the C reference keeps one
-    `Talk()` session alive across sentence boundaries within a single
-    `_SpeakBuffer` call (baseline pitch and compound-noun state persist
-    from one sentence to the next; `Collect_FE_Tokens`/`ParseSentence`
-    are simply called again, mid-playback, once the current sentence's
-    phoneme buffer is exhausted -- confirmed by inspection: feeding
-    multi-sentence text to the real `test_harness` CLI only ever dumps one
-    sentence's worth of `phon_Buf_2` at a time, i.e. the real engine also
-    processes one sentence's plan at a time, just within one continuous
-    frame loop rather than independently-reset `VoiceVar`s). This port's
-    approximation will sound like a sequence of independently-intoned
-    sentences rather than one continuous utterance with cross-sentence
-    prosody -- it has not been validated against the C reference at the
-    frame level for multi-sentence input the way single-sentence text is
-    (`test/test_synthesize_text.py`).
-    """
-    from ._frontend import split_sentences
+    concatenated. Splitting on commas too is not an approximation: it's
+    confirmed, by reading `BackEnd.c:3991-4006`, to be what the real
+    engine's `Collect_FE_Tokens` itself does -- a comma sets
+    `gotSentence = true` and returns exactly the same way a period/`!`/`?`
+    does, so what reads as one English sentence containing a comma is
+    actually assembled by the real engine as two separate
+    `Collect_FE_Tokens`/`ParseSentence` cycles, continuing seamlessly
+    within one audio stream. Splitting on commas here was added after a
+    frame-level comparison against the C reference found a genuine frame
+    COUNT mismatch on comma-containing sentences when the whole thing was
+    assembled as a single clause -- not merely a small numeric drift.
 
-    sentences = split_sentences(text)
-    if not sentences:
-        sentences = [text]
+    What IS still an approximation, not a bit-exact port: the C reference
+    keeps one `Talk()` session alive across ALL clause/sentence boundaries
+    within a single `_SpeakBuffer` call (baseline pitch and compound-noun
+    state persist from one clause to the next; `Collect_FE_Tokens`/
+    `ParseSentence` are simply called again, mid-playback, reusing the
+    same `VoiceVar`), whereas this function uses an independently-reset
+    `VoiceVar` per clause. This means cross-clause prosody continuity
+    (the pitch baseline carrying over, rather than resetting) is not
+    preserved -- verified via `test/test_synthesize_text.py`'s frame-level
+    comparisons, which pass for comma-containing sentences (frame count
+    and per-frame formant state now match) but were not specifically
+    checked for pitch-contour continuity across the clause boundary itself.
+    """
+    from ._frontend import split_clauses
+
+    clauses = split_clauses(text)
+    if not clauses:
+        clauses = [text]
 
     pcm_chunks = []
-    for sentence in sentences:
-        phonemes, ctrls, durs, pitch_freq, pitch_time, pitch_flags = build_phoneme_plan(voice_dict, sentence)
+    for clause in clauses:
+        phonemes, ctrls, durs, pitch_freq, pitch_time, pitch_flags = build_phoneme_plan(voice_dict, clause)
         pcm_chunks.append(synthesize_phonemes(voice_dict, phonemes, ctrls, durs, pitch_freq, pitch_time, pitch_flags))
     return b"".join(pcm_chunks)

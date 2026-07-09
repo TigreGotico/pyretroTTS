@@ -90,9 +90,27 @@ single-sentence text is.
 
 ## Known gaps
 
-- Multi-sentence synthesis (see above) uses an independently-reset
-  `VoiceVar` per sentence rather than the real engine's single continuous
-  session — not validated frame-for-frame against the C reference.
+- Small (initially ±1, growing to ±2/±3) `f0` drift accumulates over long,
+  multi-syllable sustained pitch ramps in sufficiently long sentences
+  (confirmed reproduction: `"the quick brown fox jumps over the lazy
+  dog."` on Fred — 512 frame mismatches, all `f0`, growing roughly
+  monotonically with frame index; short sentences like "hello world" are
+  unaffected). Root cause not yet identified; suspect a fixed-point
+  rounding difference in `_backend.interpolate_pitch`'s per-frame ramp
+  accumulation (`down_Ramp_Offset`/`baseLine_Offset`) that compounds frame
+  over frame, but this has not been traced to a specific line. This is
+  the current highest-value open correctness gap — it affects ordinary,
+  reasonably long plain-text input on every voice, not an edge case.
+- Multi-clause synthesis (`api.synthesize_text`, splitting on `. , ! ?`
+  via `_frontend.split_clauses` — see that function's docstring for why
+  commas are included, confirmed against `BackEnd.c:3991-4006`) uses an
+  independently-reset `VoiceVar` per clause rather than the real engine's
+  single continuous `Talk()` session — cross-clause prosody continuity
+  (baseline pitch carrying over) isn't preserved. Frame COUNT is verified
+  correct for comma-containing sentences
+  (`test/test_synthesize_text.py::test_comma_clause_boundary_frame_count`);
+  full bit-exactness across a clause boundary is not separately verified
+  from the `f0`-drift gap above.
 - No `Morph.c` (prefix/suffix stripping, compound-word handling) — words
   are looked up in `english_lex` as-is or fall through to letter-to-sound
   rules; morphological variants of dictionary words (e.g. an inflected

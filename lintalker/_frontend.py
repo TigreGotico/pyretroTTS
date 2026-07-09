@@ -107,6 +107,40 @@ def split_sentences(text: str) -> list[str]:
     return sentences
 
 
+def split_clauses(text: str) -> list[str]:
+    """Split `text` on ANY of `. , ! ?` (unlike `split_sentences()`, which
+    only splits on sentence-terminal `. ! ?`), each substring retaining its
+    own trailing mark.
+
+    This matches `Collect_FE_Tokens`'s real behavior, confirmed by reading
+    `BackEnd.c:3991-4006`: a comma sets `gotSentence = true` and returns
+    from `Collect_FE_Tokens` exactly the same way a period/`!`/`?` does --
+    i.e. what looks like one English "sentence" containing a comma is
+    actually processed by the real engine as two separate
+    `Collect_FE_Tokens`/`ParseSentence`/plan-assembly cycles, continuing
+    seamlessly within the same audio stream. `api.synthesize_text()` uses
+    this (not `split_sentences()`) to decide where to start a fresh
+    assembly pipeline call, which is why a comma-containing sentence like
+    "good morning everyone, welcome to the show." synthesizes correctly
+    (confirmed frame-exact against the C reference,
+    `test/test_synthesize_text.py`) while naively assembling the whole
+    thing as one clause does not (a real, confirmed divergence found via
+    frame-count mismatches before this function existed).
+    """
+    import re
+    clauses: list[str] = []
+    start = 0
+    for m in re.finditer(r'[.,!?]', text):
+        chunk = text[start:m.end()].strip()
+        if chunk:
+            clauses.append(chunk)
+        start = m.end()
+    tail = text[start:].strip()
+    if tail:
+        clauses.append(tail)
+    return clauses
+
+
 def words_to_phonemes(text: str) -> list[int]:
     """tokenize(text) + engtop() per word, with punctuation phonemes appended.
 
