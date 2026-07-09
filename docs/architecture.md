@@ -99,11 +99,28 @@ single-sentence text is.
   because of this single missing `kBND_Sep6` marker before "ONE" — see
   `test/test_assembly.py`, `test/test_assembly_pipeline.py`,
   `test/test_pitchbuf.py`.
-- No number/abbreviation expansion, no embedded commands
-  (`EmbeddedCmd.c`'s backtick-escape text parser is unported — `DoCtrl`,
-  the per-phoneme dispatcher it would feed, is ported and tested
-  independently via `test/test_embeddedcmd.py`), no multi-sentence input
-  (the whole string is treated as one sentence).
+- No number/abbreviation expansion — digit runs (e.g. "3", "42") are
+  silently dropped by `_frontend.tokenize()` (it only keeps
+  alpha/apostrophe characters), rather than spoken. The real engine's
+  number-to-speech path (`SpeakTokenAsNumber`/`PartialNumberToPhonemes`,
+  `FrontEnd.c`) looks up two-digit chunks in a separate `Symbols`
+  dictionary (`Sounds.c:9829`, embedded the same way `English.lex` is).
+  That `Symbols` blob was extracted and probed against this port's
+  existing `_lexicon.parse_dict`/`search_single_dict` (which already
+  handle non-alpha lookup keys correctly, e.g. digit strings, since the
+  hash-bucket logic has an explicit `first < 'A'` branch) — but its
+  header does not decode into a valid `DictHeader` the way
+  `English.lex`'s does (`words_off` comes out as `0xFFFFFFFF`, and
+  `index_off` lands on a value that looks like `English.lex`'s
+  `words_off` instead, i.e. the field layout `parse_dict` assumes doesn't
+  match this blob). Number expansion needs that resolved first, then a
+  port of `PartialNumberToPhonemes`'s ones/tens/hundreds construction
+  logic (not yet attempted); the full `SpeakTokenAsNumber`/`GetNextToken`
+  tokenizer state machine (decimals, currency, years, phone numbers) is
+  larger still and out of scope for a first pass.
+- No embedded commands (`EmbeddedCmd.c`'s backtick-escape text parser is
+  unported — `DoCtrl`, the per-phoneme dispatcher it would feed, is
+  ported and tested independently via `test/test_embeddedcmd.py`).
 - Primary/secondary stress placement is gated on POS tagging. For
   dictionary hits, `_lexicon.py:lookup(word)` provides real POS codes.
   For rule-fallback words (no dictionary entry), `FrontEnd.c:1650` calls
