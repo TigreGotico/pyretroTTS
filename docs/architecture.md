@@ -95,12 +95,33 @@ single-sentence text is.
   (confirmed reproduction: `"the quick brown fox jumps over the lazy
   dog."` on Fred — 512 frame mismatches, all `f0`, growing roughly
   monotonically with frame index; short sentences like "hello world" are
-  unaffected). Root cause not yet identified; suspect a fixed-point
-  rounding difference in `_backend.interpolate_pitch`'s per-frame ramp
-  accumulation (`down_Ramp_Offset`/`baseLine_Offset`) that compounds frame
-  over frame, but this has not been traced to a specific line. This is
-  the current highest-value open correctness gap — it affects ordinary,
-  reasonably long plain-text input on every voice, not an edge case.
+  unaffected; also reproduces on `"are you happy?"`, see
+  `test/test_synthesize_text.py::test_wh_question_vs_yesno_question_frame_exact`).
+  Root cause not yet identified; suspect a fixed-point rounding difference
+  in `_backend.interpolate_pitch`'s per-frame ramp accumulation
+  (`down_Ramp_Offset`/`baseLine_Offset`) that compounds frame over frame,
+  but this has not been traced to a specific line. This is the current
+  highest-value open correctness gap — it affects ordinary, reasonably
+  long plain-text input on every voice, not an edge case.
+- (Fixed) WH-question vs. yes/no-question intonation: a trailing `?` was
+  unconditionally mapped to `_Quest_`/`kBND_Quest` (rising question
+  intonation). Direct instrumentation of the C reference
+  (`lintalker-c/src/Morph.c:307-353`, `PlacePhrasing`'s `YesNo_Phrase`
+  flag) showed the real engine only keeps that rising intonation for a
+  genuine yes/no question — a WH-question (clause starts with a word
+  tagged `kInterr`: how/what/why/who/whose/which/when/where) has its
+  terminal mark silently rewritten to `_Period_`/`kBND_Decl` (falling/
+  declarative intonation) before `Fill_Pitch_Buf` ever runs. Confirmed via
+  a throwaway, fully-reverted instrumentation pass on `lintalker-c`
+  (`git status` clean afterward): `"how are you today?"` produces exactly
+  3 pitch-buffer entries in the real engine, not 5 — what a straight
+  `_Quest_` mapping produces. `_assembly.collect_fe_tokens` now
+  approximates `YesNo_Phrase` with a fixed WH-word set (no POS dictionary
+  lookup is ported, so this isn't the real `kInterr`/`kPrep`+`kRelPro`/
+  `kConj`+`kInterr` tag sequence from `Morph.c:139-144`) — see
+  `test/test_synthesize_text.py::test_wh_question_vs_yesno_question_frame_exact`.
+  A full `Morph.c` port would replace this approximation with the real
+  POS-driven check.
 - Multi-clause synthesis (`api.synthesize_text`, splitting on `. , ! ?`
   via `_frontend.split_clauses` — see that function's docstring for why
   commas are included, confirmed against `BackEnd.c:3991-4006`) uses an

@@ -152,6 +152,45 @@ def test_comma_clause_boundary_frame_count():
     )
 
 
+def test_wh_question_vs_yesno_question_frame_exact():
+    """Regression test for a real bug: a trailing "?" was always mapped to
+    _Quest_/kBND_Quest (rising question intonation), but the real engine
+    (Morph.c's PlacePhrasing/YesNo_Phrase, BackEnd.c's Fill_Pitch_Buf RAISE
+    TYPE BOUNDARY section) only keeps that rising intonation for a genuine
+    yes/no question -- a WH-question (clause starts with how/what/why/who/
+    whose/which/when/where) has its terminal mark silently downgraded to
+    _Period_/kBND_Decl (falling/declarative intonation), confirmed by
+    direct instrumentation of the C reference: "how are you today?" produces
+    only 3 pitch-buffer entries in the real engine (matching a period-ended
+    sentence), not 5 (what a straight _Quest_ mapping produces). Fixed in
+    `_assembly.collect_fe_tokens` via a fixed WH-word set (no POS dictionary
+    lookup is ported, so this approximates Morph.c's kInterr tag check --
+    see docs/architecture.md "Known gaps").
+
+    "how are you today?" is asserted frame-exact (no sustained pitch ramp
+    long enough to hit the separate f0-drift gap). "are you happy?" (a
+    genuine yes/no question, correctly keeping _Quest_/kBND_Quest) is only
+    asserted on frame COUNT, since that drift gap does show up there --
+    this test's job is confirming pitch-buffer SHAPE for both question
+    types, not re-verifying the unrelated drift gap."""
+    _check("how are you today?", "Fred")
+
+    voice_idx, voice_dict = _VOICES["Fred"]
+    text = "are you happy?"
+    c_stdout, c_stderr, wav_path = run_c(voice_idx, text)
+    c_frames = parse_frames(c_stdout)
+    assert c_frames
+    py_frames = []
+    for clause in split_clauses(text):
+        phonemes, ctrls, durs, pf, pt, pfl = build_phoneme_plan(voice_dict, clause)
+        vv = setup_python_voice(voice_dict)
+        clause_frames, vv = run_python_backend(vv, phonemes, ctrls, durs, pf, pt, pfl)
+        py_frames.extend(clause_frames)
+    assert len(py_frames) == len(c_frames), (
+        f"frame count mismatch (c={len(c_frames)}, py={len(py_frames)})"
+    )
+
+
 def test_note_driven_singing_voices_frame_exact():
     """Regression test for a real bug: api.new_voice() used to force
     vv.singing = False unconditionally, overriding init_voice()'s correct

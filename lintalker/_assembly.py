@@ -208,6 +208,13 @@ _PUNCT_TO_BND = {
     '?': kBND_Quest,
 }
 
+# Approximates Morph.c's kInterr POS tag for the WH-question downgrade
+# above -- no dictionary POS lookup is ported, so this is a fixed word list
+# rather than a real tag check.
+_WH_WORDS = {
+    'HOW', 'WHAT', 'WHY', 'WHO', 'WHOM', 'WHOSE', 'WHICH', 'WHEN', 'WHERE',
+}
+
 
 @dataclass
 class FEWordToken:
@@ -482,9 +489,27 @@ def collect_fe_tokens(text: str) -> SentenceAssembly:
         # --- end-of-word punctuation (BackEnd.c:3992-4007) ---
         if punct is not None and punct in _PUNCT_TO_PHON:
             phon = _PUNCT_TO_PHON[punct]
+            bnd = tok.phrase_bnd
+            # WH-question downgrade (Morph.c:PlacePhrasing:307-353): a
+            # trailing "?" only keeps rising-question intonation
+            # (_Quest_/kBND_Quest) for a yes/no question. The real engine
+            # tracks this via YesNo_Phrase, set false when the CLAUSE-FIRST
+            # word is tagged kInterr (a WH-word: how/what/why/who/whose/
+            # which/when/where) -- confirmed by direct instrumentation of
+            # the C reference (Fill_Pitch_Buf produced 3 pitch-buffer
+            # entries for "how are you today?", not the 5 this port
+            # produced before this fix, because the real engine silently
+            # rewrites the terminal mark to _Period_/kBND_Decl for WH
+            # questions). No POS dictionary lookup is ported here, so this
+            # approximates YesNo_Phrase with a fixed WH-word set rather
+            # than Morph.c's full kInterr/kPrep+kRelPro/kConj+kInterr
+            # sequence -- see docs/architecture.md "Known gaps".
+            if phon == _Quest_ and sa.words and sa.words[0].word in _WH_WORDS:
+                phon = _Period_
+                bnd = kBND_Decl
             written = store(_SIL_)
             sa.ctrl_buf[written] |= kTerm_Bound
-            sa.ctrl_buf[written] |= (tok.phrase_bnd << kSilenceTypeShift)
+            sa.ctrl_buf[written] |= (bnd << kSilenceTypeShift)
             sa.end_punctuation = phon
             word_initial = True
             sa.is_compound_noun = False
