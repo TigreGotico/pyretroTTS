@@ -11,8 +11,9 @@
 | `EngToP.c` | `lintalker/_engtop.py` | English word -> phoneme dispatch via letter-to-sound rules. Operates on a single pre-isolated, already-uppercased word (see `test/test_engtop.py`). |
 | `FrontEnd.c` (tokenizer + per-word dispatch only) | `lintalker/_frontend.py` | Splits text into words + end-of-word punctuation, calls `_engtop.engtop()` per word. Does not assemble a `(phonemes, ctrls, durs)` plan — see "Known gaps". |
 | `Engine.c` | `lintalker/_engine.py` | Top-level init/speak/reset/rate/pitch/volume API, built on `_backend.py`. `e_speak_buffer` (the text-in entry point) and a few fsynth-dependent setters (`e_reset_params`, `e_use_voice`, `e_reinit_voice`) raise `NotImplementedError` naming the specific unported upstream C function they need. |
-| `EmbeddedCmd.c` | partially ported | `DoNote`/`DoNoteScript` (embedded note-driven singing, used by GoodNews/BadNews/PipeOrgan/Cellos) are ported into `_backend.py`. General embedded control codes (`` `Genxx `` etc., `DoCtrl`) remain a stub. |
-| `FrontEnd.c`, `Morph.c` | not ported | Text normalization, tokenization, morphology |
+| `BackEnd.c` (`DoCtrl`, the per-phoneme `CMDQueue` dispatcher: absolute/relative pitch, volume, mod) | `lintalker/_embeddedcmd.py` | Ported (see `test/test_embeddedcmd.py`); `C_reset`/`C_voice` are unimplemented/no-op the same way upstream leaves them, pending `ResetVoice`/`NewVoice` |
+| `EmbeddedCmd.c` (the FrontEnd backtick-escape text parser, e.g. `` `p200` ``, a distinct mechanism from `DoCtrl` above — it sets `PendingCommands` bits that `FrontEnd.c` later turns into `CMDQueue` entries via `QueueCommand`) | not ported | Depends on the unported `FrontEnd.c` tokenizer |
+| `Morph.c` | not ported | Prefix/suffix stripping, compound-word handling |
 | `english_lex.c`/`English.lex` | not ported | Binary pronunciation dictionary + lookup |
 | `Sounds.c` | not ported | Embedded sound effects (bells, etc.) — raw PCM blobs, not logic |
 
@@ -61,8 +62,10 @@ plausible numeric range.
 - No pronunciation-exception dictionary lookup (`english_lex` not ported)
   — words fall through to letter-to-sound rules only.
 - `Morph.c` (prefix/suffix stripping, compound-word handling) not ported.
-- General embedded control codes (`DoCtrl`) are a stub; `DoNote`/
-  `DoNoteScript` (note-driven singing) are ported.
+- The FrontEnd backtick-escape command parser (`EmbeddedCmd.c`) is not
+  ported, so nothing currently populates `CMDQueue` outside of tests —
+  `DoCtrl` itself (`_embeddedcmd.py`) is ported and exercised directly by
+  `test/test_embeddedcmd.py`.
 - Bells/Hysterical (`kUseSyncSnd` voices) show a few residual `marker`
   field mismatches in `test/test_voices.py`: their marker buffer is
   populated from an external sample-audio file header in the C reference

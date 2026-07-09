@@ -409,6 +409,10 @@ class VoiceVar:
         self.phon_Ctrl_Buf_2: list[int] = [0] * kPhonBufSize
         self.dur_Buf: list[int] = [0] * kPhonBufSize
         self.user_Cmd_Buf2: list[int] = [0] * kPhonBufSize
+        # CMDQueue (mt4.h CmdElem[kCQsize]): ring buffer of (type, data)
+        # embedded-control commands; user_Cmd_Buf2[phonIndex] is a count of
+        # how many of these apply at that phoneme, drained by DoCtrl.
+        self.CMDQueue: list[tuple[int, int]] = [(0, 0)] * kCQsize
         self.user_Pitch_Buf2: list[int] = [0] * kPhonBufSize
         self.pitch_Buf_Freq: list[int] = [0] * kPhonBufSize
         self.pitch_Buf_Time: list[int] = [0] * kPhonBufSize
@@ -1398,6 +1402,19 @@ def synth_set_volume(vv: VoiceVar, vol: int):
     zz: FormantVar = vv.synthVars
     zz.speechVolume = vol
     zz.voiceNoiseGain = mMul2(zz.setNoiseGain, zz.speechVolume, 8)
+
+
+def set_volume(vv: VoiceVar, vol: int):
+    """SetVolume (BackEnd.c). Clips a fixed-point (xxxx.ffff) volume value
+    to 0-256, latches it into vv.user_Volume, and dispatches to
+    synth_set_volume (the synth_SetVolume_FUNC slot)."""
+    if vol > 0x10000:
+        vv.user_Volume = 0x0100
+    elif vol < 0:
+        vv.user_Volume = 0
+    else:
+        vv.user_Volume = vol >> 8
+    synth_set_volume(vv, vv.user_Volume)
 
 
 # ---------------------------------------------------------------------------
@@ -2777,9 +2794,15 @@ def start_new_phon(vv: VoiceVar):
         vv.songIndex_Save1 = vv.songIndex
         vv.VP_baselinePitch_Save1 = vv.VP_baselinePitch
 
-    # DoCtrl — embedded control commands (not exercised by current voice set,
-    # remains a stub for now)
+    # DoCtrl — embedded control commands (ported in _embeddedcmd.py; not
+    # exercised by current voice set since no shipped voice/text data queues
+    # any commands into vv.CMDQueue, so ctrlCount stays 0 here today)
     vv.ctrlCount = vv.user_Cmd_Buf2[vv.cur_PhonBuf_Index_CF]
+
+    if vv.ctrlCount:
+        from ._embeddedcmd import do_ctrl  # local import: avoids a module
+        # cycle since _embeddedcmd.py imports helpers from this module
+        do_ctrl(vv)
 
     if vv.sync_On_Marker:
         if vv.phon_Ctrl_Buf_2[vv.cur_PhonBuf_Index_CF] & kSampleMarker:
