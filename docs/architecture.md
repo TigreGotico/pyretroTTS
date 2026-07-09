@@ -89,6 +89,20 @@ plausible numeric range.
   ported, so nothing currently populates `CMDQueue` outside of tests —
   `DoCtrl` itself (`_embeddedcmd.py`) is ported and exercised directly by
   `test/test_embeddedcmd.py`.
+- `Collect_FE_Tokens` (`BackEnd.c:3712-4157`) has a Phase 1 adaptation in
+  `lintalker/_assembly.py` (`collect_fe_tokens`/`make_fe_word_token`,
+  `test/test_assembly.py`), consuming `_frontend.tokenize()` +
+  `_lexicon.lookup()` instead of the unported `FrontEnd.c`/`Morph.c` token
+  stream. It is UNVALIDATED against the C reference in isolation --
+  `test_harness.c:222-238` only ever dumps `phon_Buf_2`/`phon_Ctrl_Buf_2`
+  (state *after* `Fill_Phon_Buf_2` runs), never `phon_Buf_1`/
+  `phon_Ctrl_Buf_1` (what `Collect_FE_Tokens` itself produces), so no oracle
+  exists yet for this stage. See `_assembly.py`'s module docstring for the
+  full field-by-field C->Python mapping, the documented `pos_choice`
+  placeholder (not a `Set_POS`/`Morph.c` port), and the Phase 2 handoff
+  notes (a throwaway C harness dumping `phon_Buf_1` right after
+  `Collect_FE_Tokens` returns is the way to close this validation gap once
+  `Fill_Phon_Buf_2` is ported).
 - Bells/Hysterical (`kUseSyncSnd` voices) show a few residual `marker`
   field mismatches in `test/test_voices.py`: their marker buffer is
   populated from an external sample-audio file header in the C reference
