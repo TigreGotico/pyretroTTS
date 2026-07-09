@@ -20,12 +20,20 @@ through unnecessarily.
 port only targets formant-synth voices (the only kind ported), so those
 checks are always true here and are omitted.
 
+Also includes `insert_closure_release()`, a port of `Insert_Closure_Release`
+(`formantSynth.c` -- the body of `synth_AdjustPhons2`, called right after
+`Fill_Phon_Buf_2` in the real `ParseSentence`): inserts a release phoneme
+(`_IX_`/`_AX_`) before word-final silence after a phoneme with
+`kHasReleaseF` (plosives). Note this runs, in the real engine, AFTER
+`Mod_Duration` has already filled `dur_Buf` (it shifts `dur_Buf` entries
+too when inserting) -- since `Mod_Duration` isn't ported yet, calling this
+today only usefully validates the `phon_Buf_2`/`phon_Ctrl_Buf_2` effect,
+not the duration shift.
+
 NOT included here (called from `ParseSentence` around `Fill_Phon_Buf_2`,
 BackEnd.c:4165-4186, not yet ported): `synth_AdjustPhons1` (a true no-op in
 the C reference -- confirmed by reading its empty body in
-`formantSynth.c`), `Pitch_RaiseAndFall`, `Mod_Duration`,
-`synth_AdjustPhons2` (calls `Insert_Closure_Release`, `formantSynth.c` --
-inserts a plosive-release phoneme before word-final silence), and
+`formantSynth.c`), `Pitch_RaiseAndFall`, `Mod_Duration`, and
 `Fill_Pitch_Buf`/`StartNew_PitchClause` (`Calc_Ramp_Steps`/
 `start_new_pitch_clause` are already ported in `_backend.py`, but nothing
 yet calls `Fill_Pitch_Buf` to populate `pitch_Buf_Freq`/`pitch_Buf_Time`/
@@ -307,3 +315,55 @@ def fill_phon_buf_2(vv, sa) -> None:
                     ctrl_buf_1[out_index + 1] |= 0x10000000
 
         last_user_pitch += user_pitch
+
+
+def insert_closure_release(vv) -> None:
+    """Port of `Insert_Closure_Release` (`formantSynth.c`, the body of
+    `synth_AdjustPhons2`). Inserts a release phoneme (`_IX_`/`_AX_`) before
+    word-final silence after a phoneme with `kHasReleaseF` (plosives).
+    Operates on `vv.phon_Buf_2`/`vv.phon_Ctrl_Buf_2`/`vv.dur_Buf`/
+    `vv.user_*_Buf2` in place, mirroring the C convention.
+    """
+    from ._consts import kFrameTime, kHasReleaseF, kPhonBuf_Red_Zone, kPlosive_Release, kDur_One
+    from ._data import PhonFlags2
+    from ._backend import e_get_phon
+
+    i = 0
+    while i < vv.phonBuf_2_In_Index:
+        cur_phon = e_get_phon(vv, i)
+        cur_flags = _flags(PhonFlags2, cur_phon)
+        prev_phon = e_get_phon(vv, i - 1)
+        next_phon = e_get_phon(vv, i + 1)
+
+        if next_phon == _SIL_:
+            if (cur_flags & kHasReleaseF) and (vv.phonBuf_2_In_Index < kPhonBuf_Red_Zone):
+                # Make room for the plosive release.
+                for index in range(vv.phonBuf_2_In_Index, i, -1):
+                    src, dest = index - 1, index
+                    vv.phon_Buf_2[dest] = vv.phon_Buf_2[src]
+                    vv.phon_Ctrl_Buf_2[dest] = vv.phon_Ctrl_Buf_2[src]
+                    vv.dur_Buf[dest] = vv.dur_Buf[src]
+                    vv.user_Cmd_Buf2[dest] = vv.user_Cmd_Buf2[src]
+                    vv.user_Pitch_Buf2[dest] = vv.user_Pitch_Buf2[src]
+                    vv.user_Dur_Buf2[dest] = vv.user_Dur_Buf2[src]
+                    vv.user_Note_Buf2[dest] = vv.user_Note_Buf2[src]
+                    vv.user_Rate_Buf2[dest] = vv.user_Rate_Buf2[src]
+
+                vv.phon_Ctrl_Buf_2[i + 1] = vv.phon_Ctrl_Buf_2[i] | kPlosive_Release
+                i += 1
+                vv.phonBuf_2_In_Index += 1
+
+                # Decide if voiced release is AX or IX.
+                if (_flags(PhonFlags2, prev_phon) & kFrontF) or (cur_phon == _t_) or (cur_phon == _d_):
+                    vv.phon_Buf_2[i] = _IX_
+                else:
+                    from ._phonemes import _AX_
+                    vv.phon_Buf_2[i] = _AX_
+
+                vv.dur_Buf[i] = 25 // kFrameTime
+                vv.user_Cmd_Buf2[i] = 0
+                vv.user_Pitch_Buf2[i] = vv.user_Pitch_Buf2[i - 1]
+                vv.user_Dur_Buf2[i] = kDur_One
+                vv.user_Note_Buf2[i] = 0
+                vv.user_Rate_Buf2[i] = 0
+        i += 1

@@ -11,7 +11,7 @@
 | `EngToP.c` | `lintalker/_engtop.py` | English word -> phoneme dispatch via letter-to-sound rules. Operates on a single pre-isolated, already-uppercased word (see `test/test_engtop.py`). |
 | `FrontEnd.c` (tokenizer + per-word dispatch only) | `lintalker/_frontend.py` | Splits text into words + end-of-word punctuation, calls `_engtop.engtop()` per word. |
 | `BackEnd.c` (`Collect_FE_Tokens` + `Flag_PhonBuf_1`/`MarkSyllable`/`MarkSyllableStart`/`MarkBoundry`, adapted for the unported `FrontEnd.c`/`Morph.c` token stream) | `lintalker/_assembly.py` | Sentence-level stress/word/punctuation/syllable bookkeeping, verified bit-exact against a real C oracle for four sentences (`test/test_assembly.py`). |
-| `BackEnd.c` (`Fill_Phon_Buf_2`) | `lintalker/_phonbuf2.py` | Allophone selection (dark L, R-coloring, t/d-flapping, glottalization, DH-vowelizing, y-slurring, EN/EL, glottal-stop insertion), verified bit-exact against the C reference across voices/sentences (`test/test_phonbuf2.py`). Does not yet assemble a full `(phonemes, ctrls, durs, pitch_*)` plan — needs `Insert_Closure_Release`, `Mod_Duration`, `Pitch_RaiseAndFall`/`Fill_Pitch_Buf` — see "Known gaps". |
+| `BackEnd.c` (`Fill_Phon_Buf_2`), `formantSynth.c` (`Insert_Closure_Release`) | `lintalker/_phonbuf2.py` | Allophone selection (dark L, R-coloring, t/d-flapping, glottalization, DH-vowelizing, y-slurring, EN/EL, glottal-stop insertion) plus plosive-release insertion, verified bit-exact against the C reference across voices/sentences (`test/test_phonbuf2.py`). Does not yet assemble a full `(phonemes, ctrls, durs, pitch_*)` plan — needs `Mod_Duration`, `Pitch_RaiseAndFall`/`Fill_Pitch_Buf` — see "Known gaps". |
 | `Engine.c` | `lintalker/_engine.py` | Top-level init/speak/reset/rate/pitch/volume API, built on `_backend.py`. `e_speak_buffer` (the text-in entry point) and a few fsynth-dependent setters (`e_reset_params`, `e_use_voice`, `e_reinit_voice`) raise `NotImplementedError` naming the specific unported upstream C function they need. |
 | `BackEnd.c` (`DoCtrl`, the per-phoneme `CMDQueue` dispatcher: absolute/relative pitch, volume, mod) | `lintalker/_embeddedcmd.py` | Ported (see `test/test_embeddedcmd.py`); `C_reset`/`C_voice` are unimplemented/no-op the same way upstream leaves them, pending `ResetVoice`/`NewVoice` |
 | `EmbeddedCmd.c` (the FrontEnd backtick-escape text parser, e.g. `` `p200` ``, a distinct mechanism from `DoCtrl` above — it sets `PendingCommands` bits that `FrontEnd.c` later turns into `CMDQueue` entries via `QueueCommand`) | not ported | Depends on the unported `FrontEnd.c` tokenizer |
@@ -49,15 +49,15 @@ hand-captured reference constants; they don't do differential testing
 against a live C run and won't catch a regression that stays in a
 plausible numeric range.
 
-`test/test_phonbuf2.py` validates `_phonbuf2.fill_phon_buf_2` directly
-against the C reference using `test_voices.py`'s existing `run_c()`/
-`parse_sentence_plan()` helpers — unlike `Collect_FE_Tokens`, this stage's
-output (`phon_Buf_2`/`phon_Ctrl_Buf_2`) IS exposed by the standard
-`test_harness`, so no throwaway instrumentation is needed. Its tests mask
-out `kPitchRise`/`kPitchFall` bits (added by the unported
-`Pitch_RaiseAndFall`) and, for one case, an extra release phoneme (added
-by the unported `Insert_Closure_Release`) — both documented, expected
-differences from later unported stages, not bugs in this one.
+`test/test_phonbuf2.py` validates `_phonbuf2.fill_phon_buf_2` and
+`_phonbuf2.insert_closure_release` directly against the C reference using
+`test_voices.py`'s existing `run_c()`/`parse_sentence_plan()` helpers —
+unlike `Collect_FE_Tokens`, this stage's output (`phon_Buf_2`/
+`phon_Ctrl_Buf_2`) IS exposed by the standard `test_harness`, so no
+throwaway instrumentation is needed. Its tests mask out
+`kPitchRise`/`kPitchFall` bits (added by the unported `Pitch_RaiseAndFall`)
+— the one documented, expected difference from a later unported stage,
+not a bug in this one.
 
 `test/test_assembly.py`'s `test_oracle_*` tests validate `_assembly.py`'s
 `Collect_FE_Tokens`/`Flag_PhonBuf_1` port against `phon_Buf_1`/
@@ -79,19 +79,19 @@ finishing — `lintalker-c` must stay clean.
   `api.synthesize_phonemes` consumes. `api.synthesize_text()` does not
   exist yet.
 
-  `Fill_Phon_Buf_2` (`BackEnd.c:2469-3067`) is ported (`lintalker/_phonbuf2.py`,
-  see below) and turns `_assembly.py`'s output into `phon_Buf_2`/
+  `Fill_Phon_Buf_2` (`BackEnd.c:2469-3067`) and `Insert_Closure_Release`
+  (`formantSynth.c`, the body of `synth_AdjustPhons2`, called right after
+  `Fill_Phon_Buf_2` — inserts a release phoneme before word-final silence
+  after certain plosives/nasals) are both ported (`lintalker/_phonbuf2.py`,
+  see below) and turn `_assembly.py`'s output into `phon_Buf_2`/
   `phon_Ctrl_Buf_2` (allophone selection: dark L, R-coloring, t/d-flapping,
   glottalization, DH-vowelizing, y-slurring, EN/EL syllabic consonants,
-  glottal-stop insertion). Still missing to reach a full
+  glottal-stop insertion, plosive release). Still missing to reach a full
   `(phonemes, ctrls, durs, pitch_freq, pitch_time, pitch_flags)` plan:
-  `Insert_Closure_Release` (`formantSynth.c`, called as `synth_AdjustPhons2`
-  right after `Fill_Phon_Buf_2` — inserts a release phoneme before
-  word-final silence after certain plosives/nasals), `Mod_Duration`
-  (`BackEnd.c:1362`, phoneme duration assignment), and `Pitch_RaiseAndFall`
-  (`BackEnd.c:2127`, duplicated at `2303`, pitch-contour assignment —
-  `Fill_Pitch_Buf`, which turns that contour into the
-  `pitch_Buf_Freq`/`pitch_Buf_Time`/`pitch_Buf_Flags` arrays
+  `Mod_Duration` (`BackEnd.c:1362`, phoneme duration assignment) and
+  `Pitch_RaiseAndFall` (`BackEnd.c:2127`, duplicated at `2303`,
+  pitch-contour assignment — `Fill_Pitch_Buf`, which turns that contour
+  into the `pitch_Buf_Freq`/`pitch_Buf_Time`/`pitch_Buf_Flags` arrays
   `api.synthesize_phonemes` consumes, is also unported). `Collect_FE_Tokens`
   (`BackEnd.c:3712-4165`), including `Flag_PhonBuf_1`/`MarkSyllable`/
   `MarkSyllableStart`, is fully ported — see below. Emphasis markup and

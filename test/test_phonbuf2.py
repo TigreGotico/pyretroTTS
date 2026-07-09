@@ -1,22 +1,19 @@
-"""Tests for `lintalker._phonbuf2.fill_phon_buf_2` (`BackEnd.c:2469-3067`).
+"""Tests for `lintalker._phonbuf2` -- `fill_phon_buf_2`
+(`BackEnd.c:2469-3067`) and `insert_closure_release` (`formantSynth.c`,
+the body of `synth_AdjustPhons2`).
 
 Validated directly against the C reference via `test_voices.py`'s existing
 `run_c()`/`parse_sentence_plan()` helpers -- unlike `_assembly.py`'s
-`Collect_FE_Tokens` stage, `Fill_Phon_Buf_2`'s output (`phon_Buf_2`/
+`Collect_FE_Tokens` stage, this stage's output (`phon_Buf_2`/
 `phon_Ctrl_Buf_2`) IS exposed by the standard `test_harness` (its `S`/`P`/
 `N` dump), so no throwaway C instrumentation is needed here.
 
-Two classes of expected residual difference, both from pipeline stages
-that run AFTER `Fill_Phon_Buf_2` and are not yet ported (see
-docs/architecture.md):
-  - `kPitchFall` (0x40) ctrl-bit additions at stressed vowels, from
-    `Pitch_RaiseAndFall` (not ported).
-  - An extra release phoneme inserted before word-final silence after a
-    nasal/plosive, from `Insert_Closure_Release` (`synth_AdjustPhons2`,
-    formantSynth.c, not ported) -- e.g. "I am." gets an extra _IX_ before
-    its final _SIL_ in the C reference that this stage alone doesn't add.
-The pre-existing `kBND_Sep6` phrase-boundary gap (documented in
-test_assembly.py) also still applies where relevant.
+One remaining class of expected residual difference, from a pipeline stage
+that runs AFTER this one and is not yet ported (see docs/architecture.md):
+`kPitchRise`/`kPitchFall` (0x20/0x40) ctrl-bit additions at stressed
+vowels, from `Pitch_RaiseAndFall`. The pre-existing `kBND_Sep6`
+phrase-boundary gap (documented in test_assembly.py) also still applies
+where relevant.
 """
 import os
 import sys
@@ -25,7 +22,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, os.path.dirname(__file__))
 
 from lintalker._assembly import collect_fe_tokens
-from lintalker._phonbuf2 import fill_phon_buf_2
+from lintalker._phonbuf2 import fill_phon_buf_2, insert_closure_release
 from lintalker.api import new_voice
 from lintalker._data import Fred_Voice
 
@@ -40,6 +37,7 @@ def _run_python(text, voice_dict=Fred_Voice):
     sa = collect_fe_tokens(text)
     vv = new_voice(voice_dict)
     fill_phon_buf_2(vv, sa)
+    insert_closure_release(vv)
     n = vv.phonBuf_2_In_Index
     return vv.phon_Buf_2[:n], vv.phon_Ctrl_Buf_2[:n]
 
@@ -74,16 +72,15 @@ def test_testing_one_two_three_matches_modulo_known_gaps():
     assert py_ctrl == masked
 
 
-def test_i_am_matches_except_for_unported_closure_release():
-    """C inserts an extra release phoneme (_IX_) before the final _SIL_
-    after word-final "am" (nasal _m_) -- Insert_Closure_Release
-    (synth_AdjustPhons2, formantSynth.c) is not ported yet. Everything
-    before that insertion point matches exactly (modulo kPitchFall)."""
+def test_i_am_release_phoneme_matches():
+    """"I am." ends in a nasal (_m_) before word-final silence, so
+    insert_closure_release() inserts a release phoneme (_IX_/_AX_) --
+    verified bit-exact against the C reference, including its ctrl flags
+    (kPlosive_Release)."""
     py_phon, py_ctrl = _run_python("I am.")
     c_phon, c_ctrl = _run_c_plan(0, "I am.")
-    assert len(c_phon) == len(py_phon) + 1
-    assert py_phon == c_phon[:-2] + c_phon[-1:]
-    masked = [c & ~(_KPITCHFALL | _KPITCHRISE) for c in c_ctrl[:-2] + c_ctrl[-1:]]
+    assert py_phon == c_phon
+    masked = [c & ~(_KPITCHFALL | _KPITCHRISE) for c in c_ctrl]
     assert py_ctrl == masked
 
 
