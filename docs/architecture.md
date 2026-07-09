@@ -36,23 +36,22 @@ regression. It:
    (`lintalker.api.synthesize_phonemes` / the lower-level calls it wraps).
 3. Diffs per-frame values exactly.
 
-As of the last full run (`python3 test/test_voices.py --all`), 44 of 68
-voice/text combinations pass bit-exact, including all 8 stock voices
-(Fred, Kathy, Princess, Junior, Ralph, Whisper, Zarvox, Trinoids) and 3 of
-the special-effect voices (Bubbles, Boing, Deranged). Remaining known gaps:
+As of the last full run (`python3 test/test_voices.py --all`), 64 of 68
+voice/text combinations pass bit-exact — all 8 stock voices (Fred, Kathy,
+Princess, Junior, Ralph, Whisper, Zarvox, Trinoids) and all 9 special-effect
+voices except the marker-field gap below. Remaining known gap:
 
 - **Bells, Hysterical** (`kUseSyncSnd` voices): a handful of residual
   `marker` field mismatches per test. These voices' marker buffer is
   populated from an external sample-audio file header in the C reference
   (`InsertSample`, `Say.c`) that isn't part of this port — a missing-asset
   gap, not a logic bug.
-- **GoodNews, BadNews**: consistently off by ±1 in `f0` once
-  `do_note_script` starts nudging pitch. Suspected residual fixed-point
-  rounding difference in the pitch-filter math; not yet root-caused.
-- **PipeOrgan, Cellos**: divergence starts mid-utterance rather than at
-  frame 0 (unlike before the note-script fix) — consistent with an
-  accumulated portamento/note-timing drift, likely the same rounding
-  family as GoodNews/BadNews.
+
+(GoodNews/BadNews/PipeOrgan/Cellos previously showed pitch drift, but the
+root cause turned out to be the *test harness* forcing `vv.singing = False`
+after `init_voice()`, overriding the correct value `init_voice` derives from
+`numOfNotes` — these are genuine singing voices. The backend's fixed-point
+math was already correct; fixing the test harness resolved all four.)
 
 To run this test locally you need `lintalker-c` checked out and built as a
 sibling directory (`../lintalker-c` relative to this repo) with its
