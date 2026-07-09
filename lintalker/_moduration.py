@@ -5,19 +5,21 @@ context (obstruent voicing, clusters, glides), and speaking rate.
 Reads `vv.phon_Buf_2`/`vv.phon_Ctrl_Buf_2` (filled by `_phonbuf2.py`) via
 the already-ported `e_get_phon`/`e_get_phon_ctrl`. Writes `vv.dur_Buf`.
 
-NOT ported: the `sync_On_Marker`/`singScript`/`singing` branches
-(`BackEnd.c:1938-2029`) that further adjust `dur_Buf` against a
-sample-marker table or embedded note-timing script. These only fire when
-`vv.sync_On_Marker`/`vv.singScript`/`vv.singing` is set; for plain-text
-synthesis on non-singing voices (all 8 stock voices, and any
-special-effect voice driven by plain text rather than a hand-built note
-script) they're always false, so this is a real, narrow gap: it would
-matter only for text-driven synthesis on note-singing voices
-(GoodNews/BadNews/PipeOrgan/Cellos/Bells/Hysterical), not for the general
-case. Likewise the `temp = vv.user_Rate_Buf2[i]` embedded-rate-change
-check (`BackEnd.c:1888-1901`, calling the unported `Init_Rate_Params`) is
-always a no-op here since `user_Rate_Buf2` is always zero (no
-embedded-command source is ported -- see docs/architecture.md).
+The `singScript`/`singing` branches (`BackEnd.c:1977-2029`) that stretch/
+compress duration to match an embedded note script (GoodNews/BadNews/
+PipeOrgan/Cellos) are ported. NOT ported: `sync_On_Marker`
+(`BackEnd.c:1938-1974`, duration adjustment against a sample-marker
+table) -- only relevant to `kUseSyncSnd` voices (Bells/Hysterical), which
+this port never sets `vv.sync_On_Marker = True` for. Likewise the
+`temp = vv.user_Rate_Buf2[i]` embedded-rate-change check
+(`BackEnd.c:1888-1901`, calling the unported `Init_Rate_Params`) is always
+a no-op here since `user_Rate_Buf2` is always zero (no embedded-command
+source is ported -- see docs/architecture.md).
+
+Requires `vv.Note_Times` to be populated (`_engine.e_set_tempo`, called
+from `api.new_voice()`) for the singScript/singing branches to compute
+correct note durations -- an unpopulated (all-zero) `Note_Times` would
+silently zero every note's intended duration.
 """
 from __future__ import annotations
 
@@ -31,6 +33,7 @@ from ._consts import (
     kStressedWInitial, kSyllableOrderField, kSyllableTypeField,
     kSilenceTypeField, kSilenceTypeShift, kSilenceDuration,
     kFrameTime, kNormal_Speech_Rate,
+    kTerm_Bound, kNoteDur, kNoteDurShift, kLowVibrato,
 )
 from ._phonemes import _SIL_, _w_, _l_, _DX_, _SH_, _s_, _TH_, _LX_
 
@@ -56,6 +59,16 @@ def mod_duration(vv) -> None:
 
     vv.markerIndex = 0
     vv.dur_Buf[0] = 1  # initial SIL = 5ms
+
+    # State for the singScript/singing branches (BackEnd.c:1938-2029):
+    # note-driven duration adjustment on vowels, stretching/compressing the
+    # naive duration formula's output to match the embedded note script's
+    # intended timing.
+    first_pass = True
+    total_dur = 0
+    vowel_index = 0
+    note_dur = 0
+    next_note_dur = 0
 
     for i in range(1, vv.phonBuf_2_In_Index):
         cur_phon = e_get_phon(vv, i)
@@ -285,8 +298,54 @@ def mod_duration(vv) -> None:
 
         vv.dur_Buf[i] = dur_hold
 
-        # sync_On_Marker/singScript/singing branches (BackEnd.c:1938-2029)
-        # are not ported -- see module docstring.
+        # --- singScript / singing branches (BackEnd.c:1977-2029) ---
+        # (sync_On_Marker, BackEnd.c:1938-1974, is not ported -- it adjusts
+        # duration against a sample-marker table, which only applies to
+        # kUseSyncSnd voices (Bells/Hysterical) and is gated behind
+        # vv.sync_On_Marker, which this port never sets to True.)
+        if getattr(vv, "singScript", False):
+            if (cur_flags & kVowelF) or (cur_ctrl & kTerm_Bound):
+                if cur_ctrl & kTerm_Bound:
+                    if note_dur < vv.Note_Times[5]:
+                        note_dur = vv.Note_Times[5]
+                else:
+                    next_note_dur = (vv.notesBuf[vv.songIndex] & kNoteDur) >> kNoteDurShift
+                    vv.songIndex += 1
+                if vv.songIndex >= vv.numOfNotes:
+                    vv.songIndex = 0
+
+                if not first_pass:
+                    dur_adjust = note_dur - total_dur
+                    vv.dur_Buf[vowel_index] += dur_adjust
+                    if vv.dur_Buf[vowel_index] < 4:
+                        vv.dur_Buf[vowel_index] = 4
+                    elif vv.dur_Buf[vowel_index] > 100:
+                        vv.phon_Ctrl_Buf_2[vowel_index] |= kLowVibrato
+                first_pass = False
+                vowel_index = i
+                note_dur = vv.Note_Times[next_note_dur]
+                total_dur = 0
+            total_dur += dur_hold
+            if cur_is_vowel:
+                vowel_index = i
+
+        elif getattr(vv, "singing", False):
+            next_note_dur = (vv.user_Note_Buf2[i] & kNoteDur) >> kNoteDurShift
+            if (next_note_dur != 0) or (cur_ctrl & kTerm_Bound):
+                if not first_pass:
+                    dur_adjust = note_dur - total_dur
+                    vv.dur_Buf[vowel_index] += dur_adjust
+                    if vv.dur_Buf[vowel_index] < 4:
+                        vv.dur_Buf[vowel_index] = 4
+                    if vv.dur_Buf[vowel_index] > 100:
+                        vv.phon_Ctrl_Buf_2[vowel_index] |= kLowVibrato
+                first_pass = False
+                vowel_index = i
+                note_dur = vv.Note_Times[next_note_dur]
+                total_dur = 0
+            total_dur += dur_hold
+            if cur_is_vowel:
+                vowel_index = i
 
 
 mod_duration._eflag = False

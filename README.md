@@ -77,8 +77,9 @@ pcm = synthesize_phonemes(Fred_Voice, phonemes, ctrls, durs)
 pcm_to_wav(pcm, "out.wav")
 ```
 
-See `examples/` for more, and `docs/architecture.md` for how the port maps
-to the C source.
+See `examples/` for more, `docs/architecture.md` for how the port maps to
+the C source, and `docs/creating-voices.md` for the formant-synthesis
+theory behind a "voice" and how to build a new one.
 
 ## Voices
 

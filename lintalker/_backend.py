@@ -1170,7 +1170,7 @@ def init_voice(vv: VoiceVar, vd: dict):
     zz.voiceNoiseGain = mRatio(zz.setNoiseGain, 100, kPrecision)
     if vv.bit16_Sound:
         zz.voiceNoiseGain = mMul2(zz.voiceNoiseGain, 0xCCCC, 16)
-    vv.VP_stressGain = vd.get('stressGain', 0)
+    vv.VP_stressGain = (vd.get('stressGain', 0) << 16) // 100
 
     # Voice type
     zz.voice_Num = vd.get('voice', kMaleTbls)
@@ -1271,7 +1271,7 @@ def init_voice(vv: VoiceVar, vd: dict):
         _inv_dft(zz, vw, vd.get('vWave1', None), voice_wave_gain)
 
     # Volume
-    vv.VP_stressGain = vd.get('stressGain', 0)
+    vv.VP_stressGain = (vd.get('stressGain', 0) << 16) // 100
 
     # Locus offset (Say.c:1425)
     zz.locusOffset = vd.get('locus', 0)
@@ -1330,6 +1330,12 @@ def init_voice(vv: VoiceVar, vd: dict):
     else:
         vv.singScript = False
         vv.singing = False
+    # ResetVoice also calls e_SetTempo(vv, vv->tempo) when numOfNotes > 1
+    # (BackEnd.c:4364-4368) to populate Note_Times[], which Mod_Duration's
+    # singScript/singing branches need. tempo itself comes from voice data
+    # (e.g. PipeOrgan_Voice['tempo'] == 85); e_set_tempo() is called from
+    # api.new_voice() once vv.tempo is set here.
+    vv.tempo = vd.get('tempo', 120)
 
 
 def _inv_dft(zz: FormantVar, vWave: list, vWave1: Optional[list] = None,

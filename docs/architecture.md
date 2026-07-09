@@ -30,6 +30,18 @@ integer wraparound implicitly (`rShort`-typed locals in `Say.c`), the Python
 port truncates explicitly with `rshort()`/`s16()` at known-critical points;
 this has not been audited call-site-by-call-site.
 
+Percent-style voice parameters need an explicit `(value << 16) / 100`
+scale to 16.16 fixed point at init time (`Say.c:1289-1290` for the
+canonical example) — `VP_pitchRange`/`VP_intonation` already had this in
+`_backend.init_voice`, but `VP_stressGain` was missing it (found via a
+real two-word frame-level comparison against the C reference, since every
+prior single-word test sentence happened to route its only stress event
+through a code path — sentence/clause-boundary override — that overwrote
+the corrupted value before it could be observed). If you add a new
+percent-style field to a voice dict, check its C assignment in `Say.c`/
+`BackEnd.c` for this exact pattern rather than assuming a bare
+`vd.get(...)` copy is correct.
+
 ## The `synthesize_text` pipeline
 
 `lintalker.api.synthesize_text(voice_dict, text)` composes, in
@@ -132,11 +144,19 @@ single-sentence text is.
   `phon_hold` carry raw opcodes that `_phonbuf2.py` still needs to scan
   for the literal `_Comp_` marker itself, not a shortcut through
   `LexEntry.is_compound`.
-- `Mod_Duration`'s `sync_On_Marker`/`singScript`/`singing` branches
-  (further duration adjustment against a sample-marker table or
-  note-timing script) are not ported — a narrow gap that only matters for
-  text-driven synthesis on note-singing voices (GoodNews/BadNews/
-  PipeOrgan/Cellos/Bells/Hysterical), not plain text on any voice.
+- `Mod_Duration`'s `singScript`/`singing` branches (duration adjustment
+  against an embedded note-timing script, for GoodNews/BadNews/PipeOrgan/
+  Cellos) are ported and verified frame-exact
+  (`test/test_synthesize_text.py`'s `test_note_driven_singing_voices_frame_exact`).
+  This requires `api.new_voice()` to NOT force `vv.singing = False`
+  (`init_voice()` already derives the correct value from `numOfNotes`, the
+  same pattern previously fixed in `test/test_voices.py`'s own
+  `setup_python_voice()`) and to call `e_set_tempo(vv, vv.tempo)` so
+  `vv.Note_Times` is populated — both were real bugs, now fixed. Only
+  `sync_On_Marker` (duration adjustment against a sample-marker table)
+  remains unported — relevant only to `kUseSyncSnd` voices
+  (Bells/Hysterical), which have their own separate, already-documented
+  gap below regardless.
 - `synth_AdjustPhons1` (a `ParseSentence` hook alongside
   `synth_AdjustPhons2`) is a true no-op in the C reference (confirmed by
   reading its empty body in `formantSynth.c`) and needs no porting.
@@ -199,7 +219,14 @@ against the harness's pitch-buffer dump.
 `test/test_synthesize_text.py` is the capstone: it validates
 `api.build_phoneme_plan`/`api.synthesize_text` frame-for-frame against the
 C reference's full pipeline (`FrontEnd.c` + `BackEnd.c`) for real text
-input, reusing `test_voices.py`'s per-frame comparison machinery.
+input, reusing `test_voices.py`'s per-frame comparison machinery, across
+all 17 voices (except Bells/Hysterical, which hit the documented
+`kUseSyncSnd` gap below) with a genuine two-word sentence. Read this
+file's module docstring before trusting a green run of it: it previously
+passed a corrupted call (`parse_frames(c_stderr)` instead of
+`parse_frames(c_stdout)`) that made every one of its assertions a false
+positive by comparing against an empty list — now guarded with an
+explicit non-empty/length assertion before the real comparison.
 
 `test/test_pipeline.py` and `test/compare_all.py` are older smoke tests
 over hand-captured reference constants; they don't do differential

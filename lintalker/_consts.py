@@ -142,6 +142,8 @@ kPitchFall = 0x0040
 kPitchRise1 = 0x04000000
 kPitchFall1 = 0x08000000
 kLowVibrato = 0x10
+kNoteDur = 0x0F00
+kNoteDurShift = 8
 
 # Pitch flow flags
 kPitchStress_Flg = 0x1

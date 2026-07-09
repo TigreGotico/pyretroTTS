@@ -29,13 +29,27 @@ def new_voice(voice_dict: dict) -> VoiceVar:
     vv = VoiceVar()
     init_voice(vv, voice_dict)
     vv.FEinputDone = True
-    vv.singing = False
+    # Do NOT force vv.singing = False here: init_voice() already derives the
+    # correct value from numOfNotes (BackEnd.c's ResetVoice sets singing=true
+    # when numOfNotes > 1) -- overriding it here silently broke duration
+    # timing for every note-driven singing voice (PipeOrgan, Cellos,
+    # GoodNews, BadNews) by routing them through Mod_Duration's non-singing
+    # duration formula instead of the note-timed one. The exact same bug
+    # pattern was previously found and fixed in test/test_voices.py's own
+    # setup_python_voice() -- see docs/architecture.md.
     vv.newSentence = True
     vv.start_of_Paragraph_Flag = False
     vv.stress_Active_Time = 0
     vv.user_Pitch_Buf2 = [0] * 512
     vv.controlF0 = vv.VP_baselinePitch
     vv.frameMarker = kNoMarker
+
+    # ResetVoice calls e_SetTempo(vv, vv->tempo) when numOfNotes > 1
+    # (BackEnd.c:4364-4368) to populate Note_Times[], which Mod_Duration's
+    # singScript/singing branches need for note-driven voices (PipeOrgan,
+    # Cellos, GoodNews, BadNews). Harmless no-op for non-singing voices.
+    from ._engine import e_set_tempo
+    e_set_tempo(vv, vv.tempo)
     return vv
 
 
