@@ -1,31 +1,29 @@
 """Tests for `lintalker._assembly` -- Phase 1 of the `Collect_FE_Tokens`
 (`BackEnd.c:3712-4157`) port.
 
-VALIDATION STATUS (see `lintalker/_assembly.py`'s module docstring for the
-full account): `test_harness.c` (`lintalker-c/test_harness.c:222-238`) only
-ever prints `vv->phon_Buf_2`/`vv->phon_Ctrl_Buf_2` -- i.e. state AFTER
-`Fill_Phon_Buf_2` has already run -- and `test/test_voices.py`'s
-`parse_sentence_plan()` (lines 87-129) parses exactly those `S`/`P`/`N`
-lines. There is no dump of `phon_Buf_1`/`phon_Ctrl_Buf_1` (what
-`Collect_FE_Tokens` itself produces) anywhere in the compiled harness or
-this repo's test tooling. This phase's output therefore CANNOT be
-differentially tested against the C reference the way `test_voices.py`/
-`test_lexicon.py`/`test_engtop.py` do for their respective stages.
+VALIDATION STATUS: `test_harness.c`'s built-in dump only prints
+`vv->phon_Buf_2`/`vv->phon_Ctrl_Buf_2` -- state AFTER `Fill_Phon_Buf_2` has
+already run -- not `phon_Buf_1`/`phon_Ctrl_Buf_1` (what `Collect_FE_Tokens`
+itself produces). `test_oracle_hello`/`test_oracle_testing_one_two_three`
+below pin exact `phon_Buf_1`/`phon_Ctrl_Buf_1` values captured from a
+throwaway instrumented build of `Talk()` (dumping those arrays right after
+the `Collect_FE_Tokens` loop, before `Fill_Phon_Buf_2` runs) against a real
+compiled C reference -- this is a genuine differential oracle, not a
+hand-derived guess. The `ctrl_buf` comparison masks out
+`kSyllable_Start`/`kSyllableOrderField`/`kSyllableTypeField`, since those
+bits are set by `Flag_PhonBuf_1`'s `MarkSyllable`/`MarkSyllableStart`
+(`BackEnd.c:3191`/`3379`), not yet ported (see `docs/architecture.md`).
+This oracle run also caught and fixed two real bugs: `make_fe_word_token()`
+was double-prepending `_Word_` for rule-fallback words (`engtop()` already
+includes it), and rule-fallback words were wrongly defaulted to
+`kUndefPOS` instead of the real engine's `kNoun` default
+(`FrontEnd.c:1650`, `SetPOStoVal(t, kNoun)` right after `EngToP()`).
 
-What these tests DO check, with a real oracle:
-  - `make_fe_word_token()` correctly reflects `_lexicon.lookup()`'s fields
-    (verified bit-exact against the C reference by `test_lexicon.py`) for
-    known dictionary words -- content-word POS classification, compound
-    hint, abbreviation flag, alt-pronunciation fields.
-  - The documented `pos_choice`/`is_content_word` fallback behavior for
-    words `_lexicon.lookup()` misses (falls back to `_engtop.engtop()`).
-  - `collect_fe_tokens()`'s sentence-level control flow (word count, stress
-    counter, end-of-sentence punctuation detection, compound-noun flag
-    reset at word/phrase boundaries) against hand-derived expectations from
-    reading `BackEnd.c:3712-4157` directly -- these are NOT cross-checked
-    against a live C run (no oracle exists yet; see above), so treat
-    failures here as "diverged from this port's own prior behavior", not
-    "diverged from the C reference".
+The remaining tests check `collect_fe_tokens()`'s sentence-level control
+flow (word count, stress counter, punctuation detection, compound-noun
+flag reset) against hand-derived expectations from reading
+`BackEnd.c:3712-4157` directly, for cases the two oracle sentences above
+don't exercise (e.g. exclamation-promotes-emphatic).
 """
 import os
 import sys
@@ -69,19 +67,24 @@ def test_dictionary_hit_noun_is_content_word():
     assert tok.is_compound_hint is True
 
 
-def test_dictionary_miss_falls_back_to_engtop_with_undef_pos():
+def test_dictionary_miss_falls_back_to_engtop_with_noun_pos():
     """CROMULENT has no dictionary entry (test_lexicon.py:359, confirmed
-    None against the C reference). Per this phase's documented decision
-    (mirroring FrontEnd.c:1917-1964's own kUndefPOS default), rule-fallback
-    words always get pos_choice = kUndefPOS and are never content words."""
+    None against the C reference). FrontEnd.c:1650 calls
+    SetPOStoVal(t, kNoun) right after EngToP() for rule-fallback words --
+    confirmed against a real C oracle dump (a rule-fallback word came back
+    from the compiled engine with kContent_Word set, only possible with a
+    content-word POS). So rule-fallback words get pos_choice = kNoun and
+    ARE content words."""
     tok = make_fe_word_token("CROMULENT", None)
     assert tok.from_dictionary is False
-    assert tok.pos_choice == kUndefPOS
-    assert tok.is_content_word is False
-    assert all(p == kUndefPOS for p in tok.pos_code1)
+    assert tok.pos_choice == kNoun
+    assert tok.is_content_word is True
+    assert tok.pos_code1[0] == kNoun
     # engtop() fallback still produces a _Word_-prefixed phoneme string,
-    # same shape as a dictionary hit.
+    # same shape as a dictionary hit -- and not double-prefixed (engtop()
+    # already includes _Word_; a real bug here doubled it).
     assert tok.phon_str[0] == _Word_
+    assert tok.phon_str[1] != _Word_
     assert len(tok.phon_str) > 1
 
 
@@ -167,12 +170,14 @@ def test_content_word_flag_set_only_for_content_pos():
 
 def test_stress_defaults_to_primary_when_sentence_has_none():
     """BackEnd.c:4093-4130: if a sentence has no primary/emphatic stress at
-    all, the first vowel of the last word gets promoted to primary stress.
-    A rule-fallback word (kUndefPOS, never content) generates only
-    secondary-stress opcodes per BackEnd.c:3869-3877's demotion rule, so
-    this path is exercised for any single unknown word."""
-    sa = collect_fe_tokens("cromulent.")
-    assert sa.stress_counter == 0  # CROMULENT is a dictionary miss -> demoted to secondary throughout
+    all, the last secondary stress gets promoted to primary. "THE" is a
+    dictionary hit tagged kArt (article, test_lexicon.py-style lookup
+    confirms pos_code1[0]==19==kArt, not in the content-word set), so its
+    only stress opcode (_Stress2_) stays secondary per
+    BackEnd.c:3869-3901's demotion rule -- exercising this promotion path
+    for a single-word sentence."""
+    sa = collect_fe_tokens("the.")
+    assert sa.stress_counter == 0  # THE is tagged kArt -> non-content -> no primary stress ever fires
     primary_indices = [i for i, c in enumerate(sa.ctrl_buf) if c & kStressField == kPrimaryStress]
     assert len(primary_indices) == 1, (
         "expected exactly one promoted primary stress per BackEnd.c:4093-4119"
@@ -192,6 +197,44 @@ def test_no_words_produces_empty_assembly():
     sa = collect_fe_tokens("...")
     assert sa.word_count == 0
     assert sa.words == []
+
+
+# Real oracle: phon_Buf_1/phon_Ctrl_Buf_1 captured from a throwaway
+# instrumented build of Talk() (BackEnd.c) dumping those arrays right after
+# the Collect_FE_Tokens loop returns, before Fill_Phon_Buf_2 runs. Captured
+# with `bin/Debug/test_harness -v 0 "<text>"` against a real compiled
+# lintalker-c. The instrumentation was reverted after capture --
+# lintalker-c is not modified by this repo.
+_SYLLABLE_MASK = ~(0x10000000 | 0x0300 | 0x0F)  # kSyllable_Start | kSyllableOrderField | kSyllableTypeField
+
+_ORACLE_HELLO_PHON = [23, 32, 2, 31, 14, 23]
+_ORACLE_HELLO_CTRL = [1, 268509312, 256, 268435456, 1801, 2621440]
+
+_ORACLE_TOTT_PHON = [23, 46, 2, 40, 46, 1, 35, 28, 5, 34, 46, 15, 38, 30, 0, 23]
+_ORACLE_TOTT_CTRL = [1, 268509312, 1280, 268435456, 0, 2817, 1, 281084032, 2049, 1, 268509312, 1025, 268509312, 128, 1033, 2621440]
+
+
+def test_oracle_hello():
+    sa = collect_fe_tokens("hello")
+    assert sa.phon_buf == _ORACLE_HELLO_PHON
+    masked_c = [c & _SYLLABLE_MASK for c in _ORACLE_HELLO_CTRL]
+    assert sa.ctrl_buf == masked_c
+
+
+def test_oracle_testing_one_two_three():
+    """The one known, documented residual gap: index 7 (the word "ONE",
+    dictionary-tagged kAdj) carries an extra kBND_Sep6 phrase-boundary
+    marker (0xc00000, i.e. (kBND_Sep6=12) << kSilenceTypeShift) in the C
+    reference that this port doesn't produce -- add_BND/phrasingBND for
+    non-punctuation-triggered boundaries (e.g. around certain quantifier/
+    numeral words) isn't modeled (see docs/architecture.md). Masked out
+    here in addition to the syllable bits, since it's a separate,
+    independently-documented gap, not a syllable-marking one."""
+    sa = collect_fe_tokens("testing one two three")
+    assert sa.phon_buf == _ORACLE_TOTT_PHON
+    extra_bnd_mask = ~0xC00000
+    masked_c = [(c & _SYLLABLE_MASK) & extra_bnd_mask for c in _ORACLE_TOTT_CTRL]
+    assert sa.ctrl_buf == masked_c
 
 
 if __name__ == "__main__":
