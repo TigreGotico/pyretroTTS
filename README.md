@@ -26,17 +26,22 @@ counterpart is checked out locally as `lintalker-c`).
 | Allophone selection + plosive release (dark L, R-coloring, flapping, glottalization, ...) | `BackEnd.c` (`Fill_Phon_Buf_2`), `formantSynth.c` (`Insert_Closure_Release`) | Ported (`lintalker/_phonbuf2.py`), verified bit-exact against the C reference across voices/sentences (`test/test_assembly_pipeline.py`) |
 | Sentence-level pitch-contour ctrl-bit flagging | `BackEnd.c` (`Pitch_RaiseAndFall`) | Ported (`lintalker/_pitchcontour.py`), verified bit-exact against the C reference across voices/sentences (`test/test_assembly_pipeline.py`) |
 | Per-phoneme duration assignment | `BackEnd.c` (`Mod_Duration`) | Ported (`lintalker/_moduration.py`), verified bit-exact against the C reference across voices/sentences (`test/test_assembly_pipeline.py`) |
-| Pitch buffer assembly into a synthesizable phoneme plan | `BackEnd.c` (`Fill_Pitch_Buf`) | Not ported — the remaining blocker to a real `synthesize_text()` |
+| Pitch buffer assembly into a synthesizable phoneme plan | `BackEnd.c` (`Fill_Pitch_Buf`, `Store_F0_and_Time`) | Ported (`lintalker/_pitchbuf.py`), verified bit-exact against the C reference across voices/sentences (`test/test_pitchbuf.py`) |
 | Pronunciation dictionary lookup | `english_lex.c`/`English.lex` | Ported (`lintalker/_lexicon.py`), verified bit-exact for 249 test words (`test/test_lexicon.py`) |
 | Morphology (prefix/suffix stripping, compounds) | `Morph.c` | Not ported |
 
-**What this means today:** you can synthesize audio from an already-built
-phoneme plan via `lintalker.api.synthesize_phonemes()`, and you can turn a
-single, pre-isolated English word into a phoneme opcode list via
-`lintalker._engtop.engtop()`, or tokenize a full sentence into per-word
-phoneme opcodes via `lintalker._frontend`. There is no end-to-end
-`synthesize_text()` yet — see `docs/architecture.md` for exactly what's
-missing to close that gap.
+**What this means today:** `lintalker.api.synthesize_text(voice_dict, text)`
+synthesizes plain English text end-to-end, verified frame-for-frame
+bit-exact against the real C engine (`test/test_synthesize_text.py`) for
+plain single-sentence text on both dictionary words and rule-fallback
+words, across multiple voices. Known gaps (see `docs/architecture.md`):
+no `Morph.c` (compound words, prefix/suffix stripping), no
+non-punctuation phrase-boundary detection or number/abbreviation
+expansion, no embedded commands, single-sentence input only. You can
+still synthesize from an already-built phoneme plan directly via
+`lintalker.api.synthesize_phonemes()`, and there's a lower-level
+`lintalker._engtop.engtop()` (single word) and `lintalker._frontend`
+(tokenization only) if you need to build a custom pipeline.
 
 ## Install
 
@@ -45,6 +50,16 @@ uv pip install lintalker
 ```
 
 ## Usage
+
+```python
+from lintalker.api import synthesize_text, pcm_to_wav
+from lintalker._data import Fred_Voice
+
+pcm = synthesize_text(Fred_Voice, "hello, this is a test.")
+pcm_to_wav(pcm, "out.wav")
+```
+
+Or, from an already-built phoneme plan:
 
 ```python
 from lintalker.api import synthesize_phonemes, pcm_to_wav

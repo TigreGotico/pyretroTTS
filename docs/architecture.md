@@ -13,12 +13,13 @@
 | `BackEnd.c` (`Collect_FE_Tokens` + `Flag_PhonBuf_1`/`MarkSyllable`/`MarkSyllableStart`/`MarkBoundry`, adapted for the unported `FrontEnd.c`/`Morph.c` token stream) | `lintalker/_assembly.py` | Sentence-level stress/word/punctuation/syllable bookkeeping, verified bit-exact against a real C oracle for four sentences (`test/test_assembly.py`). |
 | `BackEnd.c` (`Fill_Phon_Buf_2`), `formantSynth.c` (`Insert_Closure_Release`) | `lintalker/_phonbuf2.py` | Allophone selection (dark L, R-coloring, t/d-flapping, glottalization, DH-vowelizing, y-slurring, EN/EL, glottal-stop insertion) plus plosive-release insertion, verified bit-exact against the C reference across voices/sentences (`test/test_assembly_pipeline.py`). |
 | `BackEnd.c` (`Pitch_RaiseAndFall` + `Count_StressVowels_Till_Boundry`/`Any_StressVowels_Remain`/`Count_Vowels_Till_Boundry`) | `lintalker/_pitchcontour.py` | Sentence-level pitch-contour ctrl-bit flagging (`kPitchRise`/`kPitchFall`/`kPitchRise1`/`kPitchFall1`), verified bit-exact against the C reference across voices/sentences (`test/test_assembly_pipeline.py`). |
-| `BackEnd.c` (`Mod_Duration`) | `lintalker/_moduration.py` | Per-phoneme duration assignment (stress, syllable position, obstruent voicing, clusters, glides, speaking rate), verified bit-exact against the C reference across voices/sentences (`test/test_assembly_pipeline.py`). Does not yet assemble a full `(phonemes, ctrls, durs, pitch_freq, pitch_time, pitch_flags)` plan — needs `Fill_Pitch_Buf` to turn the ctrl-bit contour into pitch buffers — see "Known gaps". |
+| `BackEnd.c` (`Mod_Duration`) | `lintalker/_moduration.py` | Per-phoneme duration assignment (stress, syllable position, obstruent voicing, clusters, glides, speaking rate), verified bit-exact against the C reference across voices/sentences (`test/test_assembly_pipeline.py`). |
+| `BackEnd.c` (`Fill_Pitch_Buf`, `Store_F0_and_Time`) | `lintalker/_pitchbuf.py` | Turns the ctrl-bit pitch contour into `pitch_Buf_Freq`/`pitch_Buf_Time`/`pitch_Buf_Flags`, verified bit-exact against the C reference across voices/sentences (`test/test_pitchbuf.py`). |
 | `Engine.c` | `lintalker/_engine.py` | Top-level init/speak/reset/rate/pitch/volume API, built on `_backend.py`. `e_speak_buffer` (the text-in entry point) and a few fsynth-dependent setters (`e_reset_params`, `e_use_voice`, `e_reinit_voice`) raise `NotImplementedError` naming the specific unported upstream C function they need. |
 | `BackEnd.c` (`DoCtrl`, the per-phoneme `CMDQueue` dispatcher: absolute/relative pitch, volume, mod) | `lintalker/_embeddedcmd.py` | Ported (see `test/test_embeddedcmd.py`); `C_reset`/`C_voice` are unimplemented/no-op the same way upstream leaves them, pending `ResetVoice`/`NewVoice` |
 | `EmbeddedCmd.c` (the FrontEnd backtick-escape text parser, e.g. `` `p200` ``, a distinct mechanism from `DoCtrl` above — it sets `PendingCommands` bits that `FrontEnd.c` later turns into `CMDQueue` entries via `QueueCommand`) | not ported | Depends on the unported `FrontEnd.c` tokenizer |
 | `Morph.c` | not ported | Prefix/suffix stripping, compound-word handling |
-| `english_lex.c`/`English.lex` | `lintalker/_lexicon.py` | Dictionary lookup (`lookup(word)`), verified bit-exact against the real engine for 249 words spanning common/rare/compound-noun/abbreviation entries (`test/test_lexicon.py`). Not yet wired into stress/plan assembly — see "Known gaps". |
+| `english_lex.c`/`English.lex` | `lintalker/_lexicon.py` | Dictionary lookup (`lookup(word)`), verified bit-exact against the real engine for 249 words spanning common/rare/compound-noun/abbreviation entries (`test/test_lexicon.py`). |
 | `Sounds.c` | not ported | Embedded sound effects (bells, etc.) — raw PCM blobs, not logic |
 
 Fixed-point arithmetic mirrors the C reference's `kPrecision=13` scheme;
@@ -29,10 +30,85 @@ integer wraparound implicitly (`rShort`-typed locals in `Say.c`), the Python
 port truncates explicitly with `rshort()`/`s16()` at known-critical points;
 this has not been audited call-site-by-call-site.
 
+## The `synthesize_text` pipeline
+
+`lintalker.api.synthesize_text(voice_dict, text)` composes, in
+`ParseSentence`'s real order:
+
+```
+_frontend.tokenize            (text -> words + end punctuation)
+_lexicon.lookup / _engtop.engtop   (per word: dictionary hit or rule fallback)
+_assembly.collect_fe_tokens    (Collect_FE_Tokens + Flag_PhonBuf_1: sentence-level
+                                stress/word/punctuation/syllable bookkeeping)
+_phonbuf2.fill_phon_buf_2      (allophone selection)
+_pitchcontour.pitch_raise_and_fall  (pitch-contour ctrl bits)
+_moduration.mod_duration       (per-phoneme duration)
+_phonbuf2.insert_closure_release    (plosive release insertion)
+_backend.calc_ramp_steps
+_pitchbuf.fill_pitch_buf       (ctrl-bit contour -> pitch_Buf_Freq/Time/Flags)
+api.synthesize_phonemes        (the already-verified phoneme-plan -> PCM path)
+```
+
+`api.build_phoneme_plan(voice_dict, text)` exposes the assembled
+`(phonemes, ctrls, durs, pitch_freq, pitch_time, pitch_flags)` plan without
+synthesizing, if you want to inspect or modify it first.
+
+Verified frame-for-frame bit-exact against the real C engine
+(`test/test_synthesize_text.py`) for plain single-sentence text spanning
+both dictionary words and rule-fallback words, across multiple voices.
+
+## Known gaps
+
+- No `Morph.c` (prefix/suffix stripping, compound-word handling) — words
+  are looked up in `english_lex` as-is or fall through to letter-to-sound
+  rules; morphological variants of dictionary words (e.g. an inflected
+  form not itself in the dictionary) aren't decomposed.
+- `_frontend.py` only detects phrase boundaries from trailing
+  `. , ! ?` — the real engine also raises boundaries around certain
+  dictionary-tagged words (e.g. quantifiers like "ONE") via
+  `add_BND`/`phrasingBND`, which isn't modeled. This is the one
+  confirmed residual gap in an otherwise bit-exact pipeline: "testing one
+  two three" diverges (in ctrl words, and downstream in the pitch buffer)
+  because of this single missing `kBND_Sep6` marker before "ONE" — see
+  `test/test_assembly.py`, `test/test_assembly_pipeline.py`,
+  `test/test_pitchbuf.py`.
+- No number/abbreviation expansion, no embedded commands
+  (`EmbeddedCmd.c`'s backtick-escape text parser is unported — `DoCtrl`,
+  the per-phoneme dispatcher it would feed, is ported and tested
+  independently via `test/test_embeddedcmd.py`), no multi-sentence input
+  (the whole string is treated as one sentence).
+- Primary/secondary stress placement is gated on POS tagging. For
+  dictionary hits, `_lexicon.py:lookup(word)` provides real POS codes.
+  For rule-fallback words (no dictionary entry), `FrontEnd.c:1650` calls
+  `SetPOStoVal(t, kNoun)` right after `EngToP()`, then refines via
+  `SetPOS_FromSuffix` (`Morph.c:1027`, a suffix heuristic, not ported) —
+  `_assembly.py` applies the `kNoun` default (confirmed against a real C
+  oracle capture). Compound-noun detection (`_Comp_` opcode) is populated
+  only from the dictionary decode; `_lexicon.py`'s `LexEntry.phon_str`/
+  `phon_hold` carry raw opcodes that `_phonbuf2.py` still needs to scan
+  for the literal `_Comp_` marker itself, not a shortcut through
+  `LexEntry.is_compound`.
+- `Mod_Duration`'s `sync_On_Marker`/`singScript`/`singing` branches
+  (further duration adjustment against a sample-marker table or
+  note-timing script) are not ported — a narrow gap that only matters for
+  text-driven synthesis on note-singing voices (GoodNews/BadNews/
+  PipeOrgan/Cellos/Bells/Hysterical), not plain text on any voice.
+- `synth_AdjustPhons1` (a `ParseSentence` hook alongside
+  `synth_AdjustPhons2`) is a true no-op in the C reference (confirmed by
+  reading its empty body in `formantSynth.c`) and needs no porting.
+  `Place_Stress_In_Consonant` is likewise dead code in the C reference —
+  its only call site is commented out — so it needs no porting either.
+- Bells/Hysterical (`kUseSyncSnd` voices) show a few residual `marker`
+  field mismatches in `test/test_voices.py`: their marker buffer is
+  populated from an external sample-audio file header in the C reference
+  (`InsertSample`, `Say.c`) that isn't part of this port.
+- 16-bit wraparound truncation inside the `say_frame` hot loop is not
+  exhaustively verified against extreme/out-of-range voice parameters.
+
 ## Correctness verification
 
-`test/test_voices.py` is the test in this repo that catches DSP regressions.
-It shells out to a compiled build of the C reference
+`test/test_voices.py` is the primary DSP-regression backstop. It shells
+out to a compiled build of the C reference
 (`lintalker-c/bin/Debug/test_harness`) for a given voice + input text,
 captures the phoneme plan it derives and its per-frame synthesis state
 (pitch, amplitude, formants, markers), feeds the identical phoneme plan
@@ -46,25 +122,12 @@ out and built as a sibling directory, `../lintalker-c`, with its
 way, against a standalone build of `EngToP()` isolated from the rest of the
 engine.
 
-`test/test_pipeline.py` and `test/compare_all.py` are smoke tests over
-hand-captured reference constants; they don't do differential testing
-against a live C run and won't catch a regression that stays in a
-plausible numeric range.
+`test/test_lexicon.py` validates `_lexicon.py`'s dictionary lookup against
+a standalone build of `SearchAllDicts()`.
 
-`test/test_assembly_pipeline.py` validates `_phonbuf2.fill_phon_buf_2`,
-`_pitchcontour.pitch_raise_and_fall`, `_moduration.mod_duration`, and
-`_phonbuf2.insert_closure_release` — called in that order, matching
-`ParseSentence`'s real `Fill_Phon_Buf_2 -> Pitch_RaiseAndFall ->
-Mod_Duration -> synth_AdjustPhons2` sequence — directly against the C
-reference (phonemes, ctrl words, AND durations) using `test_voices.py`'s
-existing `run_c()`/`parse_sentence_plan()` helpers. Unlike
-`Collect_FE_Tokens`, this pipeline's output (`phon_Buf_2`/
-`phon_Ctrl_Buf_2`/`dur_Buf`) IS exposed by the standard `test_harness`, so
-no throwaway instrumentation is needed. With all four stages wired in the
-correct order, results are bit-exact with NO masking needed across most
-sentences/voices — the one exception is the pre-existing `kBND_Sep6`
-phrase-boundary gap (see `Collect_FE_Tokens`'s entry below), which is
-independent of this pipeline.
+`test/test_embeddedcmd.py` validates `_embeddedcmd.py`'s `DoCtrl` directly
+(hand-built `CMDQueue` entries against the arithmetic in the C source) —
+no C harness exposes `DoCtrl` in isolation.
 
 `test/test_assembly.py`'s `test_oracle_*` tests validate `_assembly.py`'s
 `Collect_FE_Tokens`/`Flag_PhonBuf_1` port against `phon_Buf_1`/
@@ -78,91 +141,23 @@ those arrays right after the `Collect_FE_Tokens` loop in `Talk()`
 `test_harness`, then revert the C source and rebuild again before
 finishing — `lintalker-c` must stay clean.
 
-## Known gaps
+`test/test_assembly_pipeline.py` validates `_phonbuf2.fill_phon_buf_2`,
+`_pitchcontour.pitch_raise_and_fall`, `_moduration.mod_duration`, and
+`_phonbuf2.insert_closure_release` — called in that order — directly
+against the C reference (phonemes, ctrl words, AND durations) using
+`test_voices.py`'s existing `run_c()`/`parse_sentence_plan()` helpers;
+unlike `Collect_FE_Tokens`, this pipeline's output IS exposed by the
+standard `test_harness`, so no throwaway instrumentation is needed.
 
-- `lintalker/_frontend.py` tokenizes text and dispatches each word through
-  `_engtop.engtop()`, but there is no bridge from that per-word phoneme
-  opcode list to the `(phonemes, ctrls, durs)` shape
-  `api.synthesize_phonemes` consumes. `api.synthesize_text()` does not
-  exist yet.
+`test/test_pitchbuf.py` validates `_pitchbuf.fill_pitch_buf` the same way,
+against the harness's pitch-buffer dump.
 
-  `Fill_Phon_Buf_2` (`BackEnd.c:2469-3067`), `Pitch_RaiseAndFall`
-  (`BackEnd.c:2127-2295` — a second definition at `2303` is dead code
-  inside `#if 0`), `Mod_Duration` (`BackEnd.c:1362-2031`, phoneme duration
-  assignment), and `Insert_Closure_Release` (`formantSynth.c`, the body of
-  `synth_AdjustPhons2` — inserts a release phoneme before word-final
-  silence after certain plosives/nasals) are all ported
-  (`lintalker/_phonbuf2.py`/`_pitchcontour.py`/`_moduration.py`) and turn
-  `_assembly.py`'s output into `phon_Buf_2`/`phon_Ctrl_Buf_2`/`dur_Buf` —
-  allophone selection, pitch-contour ctrl bits, duration assignment, and
-  plosive release — verified bit-exact against the C reference across
-  voices and sentences with no masking needed (`test/test_assembly_pipeline.py`).
-  **Call order matters**: `Fill_Phon_Buf_2 -> Pitch_RaiseAndFall ->
-  Mod_Duration -> synth_AdjustPhons2`, matching `ParseSentence`'s real
-  order — running `mod_duration()` after `insert_closure_release()` lets
-  `mod_duration` overwrite the release phoneme's hardcoded duration with
-  its own generic formula (confirmed by a real divergence before the
-  order was fixed).
+`test/test_synthesize_text.py` is the capstone: it validates
+`api.build_phoneme_plan`/`api.synthesize_text` frame-for-frame against the
+C reference's full pipeline (`FrontEnd.c` + `BackEnd.c`) for real text
+input, reusing `test_voices.py`'s per-frame comparison machinery.
 
-  Still missing to reach a full
-  `(phonemes, ctrls, durs, pitch_freq, pitch_time, pitch_flags)` plan:
-  `Fill_Pitch_Buf`, which turns `Pitch_RaiseAndFall`'s ctrl-bit contour
-  (`kPitchRise`/`kPitchFall`/`kPitchRise1`/`kPitchFall1`) into the actual
-  `pitch_Buf_Freq`/`pitch_Buf_Time`/`pitch_Buf_Flags` arrays
-  `api.synthesize_phonemes` consumes. `Collect_FE_Tokens`
-  (`BackEnd.c:3712-4165`), including `Flag_PhonBuf_1`/`MarkSyllable`/
-  `MarkSyllableStart`, is fully ported — see below. Emphasis markup and
-  phrase-boundary detection beyond trailing `. , ! ?` degrade safely to
-  their defaults for plain, unmarked text and don't block this.
-  `synth_AdjustPhons1` (the other `ParseSentence` hook alongside
-  `synth_AdjustPhons2`) is a true no-op in the C reference (confirmed by
-  reading its empty body in `formantSynth.c`) and needs no porting.
-  `Mod_Duration`'s `sync_On_Marker`/`singScript`/`singing` branches
-  (`BackEnd.c:1938-2029`, further duration adjustment against a
-  sample-marker table or note-timing script) are not ported — a narrow
-  gap that only matters for text-driven synthesis on note-singing voices
-  (GoodNews/BadNews/PipeOrgan/Cellos/Bells/Hysterical), not plain text on
-  any voice.
-
-  Primary/secondary stress placement is gated on POS tagging
-  (`opTok->POSchoice`, `BackEnd.c:3970-3980`). For dictionary hits,
-  `lintalker/_lexicon.py:lookup(word)` provides real POS codes
-  (`None` return means fall back to `_engtop.engtop()`, the same signal
-  `FrontEnd.c:2039` uses). For rule-fallback words (no dictionary entry),
-  `FrontEnd.c:1650` calls `SetPOStoVal(t, kNoun)` right after `EngToP()`,
-  then refines via `SetPOS_FromSuffix` (`Morph.c:1027`, a suffix heuristic,
-  not ported) — `lintalker/_assembly.py` applies the `kNoun` default (this
-  was confirmed, and an earlier `kUndefPOS` assumption corrected, against a
-  real C oracle — see "Correctness verification"). Compound-noun detection
-  (`vv->is_Compound_Noun`, `_Comp_` opcode) is populated only from the
-  dictionary decode (`FrontEnd.c:1495-1496`, `1549-1550`); `_lexicon.py`'s
-  `LexEntry.phon_str`/`phon_hold` carry raw opcodes that still need
-  `Fill_Phon_Buf_2`'s own translation step (compound/word marker decoding),
-  not a shortcut through `LexEntry.is_compound`.
-- `Morph.c` (prefix/suffix stripping, compound-word handling) not ported.
-- The FrontEnd backtick-escape command parser (`EmbeddedCmd.c`) is not
-  ported, so nothing currently populates `CMDQueue` outside of tests —
-  `DoCtrl` itself (`_embeddedcmd.py`) is ported and exercised directly by
-  `test/test_embeddedcmd.py`.
-- `Collect_FE_Tokens` (`BackEnd.c:3712-4157`), including `Flag_PhonBuf_1`
-  (`BackEnd.c:3481-3519`, called from *inside* `Collect_FE_Tokens` — not a
-  separate later stage) and its helpers `MarkSyllable`/`MarkSyllableStart`/
-  `MarkBoundry`/`If_Consonant_Cluster`/`Find_Next_Word_Bound`, is ported
-  in `lintalker/_assembly.py` (adapted to consume `_frontend.tokenize()` +
-  `_lexicon.lookup()` instead of the unported `FrontEnd.c`/`Morph.c` token
-  stream), verified bit-exact against a real C oracle for four sentences
-  spanning both dictionary hits and rule-fallback words
-  (`test/test_assembly.py`'s `test_oracle_*` tests — see "Correctness
-  verification"). The one residual, documented gap: a non-punctuation
-  phrase-boundary trigger on certain dictionary-tagged words (e.g. "ONE")
-  isn't modeled, since `_frontend.py` only detects trailing `. , ! ?`.
-  (`Place_Stress_In_Consonant` is dead code in the C reference itself —
-  its call site is commented out at `BackEnd.c:3510` — so it does not need
-  porting.) `_assembly.py`'s output (`SentenceAssembly.phon_buf`/`ctrl_buf`)
-  is the direct input `Fill_Phon_Buf_2` needs next.
-- Bells/Hysterical (`kUseSyncSnd` voices) show a few residual `marker`
-  field mismatches in `test/test_voices.py`: their marker buffer is
-  populated from an external sample-audio file header in the C reference
-  (`InsertSample`, `Say.c`) that isn't part of this port.
-- 16-bit wraparound truncation inside the `say_frame` hot loop is not
-  exhaustively verified against extreme/out-of-range voice parameters.
+`test/test_pipeline.py` and `test/compare_all.py` are older smoke tests
+over hand-captured reference constants; they don't do differential
+testing against a live C run and won't catch a regression that stays in a
+plausible numeric range.

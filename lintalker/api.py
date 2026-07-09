@@ -1,14 +1,10 @@
-"""Public phoneme-level synthesis API.
-
-This is the layer that is actually working today: given an already-built
-phoneme plan (phoneme ids, control words, durations, and an optional pitch
-contour) plus a voice definition dict, it drives the ported formant
-synthesizer (:mod:`lintalker._backend`) and returns 16-bit PCM audio.
-
-There is no English text-to-phoneme frontend yet (that requires porting
-Morph.c/FrontEnd.c/EngToP.c and the english_lex dictionary from the C
-reference) — see the package README for status. Until that lands, callers
-must supply phoneme plans themselves.
+"""Public synthesis API: phoneme-plan-level (`synthesize_phonemes`,
+verified bit-exact against the C reference) and text-level
+(`synthesize_text`, built on `_frontend`/`_assembly`/`_phonbuf2`/
+`_pitchcontour`/`_moduration` -- see docs/architecture.md for exactly
+which stages are ported and which residual gaps remain, e.g. no
+`Morph.c`/dictionary-driven compound-noun translation, no non-punctuation
+phrase-boundary detection, no embedded commands).
 """
 from __future__ import annotations
 
@@ -102,3 +98,51 @@ def pcm_to_wav(pcm: bytes, path: str, sample_rate: int = SamplingRate) -> str:
         w.setframerate(sample_rate)
         w.writeframes(pcm)
     return path
+
+
+def build_phoneme_plan(voice_dict: dict, text: str):
+    """Build a `(phonemes, ctrls, durs, pitch_freq, pitch_time, pitch_flags)`
+    plan from English text, matching `ParseSentence`'s real pipeline order:
+    `Collect_FE_Tokens -> Fill_Phon_Buf_2 -> Pitch_RaiseAndFall ->
+    Mod_Duration -> synth_AdjustPhons2(Insert_Closure_Release) ->
+    Calc_Ramp_Steps -> Fill_Pitch_Buf`.
+
+    Verified bit-exact against the C reference for plain single-sentence
+    text on dictionary and rule-fallback words alike (see
+    `test/test_assembly_pipeline.py`, `test/test_pitchbuf.py`). Known gaps
+    (see docs/architecture.md "Known gaps"): no `Morph.c` compound-noun/
+    dictionary-decode translation, no non-punctuation phrase-boundary
+    detection (e.g. a narrow `kBND_Sep6` gap on certain dictionary-tagged
+    words), no embedded commands, no multi-sentence input (the whole
+    string is treated as one sentence).
+    """
+    from ._assembly import collect_fe_tokens
+    from ._phonbuf2 import fill_phon_buf_2, insert_closure_release
+    from ._pitchcontour import pitch_raise_and_fall
+    from ._moduration import mod_duration
+    from ._pitchbuf import fill_pitch_buf
+
+    sa = collect_fe_tokens(text)
+    vv = new_voice(voice_dict)
+    fill_phon_buf_2(vv, sa)
+    vv.end_Punctuation = sa.end_punctuation
+    pitch_raise_and_fall(vv)
+    mod_duration(vv)
+    insert_closure_release(vv)
+    calc_ramp_steps(vv)
+    fill_pitch_buf(vv)
+
+    n = vv.phonBuf_2_In_Index
+    pn = vv.pitchBuf_In_Index
+    return (
+        vv.phon_Buf_2[:n], vv.phon_Ctrl_Buf_2[:n], vv.dur_Buf[:n],
+        vv.pitch_Buf_Freq[:pn], vv.pitch_Buf_Time[:pn], vv.pitch_Buf_Flags[:pn],
+    )
+
+
+def synthesize_text(voice_dict: dict, text: str) -> bytes:
+    """Synthesize English text into raw 16-bit PCM audio. See
+    `build_phoneme_plan` for the pipeline this composes and its known
+    gaps."""
+    phonemes, ctrls, durs, pitch_freq, pitch_time, pitch_flags = build_phoneme_plan(voice_dict, text)
+    return synthesize_phonemes(voice_dict, phonemes, ctrls, durs, pitch_freq, pitch_time, pitch_flags)
