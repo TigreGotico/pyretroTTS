@@ -31,17 +31,20 @@ counterpart is checked out locally as `lintalker-c`).
 | Morphology (prefix/suffix stripping, compounds) | `Morph.c` | Not ported |
 
 **What this means today:** `lintalker.api.synthesize_text(voice_dict, text)`
-synthesizes plain English text end-to-end, verified frame-for-frame
-bit-exact against the real C engine (`test/test_synthesize_text.py`) for
-plain single-sentence text on both dictionary words and rule-fallback
-words, across multiple voices. Known gaps (see `docs/architecture.md`):
-no `Morph.c` (compound words, prefix/suffix stripping), no
+synthesizes English text end-to-end, verified frame-for-frame bit-exact
+against the real C engine (`test/test_synthesize_text.py`) for plain
+single-sentence text on both dictionary words and rule-fallback words,
+across multiple voices. Multi-sentence text is also handled (split on
+`. ! ?` and synthesized sentence-by-sentence), but that's a documented
+approximation, not bit-exact — see `docs/architecture.md` for exactly
+what it doesn't preserve (cross-sentence prosody continuity). Other
+known gaps: no `Morph.c` (compound words, prefix/suffix stripping), no
 non-punctuation phrase-boundary detection or number/abbreviation
-expansion, no embedded commands, single-sentence input only. You can
-still synthesize from an already-built phoneme plan directly via
-`lintalker.api.synthesize_phonemes()`, and there's a lower-level
-`lintalker._engtop.engtop()` (single word) and `lintalker._frontend`
-(tokenization only) if you need to build a custom pipeline.
+expansion, no embedded commands. You can still synthesize from an
+already-built phoneme plan directly via `lintalker.api.synthesize_phonemes()`,
+and there's a lower-level `lintalker._engtop.engtop()` (single word) and
+`lintalker._frontend` (tokenization only) if you need to build a custom
+pipeline.
 
 ## Install
 

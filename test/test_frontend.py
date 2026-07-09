@@ -1,23 +1,18 @@
 """Tests for the (partial) FrontEnd.c port in lintalker/_frontend.py.
 
-Scope note: this only tests tokenization + per-word rule-based
-letter-to-sound (engtop), NOT a full phoneme plan -- see _frontend.py's
-module docstring for why the ctrl/dur assembly stage is not implemented
-yet. There is currently no way to diff this against the C test_harness at
-matching granularity: test_harness only prints frame-level F/P dump lines
-(see lintalker-c/bin/Debug, invoked as `test_harness -v 0 "text"`), it does
-not expose a token/word/phoneme-string dump to stdout. Bit-exact validation
-of this module against the C reference is therefore deferred until
-Fill_Phon_Buf_2 (or an equivalent) is ported and can be driven end-to-end
-through api.synthesize_phonemes for frame-level comparison, the same way
-test/test_voices.py does for the backend today.
+These tests cover tokenization + per-word rule-based letter-to-sound
+(engtop) in isolation. The full pipeline built on top of `tokenize()`
+(`_assembly`/`_phonbuf2`/`_pitchcontour`/`_moduration`/`_pitchbuf`) is
+validated frame-for-frame against the C reference in
+test/test_synthesize_text.py -- see that file and docs/architecture.md
+for the end-to-end bit-exactness story.
 """
 import os
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from lintalker._frontend import tokenize, words_to_phonemes
+from lintalker._frontend import tokenize, words_to_phonemes, split_sentences
 from lintalker._phonemes import _Period_, _Comma_, _Quest_, _Exclam_, _Word_
 
 
@@ -60,6 +55,29 @@ def test_words_to_phonemes_multi_word_has_two_word_markers():
 def test_words_to_phonemes_question_mark():
     phon = words_to_phonemes("who?")
     assert phon[-1] == _Quest_
+
+
+def test_split_sentences_basic():
+    assert split_sentences("Hello there. How are you? Goodbye now!") == [
+        "Hello there.", "How are you?", "Goodbye now!",
+    ]
+
+
+def test_split_sentences_no_terminal_punctuation():
+    assert split_sentences("no punctuation at all") == ["no punctuation at all"]
+
+
+def test_split_sentences_empty():
+    assert split_sentences("") == []
+
+
+def test_split_sentences_single():
+    assert split_sentences("One sentence.") == ["One sentence."]
+
+
+def test_split_sentences_drops_comma_as_boundary():
+    # comma is not a sentence terminator
+    assert split_sentences("Well, hello there.") == ["Well, hello there."]
 
 
 if __name__ == '__main__':

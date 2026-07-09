@@ -113,8 +113,10 @@ def build_phoneme_plan(voice_dict: dict, text: str):
     (see docs/architecture.md "Known gaps"): no `Morph.c` compound-noun/
     dictionary-decode translation, no non-punctuation phrase-boundary
     detection (e.g. a narrow `kBND_Sep6` gap on certain dictionary-tagged
-    words), no embedded commands, no multi-sentence input (the whole
-    string is treated as one sentence).
+    words), no embedded commands. `text` is treated as ONE sentence --
+    for multi-sentence input, use `synthesize_text()`, which splits on
+    sentence-terminal punctuation and calls this once per sentence (see
+    its docstring for what that approximates and doesn't).
     """
     from ._assembly import collect_fe_tokens
     from ._phonbuf2 import fill_phon_buf_2, insert_closure_release
@@ -141,8 +143,39 @@ def build_phoneme_plan(voice_dict: dict, text: str):
 
 
 def synthesize_text(voice_dict: dict, text: str) -> bytes:
-    """Synthesize English text into raw 16-bit PCM audio. See
-    `build_phoneme_plan` for the pipeline this composes and its known
-    gaps."""
-    phonemes, ctrls, durs, pitch_freq, pitch_time, pitch_flags = build_phoneme_plan(voice_dict, text)
-    return synthesize_phonemes(voice_dict, phonemes, ctrls, durs, pitch_freq, pitch_time, pitch_flags)
+    """Synthesize English text (one or more sentences) into raw 16-bit PCM
+    audio. See `build_phoneme_plan` for the single-sentence pipeline this
+    composes, and its known gaps.
+
+    Multi-sentence input is split on sentence-terminal punctuation
+    (`_frontend.split_sentences`) and each sentence is synthesized
+    independently (a fresh `VoiceVar`/baseline pitch per sentence) via
+    `build_phoneme_plan` + `synthesize_phonemes`, then the PCM is
+    concatenated. This is a documented approximation, not a port of the
+    real engine's multi-sentence handling: the C reference keeps one
+    `Talk()` session alive across sentence boundaries within a single
+    `_SpeakBuffer` call (baseline pitch and compound-noun state persist
+    from one sentence to the next; `Collect_FE_Tokens`/`ParseSentence`
+    are simply called again, mid-playback, once the current sentence's
+    phoneme buffer is exhausted -- confirmed by inspection: feeding
+    multi-sentence text to the real `test_harness` CLI only ever dumps one
+    sentence's worth of `phon_Buf_2` at a time, i.e. the real engine also
+    processes one sentence's plan at a time, just within one continuous
+    frame loop rather than independently-reset `VoiceVar`s). This port's
+    approximation will sound like a sequence of independently-intoned
+    sentences rather than one continuous utterance with cross-sentence
+    prosody -- it has not been validated against the C reference at the
+    frame level for multi-sentence input the way single-sentence text is
+    (`test/test_synthesize_text.py`).
+    """
+    from ._frontend import split_sentences
+
+    sentences = split_sentences(text)
+    if not sentences:
+        sentences = [text]
+
+    pcm_chunks = []
+    for sentence in sentences:
+        phonemes, ctrls, durs, pitch_freq, pitch_time, pitch_flags = build_phoneme_plan(voice_dict, sentence)
+        pcm_chunks.append(synthesize_phonemes(voice_dict, phonemes, ctrls, durs, pitch_freq, pitch_time, pitch_flags))
+    return b"".join(pcm_chunks)

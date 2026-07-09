@@ -57,12 +57,39 @@ Verified frame-for-frame bit-exact against the real C engine
 (`test/test_synthesize_text.py`) for plain single-sentence text spanning
 both dictionary words and rule-fallback words, across multiple voices.
 
+`api.synthesize_text(voice_dict, text)` additionally handles
+multi-sentence input: `_frontend.split_sentences()` splits on
+sentence-terminal punctuation (`. ! ?`, not `,`), and each sentence is run
+through the pipeline above independently (a fresh `VoiceVar`/baseline
+pitch per sentence), concatenating the resulting PCM. This is a
+**documented approximation, not a bit-exact port** of the real engine's
+multi-sentence handling: the C reference keeps one `Talk()` session alive
+across sentence boundaries within a single `_SpeakBuffer` call (baseline
+pitch and compound-noun state persist sentence-to-sentence;
+`Collect_FE_Tokens`/`ParseSentence` are simply invoked again, mid-playback,
+once the current sentence's phoneme buffer is exhausted — confirmed by
+inspection: feeding multi-sentence text to the real `test_harness` CLI
+only ever dumps one sentence's worth of `phon_Buf_2` at a time, i.e. the
+real engine also processes one sentence's plan at a time, just within one
+continuous frame loop rather than independently-reset `VoiceVar`s per
+sentence). This port's approximation has not been validated against the
+C reference at the frame level for multi-sentence input the way
+single-sentence text is.
+
 ## Known gaps
 
+- Multi-sentence synthesis (see above) uses an independently-reset
+  `VoiceVar` per sentence rather than the real engine's single continuous
+  session — not validated frame-for-frame against the C reference.
 - No `Morph.c` (prefix/suffix stripping, compound-word handling) — words
   are looked up in `english_lex` as-is or fall through to letter-to-sound
   rules; morphological variants of dictionary words (e.g. an inflected
-  form not itself in the dictionary) aren't decomposed.
+  form not itself in the dictionary) aren't decomposed. This is also
+  why the `kBND_Sep6` phrase-boundary gap below can't be closed without
+  a real `Set_POS` (`Morph.c:830-991`) port: that gap is gated on POS
+  disambiguation between multiple candidate tags (e.g. "ONE" as `kAdj` vs.
+  `kQuant`), which the placeholder `pos_code1[0]` selection in
+  `_assembly.py` doesn't perform.
 - `_frontend.py` only detects phrase boundaries from trailing
   `. , ! ?` — the real engine also raises boundaries around certain
   dictionary-tagged words (e.g. quantifiers like "ONE") via
