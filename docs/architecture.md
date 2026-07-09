@@ -53,29 +53,33 @@ plausible numeric range.
   `_engtop.engtop()`, but there is no bridge from that per-word phoneme
   opcode list to the `(phonemes, ctrls, durs)` shape
   `api.synthesize_phonemes` consumes. `api.synthesize_text()` does not
-  exist yet. In the C reference, `Collect_FE_Tokens` (`BackEnd.c:3712-4165`)
-  builds the richer per-word token that `Fill_Phon_Buf_2`
-  (`BackEnd.c:2469-2846`) actually consumes, and depends on several
-  unported prerequisites:
-  - POS tagging (`opTok->POSchoice`, `BackEnd.c:3956-3963`) — gates
-    content-word stress classification.
-  - Emphasis markup parsing (`opTok->tokEmphasis`, `BackEnd.c:3966-3969`,
-    `4111-4125`).
-  - Phrase-boundary detection beyond trailing `. , ! ?`
-    (`opTok->add_BND`/`phrasingBND`, `BackEnd.c:3809-3818`).
-  - Compound-noun detection (`vv->is_Compound_Noun`, `_Comp_` opcode,
-    `BackEnd.c:3697-3699`, `3855`) — dictionary-driven.
-  - Alternate-pronunciation selection (`opTok->hasAlt`/`altChoice`,
-    `BackEnd.c:3789-3796`) — dictionary-driven.
-  - `Flag_PhonBuf_1` (referenced at `BackEnd.c:4157`, definition not yet
-    located) — a whole-buffer postprocessing pass setting syllable/word-end
-    control bits that `Fill_Phon_Buf_2`'s R-coloring, glottal, and t-flap
-    rules branch on (`BackEnd.c:2650`, `2685`, `2757`).
-  `MarkSyllable`/`MarkSyllableStart` (`BackEnd.c:3191`/`3379`),
-  `Place_Stress_In_Consonant` (`BackEnd.c:3300`), `Mod_Duration`
-  (`BackEnd.c:1362`), and `Pitch_RaiseAndFall` (`BackEnd.c:2127`, duplicated
-  at `2303`) are the remaining synthesis-plan assembly functions to port
-  once the above are in place.
+  exist yet.
+
+  `Fill_Phon_Buf_2` (`BackEnd.c:2469-2846`) plus `Flag_PhonBuf_1`
+  (`BackEnd.c:3481-3519`), `MarkSyllable`/`MarkSyllableStart`
+  (`BackEnd.c:3191`/`3379`), `Place_Stress_In_Consonant` (`BackEnd.c:3300`),
+  `Mod_Duration` (`BackEnd.c:1362`), and `Pitch_RaiseAndFall`
+  (`BackEnd.c:2127`, duplicated at `2303`) are the assembly functions that
+  turn a richer per-word token into that plan, driven by `Collect_FE_Tokens`
+  (`BackEnd.c:3712-4165`). Emphasis markup and phrase-boundary detection
+  beyond trailing `. , ! ?` degrade safely to their defaults for plain,
+  unmarked text and don't block a first port.
+
+  Primary/secondary stress placement, however, is gated on POS tagging
+  (`opTok->POSchoice`, set only by `Morph.c`'s `Set_POS`,
+  `Morph.c:830-991`, from `POScode1`/`POScode2` fields that are populated
+  only by the `english_lex` dictionary decode in `FrontEnd.c` (~1440-1580)).
+  Left at its `kUndefPOS` default (`FrontEnd.c:1917-1964`), every word is
+  treated as a non-content word, which permanently demotes every
+  `_Stress1_` opcode to secondary stress (`BackEnd.c:3869-3877`,
+  `3970-3980`) — this corrupts stress/duration/pitch-prominence for
+  ordinary content words, not just an edge case. Compound-noun detection
+  (`vv->is_Compound_Noun`, `_Comp_` opcode) is populated the same way, only
+  from the dictionary decode (`FrontEnd.c:1495-1496`, `1549-1550`).
+  Porting `Fill_Phon_Buf_2` correctly therefore needs the `english_lex`
+  dictionary (or a documented, measured approximation such as treating
+  every word as a content word) before it — see the dictionary-lookup gap
+  below.
 - No pronunciation-exception dictionary lookup (`english_lex` not ported)
   — words fall through to letter-to-sound rules only.
 - `Morph.c` (prefix/suffix stripping, compound-word handling) not ported.
