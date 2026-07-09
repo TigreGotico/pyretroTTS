@@ -26,6 +26,11 @@ def mDiv(x: int, y: int, s: int = kPrecision) -> int:
 def mScale(x: int, s: int = kPrecision) -> int:
     return x << s
 
+def s16(x: int) -> int:
+    """Truncate to a signed 16-bit (C `short`) value, matching C wraparound."""
+    x &= 0xFFFF
+    return x - 0x10000 if x >= 0x8000 else x
+
 def mUnScale(x: int, s: int = kPrecision) -> int:
     return x >> s
 
@@ -353,6 +358,8 @@ class VoiceVar:
         self.VP_pitchRange = 0
         self.voiceNaturalPitch = 0
         self.VP_baselinePitch = 0
+        self.last_baseline = 0
+        self.portamento = 1
         self.VP_stressGain = 0
         self.VP_assertiveness = 0
         self.VP_baselineFall = 0
@@ -1295,6 +1302,29 @@ def init_voice(vv: VoiceVar, vd: dict):
     vv.vibratoFreq = (((vib_freq << 16) // 10) * 256) // 200
     vv.vibratoDepth1 = (vd.get('vibratoDepth1', 0) << 16) // 1000
     vv.vibratoDepth2 = (vd.get('vibratoDepth2', 0) << 16) // 1000
+
+    # Portamento step divisor (Say.c:1465-1467)
+    vv.portamento = vd.get('portamento', 0) // kFrameTime
+    if vv.portamento == 0:
+        vv.portamento = 1
+
+    # Notes / singing (embedded note script; ResetVoice numOfNotes check)
+    notes = vd.get('notes', None)
+    if notes:
+        vv.numOfNotes = notes[0]
+        if vv.numOfNotes >= kMaxNotes:
+            vv.numOfNotes = 1  # too many notes, don't sing
+        for i in range(vv.numOfNotes):
+            vv.notesBuf[i] = notes[i + 1]
+    else:
+        vv.numOfNotes = 0
+    vv.songIndex = 0
+    if vv.numOfNotes > 1:
+        vv.singScript = True
+        vv.singing = True
+    else:
+        vv.singScript = False
+        vv.singing = False
 
 
 def _inv_dft(zz: FormantVar, vWave: list, vWave1: Optional[list] = None,
@@ -2675,6 +2705,36 @@ def synth_start_talk(vv: VoiceVar):
 # StartNewPhon (BackEnd.c:747)
 # ---------------------------------------------------------------------------
 
+def do_note(vv: VoiceVar):
+    """BackEnd.c DoNote — embedded pitch (non-scripted note) handling."""
+    note = vv.user_Note_Buf2[vv.cur_PhonBuf_Index_CF] if hasattr(vv, 'user_Note_Buf2') else 0
+    if note != 0 and not (vv.phon_Ctrl_Buf_2[vv.cur_PhonBuf_Index_CF] & kSilenceDuration):
+        note = s16((note & 0xFF) << 8)
+        if note != 0x7F00:
+            vv.VP_baselinePitch = vv.voiceNaturalPitch + ((note * 0x1555) >> 16)
+            if vv.VP_baselinePitch < 0:
+                vv.VP_baselinePitch = 0
+
+
+def do_note_script(vv: VoiceVar):
+    """BackEnd.c DoNoteScript — advances the embedded note/song script."""
+    if (e_get_phon_ctrl(vv, vv.cur_PhonBuf_Index_CF) & kSyllable_Start) and \
+       not (vv.phon_Ctrl_Buf_2[vv.cur_PhonBuf_Index_CF] & kSilenceDuration):
+        note = s16((vv.notesBuf[vv.songIndex] & 0xFF) << 8)
+        vv.songIndex += 1
+        if vv.songIndex >= vv.numOfNotes:
+            vv.songIndex = 0
+        if note != 0x7F00:
+            vv.last_baseline = vv.VP_baselinePitch
+            vv.VP_baselinePitch = vv.voiceNaturalPitch + ((note * 0x1555) >> 16)
+            if vv.VP_baselinePitch < 0:
+                vv.VP_baselinePitch = 0
+            level = (vv.VP_baselinePitch - vv.last_baseline) << 16
+            # C integer division truncates toward zero
+            vv.portamentoStep = int(level / vv.portamento)
+            vv.newPortaTarget = True
+
+
 def start_new_phon(vv: VoiceVar):
     if e_get_phon_ctrl(vv, vv.cur_PhonBuf_Index_CF) & kWord_Start:
         vv.nLastWordStart = vv.lastWordStart
@@ -2717,7 +2777,21 @@ def start_new_phon(vv: VoiceVar):
         vv.songIndex_Save1 = vv.songIndex
         vv.VP_baselinePitch_Save1 = vv.VP_baselinePitch
 
-    # DoCtrl / DoNote — stubs for now
+    # DoCtrl — embedded control commands (not exercised by current voice set,
+    # remains a stub for now)
+    vv.ctrlCount = vv.user_Cmd_Buf2[vv.cur_PhonBuf_Index_CF]
+
+    if vv.sync_On_Marker:
+        if vv.phon_Ctrl_Buf_2[vv.cur_PhonBuf_Index_CF] & kSampleMarker:
+            vv.frameMarker = vv.markerBuf[vv.markerIndex]
+            vv.markerIndex += 1
+            if vv.markerIndex == vv.lastMarkerIndex:
+                vv.markerIndex = 0
+    elif vv.singScript:
+        do_note_script(vv)
+    else:
+        do_note(vv)
+
     vv.dur_Done_in_Phon_CF = 0
     vv.cur_Phon_Dur_CF = vv.dur_Buf[vv.cur_PhonBuf_Index_CF]
 
