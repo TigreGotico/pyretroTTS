@@ -205,7 +205,6 @@ def test_no_words_produces_empty_assembly():
 # with `bin/Debug/test_harness -v 0 "<text>"` against a real compiled
 # lintalker-c. The instrumentation was reverted after capture --
 # lintalker-c is not modified by this repo.
-_SYLLABLE_MASK = ~(0x10000000 | 0x0300 | 0x0F)  # kSyllable_Start | kSyllableOrderField | kSyllableTypeField
 
 _ORACLE_HELLO_PHON = [23, 32, 2, 31, 14, 23]
 _ORACLE_HELLO_CTRL = [1, 268509312, 256, 268435456, 1801, 2621440]
@@ -215,26 +214,49 @@ _ORACLE_TOTT_CTRL = [1, 268509312, 1280, 268435456, 0, 2817, 1, 281084032, 2049,
 
 
 def test_oracle_hello():
+    """Bit-exact against the real C engine, including syllable-marking
+    bits (Flag_PhonBuf_1/MarkSyllable/MarkSyllableStart, ported)."""
     sa = collect_fe_tokens("hello")
     assert sa.phon_buf == _ORACLE_HELLO_PHON
-    masked_c = [c & _SYLLABLE_MASK for c in _ORACLE_HELLO_CTRL]
-    assert sa.ctrl_buf == masked_c
+    assert sa.ctrl_buf == _ORACLE_HELLO_CTRL
 
 
 def test_oracle_testing_one_two_three():
-    """The one known, documented residual gap: index 7 (the word "ONE",
-    dictionary-tagged kAdj) carries an extra kBND_Sep6 phrase-boundary
-    marker (0xc00000, i.e. (kBND_Sep6=12) << kSilenceTypeShift) in the C
-    reference that this port doesn't produce -- add_BND/phrasingBND for
-    non-punctuation-triggered boundaries (e.g. around certain quantifier/
-    numeral words) isn't modeled (see docs/architecture.md). Masked out
-    here in addition to the syllable bits, since it's a separate,
-    independently-documented gap, not a syllable-marking one."""
+    """Bit-exact except index 7 (the word "ONE", dictionary-tagged kAdj),
+    which carries an extra kBND_Sep6 phrase-boundary marker (0xc00000,
+    i.e. (kBND_Sep6=12) << kSilenceTypeShift) in the C reference that this
+    port doesn't produce -- add_BND/phrasingBND for non-punctuation-
+    triggered boundaries (e.g. around certain quantifier/numeral words)
+    isn't modeled (see docs/architecture.md). This is the one documented,
+    narrow residual gap; masked out here since it's independent of
+    syllable marking."""
     sa = collect_fe_tokens("testing one two three")
     assert sa.phon_buf == _ORACLE_TOTT_PHON
     extra_bnd_mask = ~0xC00000
-    masked_c = [(c & _SYLLABLE_MASK) & extra_bnd_mask for c in _ORACLE_TOTT_CTRL]
+    masked_c = [c & extra_bnd_mask for c in _ORACLE_TOTT_CTRL]
     assert sa.ctrl_buf == masked_c
+
+
+_ORACLE_IAM_PHON = [23, 11, 3, 33, 23]
+_ORACLE_IAM_CTRL = [1, 268500993, 268502025, 9, 2621440]
+
+_ORACLE_GOODBYE_PHON = [23, 49, 7, 47, 45, 11, 23]
+_ORACLE_GOODBYE_CTRL = [1, 268509312, 256, 0, 268435456, 1801, 2621440]
+
+
+def test_oracle_i_am():
+    """Bit-exact against the real C engine (voice 0/Fred)."""
+    sa = collect_fe_tokens("I am.")
+    assert sa.phon_buf == _ORACLE_IAM_PHON
+    assert sa.ctrl_buf == _ORACLE_IAM_CTRL
+
+
+def test_oracle_goodbye():
+    """Bit-exact against the real C engine (a rule-fallback word --
+    GOODBYE is not in the dictionary, per test_lexicon.py)."""
+    sa = collect_fe_tokens("goodbye")
+    assert sa.phon_buf == _ORACLE_GOODBYE_PHON
+    assert sa.ctrl_buf == _ORACLE_GOODBYE_CTRL
 
 
 if __name__ == "__main__":

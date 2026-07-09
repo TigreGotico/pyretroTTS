@@ -10,7 +10,7 @@
 | `Say.c`, `formantSynth.c`, `BackEnd.c` | `lintalker/_backend.py` | Frame-by-frame formant synthesis: `say_frame`, `e_fill_next_frame`, `head_rules`/`tail_rules`, ramp/pitch handling, `do_note`/`do_note_script` (embedded note-driven pitch) |
 | `EngToP.c` | `lintalker/_engtop.py` | English word -> phoneme dispatch via letter-to-sound rules. Operates on a single pre-isolated, already-uppercased word (see `test/test_engtop.py`). |
 | `FrontEnd.c` (tokenizer + per-word dispatch only) | `lintalker/_frontend.py` | Splits text into words + end-of-word punctuation, calls `_engtop.engtop()` per word. |
-| `BackEnd.c` (`Collect_FE_Tokens`, adapted for the unported `FrontEnd.c`/`Morph.c` token stream) | `lintalker/_assembly.py` | Sentence-level stress/word/punctuation bookkeeping, verified against a real C oracle for two sentences (`test/test_assembly.py`). Does not yet assemble a full `(phonemes, ctrls, durs)` plan — needs `Fill_Phon_Buf_2` and `Flag_PhonBuf_1` (syllable marking) — see "Known gaps". |
+| `BackEnd.c` (`Collect_FE_Tokens` + `Flag_PhonBuf_1`/`MarkSyllable`/`MarkSyllableStart`/`MarkBoundry`, adapted for the unported `FrontEnd.c`/`Morph.c` token stream) | `lintalker/_assembly.py` | Sentence-level stress/word/punctuation/syllable bookkeeping, verified bit-exact against a real C oracle for four sentences (`test/test_assembly.py`). Does not yet assemble a full `(phonemes, ctrls, durs)` plan — needs `Fill_Phon_Buf_2` — see "Known gaps". |
 | `Engine.c` | `lintalker/_engine.py` | Top-level init/speak/reset/rate/pitch/volume API, built on `_backend.py`. `e_speak_buffer` (the text-in entry point) and a few fsynth-dependent setters (`e_reset_params`, `e_use_voice`, `e_reinit_voice`) raise `NotImplementedError` naming the specific unported upstream C function they need. |
 | `BackEnd.c` (`DoCtrl`, the per-phoneme `CMDQueue` dispatcher: absolute/relative pitch, volume, mod) | `lintalker/_embeddedcmd.py` | Ported (see `test/test_embeddedcmd.py`); `C_reset`/`C_voice` are unimplemented/no-op the same way upstream leaves them, pending `ResetVoice`/`NewVoice` |
 | `EmbeddedCmd.c` (the FrontEnd backtick-escape text parser, e.g. `` `p200` ``, a distinct mechanism from `DoCtrl` above — it sets `PendingCommands` bits that `FrontEnd.c` later turns into `CMDQueue` entries via `QueueCommand`) | not ported | Depends on the unported `FrontEnd.c` tokenizer |
@@ -48,15 +48,15 @@ hand-captured reference constants; they don't do differential testing
 against a live C run and won't catch a regression that stays in a
 plausible numeric range.
 
-`test/test_assembly.py`'s `test_oracle_hello`/`test_oracle_testing_one_two_three`
-validate `_assembly.py`'s `Collect_FE_Tokens` port against
-`phon_Buf_1`/`phon_Ctrl_Buf_1` values captured from a throwaway
-instrumented build of `Talk()` (`BackEnd.c`) — that stage has no dump in
-the standard `test_harness`, which only exposes `phon_Buf_2`/
-`phon_Ctrl_Buf_2` (state after `Fill_Phon_Buf_2` runs). The instrumentation
-is not part of this repo or `lintalker-c`; to re-capture, add a temporary
-`fprintf` dump of those arrays right after the `Collect_FE_Tokens` loop in
-`Talk()` (`BackEnd.c`, immediately before `if (wordCount)`), rebuild, run
+`test/test_assembly.py`'s `test_oracle_*` tests validate `_assembly.py`'s
+`Collect_FE_Tokens`/`Flag_PhonBuf_1` port against `phon_Buf_1`/
+`phon_Ctrl_Buf_1` values captured from a throwaway instrumented build of
+`Talk()` (`BackEnd.c`) — that stage has no dump in the standard
+`test_harness`, which only exposes `phon_Buf_2`/`phon_Ctrl_Buf_2` (state
+after `Fill_Phon_Buf_2` runs). The instrumentation is not part of this
+repo or `lintalker-c`; to re-capture, add a temporary `fprintf` dump of
+those arrays right after the `Collect_FE_Tokens` loop in `Talk()`
+(`BackEnd.c`, immediately before `if (wordCount)`), rebuild, run
 `test_harness`, then revert the C source and rebuild again before
 finishing — `lintalker-c` must stay clean.
 
@@ -68,15 +68,14 @@ finishing — `lintalker-c` must stay clean.
   `api.synthesize_phonemes` consumes. `api.synthesize_text()` does not
   exist yet.
 
-  `Fill_Phon_Buf_2` (`BackEnd.c:2469-2846`) plus `Flag_PhonBuf_1`
-  (`BackEnd.c:3481-3519`), `MarkSyllable`/`MarkSyllableStart`
-  (`BackEnd.c:3191`/`3379`), `Place_Stress_In_Consonant` (`BackEnd.c:3300`),
-  `Mod_Duration` (`BackEnd.c:1362`), and `Pitch_RaiseAndFall`
-  (`BackEnd.c:2127`, duplicated at `2303`) are the assembly functions that
-  turn a richer per-word token into that plan, driven by `Collect_FE_Tokens`
-  (`BackEnd.c:3712-4165`). Emphasis markup and phrase-boundary detection
-  beyond trailing `. , ! ?` degrade safely to their defaults for plain,
-  unmarked text and don't block a first port.
+  `Fill_Phon_Buf_2` (`BackEnd.c:2469-2846`), `Mod_Duration`
+  (`BackEnd.c:1362`), and `Pitch_RaiseAndFall` (`BackEnd.c:2127`,
+  duplicated at `2303`) are the remaining assembly functions that turn
+  `_assembly.py`'s output into that plan. `Collect_FE_Tokens`
+  (`BackEnd.c:3712-4165`), including `Flag_PhonBuf_1`/`MarkSyllable`/
+  `MarkSyllableStart`, is fully ported — see below. Emphasis markup and
+  phrase-boundary detection beyond trailing `. , ! ?` degrade safely to
+  their defaults for plain, unmarked text and don't block this.
 
   Primary/secondary stress placement is gated on POS tagging
   (`opTok->POSchoice`, `BackEnd.c:3970-3980`). For dictionary hits,
@@ -98,23 +97,22 @@ finishing — `lintalker-c` must stay clean.
   ported, so nothing currently populates `CMDQueue` outside of tests —
   `DoCtrl` itself (`_embeddedcmd.py`) is ported and exercised directly by
   `test/test_embeddedcmd.py`.
-- `Collect_FE_Tokens` (`BackEnd.c:3712-4157`) is ported (adapted to consume
-  `_frontend.tokenize()` + `_lexicon.lookup()` instead of the unported
-  `FrontEnd.c`/`Morph.c` token stream) in `lintalker/_assembly.py`
-  (`collect_fe_tokens`/`make_fe_word_token`), verified against a real C
-  oracle for two sentences (`test/test_assembly.py`'s `test_oracle_*`
-  tests — see "Correctness verification"). The one residual, documented
-  gap: non-punctuation phrase-boundary triggers (e.g. around certain
-  quantifier/numeral words) aren't modeled, since `_frontend.py` only
-  detects trailing `. , ! ?`.
-  `Flag_PhonBuf_1` (`BackEnd.c:3481-3519`, called from *inside*
-  `Collect_FE_Tokens` — not a separate later stage) is not yet ported:
-  its `MarkSyllable`/`MarkSyllableStart` set syllable-boundary control bits
-  (`kSyllable_Start`, `kSyllableOrderField`, `kSyllableTypeField`) that
-  `Fill_Phon_Buf_2`, `Mod_Duration`, and `Pitch_RaiseAndFall` need.
+- `Collect_FE_Tokens` (`BackEnd.c:3712-4157`), including `Flag_PhonBuf_1`
+  (`BackEnd.c:3481-3519`, called from *inside* `Collect_FE_Tokens` — not a
+  separate later stage) and its helpers `MarkSyllable`/`MarkSyllableStart`/
+  `MarkBoundry`/`If_Consonant_Cluster`/`Find_Next_Word_Bound`, is ported
+  in `lintalker/_assembly.py` (adapted to consume `_frontend.tokenize()` +
+  `_lexicon.lookup()` instead of the unported `FrontEnd.c`/`Morph.c` token
+  stream), verified bit-exact against a real C oracle for four sentences
+  spanning both dictionary hits and rule-fallback words
+  (`test/test_assembly.py`'s `test_oracle_*` tests — see "Correctness
+  verification"). The one residual, documented gap: a non-punctuation
+  phrase-boundary trigger on certain dictionary-tagged words (e.g. "ONE")
+  isn't modeled, since `_frontend.py` only detects trailing `. , ! ?`.
   (`Place_Stress_In_Consonant` is dead code in the C reference itself —
   its call site is commented out at `BackEnd.c:3510` — so it does not need
-  porting.)
+  porting.) `_assembly.py`'s output (`SentenceAssembly.phon_buf`/`ctrl_buf`)
+  is the direct input `Fill_Phon_Buf_2` needs next.
 - Bells/Hysterical (`kUseSyncSnd` voices) show a few residual `marker`
   field mismatches in `test/test_voices.py`: their marker buffer is
   populated from an external sample-audio file header in the C reference

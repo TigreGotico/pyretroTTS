@@ -530,9 +530,7 @@ def collect_fe_tokens(text: str) -> SentenceAssembly:
             if temp_index is not None:
                 sa.ctrl_buf[temp_index] &= ~kStressField
                 sa.ctrl_buf[temp_index] |= kEmphaticStress
-        # Flag_PhonBuf_1 (BackEnd.c:3481-3519) is NOT ported -- see module
-        # docstring "PHASE 2 HANDOFF". Its output would further annotate
-        # sa.ctrl_buf (syllable marks, consonant stress placement).
+        flag_phon_buf_1(sa)
 
     # Trim unwritten trailing placeholder slots (from `ensure()` overshoot,
     # which cannot happen here since flag_current always targets the slot
@@ -556,3 +554,266 @@ def _is_stress2(phon: int) -> bool:
 def _is_emph_stress(phon: int) -> bool:
     from ._phonemes import _EmphStress_
     return phon == _EmphStress_
+
+
+# ---------------------------------------------------------------------------
+# Flag_PhonBuf_1 (BackEnd.c:3481-3519) and its helpers: MarkSyllable
+# (BackEnd.c:3381-3448), MarkSyllableStart (BackEnd.c:3193-3379),
+# MarkBoundry (BackEnd.c:3448-3480), If_Consonant_Cluster (BackEnd.c:3086-3167),
+# Find_Next_Word_Bound (BackEnd.c:3177-3186).
+#
+# Called from *inside* Collect_FE_Tokens (BackEnd.c:4154, inside the
+# `if (wordCount)` block) once the whole sentence's phon_Buf_1/
+# phon_Ctrl_Buf_1 has been filled -- not a separate later stage. It scans
+# the buffer once (calling MarkSyllable per vowel and MarkBoundry per
+# phoneme to set syllable-order and word/prep/verb/term "-End" flags used
+# by Fill_Phon_Buf_2/Mod_Duration/Pitch_RaiseAndFall), then makes one final
+# pass (MarkSyllableStart) marking each syllable's first phoneme with
+# kSyllable_Start.
+#
+# Place_Stress_In_Consonant (BackEnd.c:3300-3379, the consonant branch of
+# the per-phoneme loop) is NOT ported: its only call site in the C
+# reference is commented out (`//Place_Stress_In_Consonant (vv);`,
+# `BackEnd.c:3510`), so it never runs in the compiled engine either.
+# ---------------------------------------------------------------------------
+
+def _phon_flags(phon: Optional[int]) -> int:
+    """Bounds-safe PhonFlags2 lookup. phon_buf can (today) contain raw,
+    not-yet-decoded placeholder opcodes from LexEntry.phon_str (e.g.
+    literal _pRise_/_pFall_ standing in for compound/word markers -- see
+    docs/architecture.md) that fall outside PhonFlags2's range; treat
+    those the same way the existing ordinary-phoneme branch in
+    collect_fe_tokens does (BackEnd.c:472's guard: `0 <= cur_phon <
+    len(PhonFlags2)`)."""
+    from ._data import PhonFlags2
+    if phon is None or not (0 <= phon < len(PhonFlags2)):
+        return 0
+    return PhonFlags2[phon]
+
+# BackEnd.c:3086-3167 -- consonant pairs that form a single cluster for
+# syllable-boundary purposes (e.g. "TR" in "TRAIN" stays together).
+_CONSONANT_CLUSTERS = {
+    ('f', 'r'), ('f', 'l'),
+    ('v', 'r'), ('v', 'l'),
+    ('TH', 'r'), ('TH', 'w'),
+    ('s', 'w'), ('s', 'l'), ('s', 'p'), ('s', 't'), ('s', 'k'), ('s', 'm'), ('s', 'n'), ('s', 'f'),
+    ('SH', 'w'), ('SH', 'l'), ('SH', 'p'), ('SH', 't'), ('SH', 'r'), ('SH', 'm'), ('SH', 'n'),
+    ('p', 'r'), ('p', 'l'),
+    ('b', 'r'), ('b', 'l'),
+    ('t', 'r'), ('t', 'w'),
+    ('d', 'r'), ('d', 'w'),
+    ('k', 'r'), ('k', 'l'), ('k', 'w'),
+    ('g', 'r'), ('g', 'l'), ('g', 'w'),
+}
+
+
+def _consonant_cluster_ids():
+    from ._phonemes import (
+        _f_, _v_, _TH_, _s_, _SH_, _p_, _b_, _t_, _d_, _k_, _g_, _r_, _l_, _w_,
+        _m_, _n_,
+    )
+    name_to_id = {
+        'f': _f_, 'v': _v_, 'TH': _TH_, 's': _s_, 'SH': _SH_, 'p': _p_,
+        'b': _b_, 't': _t_, 'd': _d_, 'k': _k_, 'g': _g_, 'r': _r_, 'l': _l_,
+        'w': _w_, 'm': _m_, 'n': _n_,
+    }
+    return {(name_to_id[a], name_to_id[b]) for a, b in _CONSONANT_CLUSTERS}
+
+
+_CONSONANT_CLUSTER_IDS = None
+
+
+def if_consonant_cluster(consonant_1st: int, consonant_2nd: int) -> bool:
+    """BackEnd.c:3086-3167 -- is (consonant_1st, consonant_2nd) a cluster
+    that stays together at a syllable boundary?"""
+    global _CONSONANT_CLUSTER_IDS
+    if _CONSONANT_CLUSTER_IDS is None:
+        _CONSONANT_CLUSTER_IDS = _consonant_cluster_ids()
+    return (consonant_1st, consonant_2nd) in _CONSONANT_CLUSTER_IDS
+
+
+def find_next_word_bound(sa: "SentenceAssembly", index: int) -> int:
+    """BackEnd.c:3177-3186."""
+    from ._consts import kBoundryTypeField, kWord_Start
+    i = index + 1
+    while i < len(sa.ctrl_buf):
+        if sa.ctrl_buf[i] & (kBoundryTypeField | kWord_Start):
+            break
+        i += 1
+    return i
+
+
+def mark_boundry(sa: "SentenceAssembly", scan_index: int) -> None:
+    """BackEnd.c:3448-3480 -- back-propagate word/prep/verb/term "-End"
+    flags from the next boundary-flagged phoneme onto the consonants
+    preceding it, stopping at the first vowel."""
+    from ._consts import (
+        kBoundryTypeField, kTerm_Bound, kTerm_End, kWord_End, kPrep_Start,
+        kPrep_End, kVerb_Start, kVerb_End, kWord_Start,
+    )
+    from ._data import PhonFlags2
+    from ._consts import kVowelF
+
+    for index in range(scan_index + 1, len(sa.phon_buf)):
+        cur_phon = sa.phon_buf[index]
+        cur_flags = _phon_flags(cur_phon)
+        cur_bound = sa.ctrl_buf[index] & kBoundryTypeField
+        if cur_bound:
+            bound_type = 0
+            if cur_bound & kTerm_Bound:
+                bound_type |= (kTerm_End | kWord_End)
+            if cur_bound & kPrep_Start:
+                bound_type |= (kPrep_End | kWord_End)
+            if cur_bound & kVerb_Start:
+                bound_type |= (kVerb_End | kWord_End)
+            if cur_bound & kWord_Start:
+                bound_type |= kWord_End
+            sa.ctrl_buf[scan_index] |= bound_type
+
+        if cur_flags & kVowelF:
+            break
+
+
+def mark_syllable(sa: "SentenceAssembly", scan_index: int) -> None:
+    """BackEnd.c:3381-3448 -- compute this vowel's syllable order
+    (first/mid/last/one-or-no syllable in its word) by scanning backward
+    and forward to the nearest word boundary for other vowels."""
+    from ._consts import (
+        kSyllableTypeField, kWord_End, kLast_Syllable_In_Word,
+        kBoundryTypeField, kMid_Syllable_In_Word, kFirst_Syllable_In_Word,
+        kOneOrNo_Syllable_InWord,
+    )
+    from ._data import PhonFlags2
+    from ._consts import kVowelF
+
+    order = 0
+    index = scan_index - 1
+    while index > 0:
+        cur_phon = sa.phon_buf[index]
+        cur_flags = _phon_flags(cur_phon)
+        cur_syllable_type = sa.ctrl_buf[index] & kSyllableTypeField
+        if cur_syllable_type >= kWord_End:
+            break
+        if cur_flags & kVowelF:
+            order = kLast_Syllable_In_Word
+            break
+        index -= 1
+
+    index = scan_index + 1
+    while index < len(sa.phon_buf):
+        cur_phon = sa.phon_buf[index]
+        cur_bound = sa.ctrl_buf[index] & kBoundryTypeField
+        cur_flags = _phon_flags(cur_phon)
+        if cur_bound:
+            sa.ctrl_buf[scan_index] |= order
+            break
+        if cur_flags & kVowelF:
+            if order == kLast_Syllable_In_Word:
+                order = kMid_Syllable_In_Word
+            elif order == 0:
+                order = kFirst_Syllable_In_Word
+        index += 1
+
+
+def mark_syllable_start(sa: "SentenceAssembly") -> None:
+    """BackEnd.c:3193-3379 -- final pass marking each syllable's first
+    phoneme with kSyllable_Start, using the syllable-order bits mark_syllable
+    already set on each vowel."""
+    from ._consts import (
+        kSyllable_Start, kSyllableOrderField, kOneOrNo_Syllable_InWord,
+        kLast_Syllable_In_Word,
+    )
+    from ._data import PhonFlags2
+    from ._consts import kVowelF
+    from ._phonemes import _SIL_
+
+    n = len(sa.phon_buf)
+    syllable_index = 0
+    index = 0
+    while index < n:
+        while sa.phon_buf[index] == _SIL_:
+            syllable_index += 1
+            index += 1
+            if index >= n:
+                return
+        cur_phon = sa.phon_buf[index]
+        cur_ctrl = sa.ctrl_buf[index]
+        cur_flags = _phon_flags(cur_phon)
+        if cur_flags & kVowelF:
+            sa.ctrl_buf[syllable_index] |= kSyllable_Start
+            syll_order = cur_ctrl & kSyllableOrderField
+            if syll_order in (kOneOrNo_Syllable_InWord, kLast_Syllable_In_Word):
+                index = find_next_word_bound(sa, index)
+                syllable_index = index
+            else:
+                # First or mid vowel in word: scan forward for consonants.
+                dist = -1
+                while True:
+                    index += 1
+                    cur_flags = _phon_flags(sa.phon_buf[index])
+                    dist += 1
+                    if cur_flags & kVowelF:
+                        break
+                if dist == 0:
+                    syllable_index = index
+                elif dist == 1:
+                    index -= 1
+                    syllable_index = index
+                elif dist == 2:
+                    phon_2nd = sa.phon_buf[index - 1]
+                    phon_1st = sa.phon_buf[index - 2]
+                    if if_consonant_cluster(phon_1st, phon_2nd):
+                        index -= 2
+                    else:
+                        index -= 1
+                    syllable_index = index
+                elif dist == 3:
+                    from ._phonemes import _s_
+                    phon_2nd = sa.phon_buf[index - 1]
+                    phon_1st = sa.phon_buf[index - 2]
+                    if if_consonant_cluster(phon_1st, phon_2nd):
+                        if sa.phon_buf[index - 3] == _s_:
+                            index -= 3
+                        else:
+                            index -= 2
+                    else:
+                        index -= 1
+                    syllable_index = index
+                else:
+                    phon_2nd = sa.phon_buf[index - dist]
+                    phon_1st = sa.phon_buf[index - dist + 1]
+                    if if_consonant_cluster(phon_1st, phon_2nd):
+                        index -= (dist - 2)
+                    else:
+                        index -= (dist >> 1)
+                    syllable_index = index
+        else:
+            index += 1
+
+
+def flag_phon_buf_1(sa: "SentenceAssembly") -> None:
+    """BackEnd.c:3481-3519 -- final annotation pass over the whole sentence
+    buffer: tracks is_Compound_Noun while scanning, calls mark_syllable per
+    vowel (Place_Stress_In_Consonant, the consonant branch, is dead code in
+    the C reference -- see module docstring), calls mark_boundry per
+    phoneme, then mark_syllable_start once at the end."""
+    from ._data import PhonFlags2
+    from ._consts import kVowelF, kCompoundNoun, kBoundryTypeField
+
+    is_compound_noun = False
+    for scan_index in range(len(sa.phon_buf)):
+        cur_phon = sa.phon_buf[scan_index]
+        cur_flags = _phon_flags(cur_phon)
+        cur_ctrl = sa.ctrl_buf[scan_index]
+
+        if cur_ctrl & kCompoundNoun:
+            is_compound_noun = True
+        elif cur_ctrl & kBoundryTypeField:
+            is_compound_noun = False
+
+        if cur_flags & kVowelF:
+            mark_syllable(sa, scan_index)
+
+        mark_boundry(sa, scan_index)
+
+    mark_syllable_start(sa)

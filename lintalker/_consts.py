@@ -122,6 +122,7 @@ kPrep_End = 0x0002
 kVerb_End = 0x0004
 kTerm_End = 0x0008
 kSyllableOrderField = 0x0300
+kOneOrNo_Syllable_InWord = 0x0000
 kFirst_Syllable_In_Word = 0x0100
 kMid_Syllable_In_Word = 0x0200
 kLast_Syllable_In_Word = 0x0300

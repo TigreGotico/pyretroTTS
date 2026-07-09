@@ -22,8 +22,9 @@ counterpart is checked out locally as `lintalker-c`).
 | English word -> phoneme dispatch (single word, letter-to-sound rules) | `EngToP.c` | Ported, verified bit-exact for 36/36 test words (`test/test_engtop.py`) |
 | Top-level engine API (init/speak/rate/pitch/volume) | `Engine.c` | Ported for everything not depending on unported text tokenization; see `docs/architecture.md` for the exact list of stubs |
 | Text tokenization + per-word dispatch | `FrontEnd.c` (partial) | Ported (`lintalker/_frontend.py`): splits text into words + punctuation, dispatches each through `EngToP`. Does not assemble a synthesizable phoneme plan — see `docs/architecture.md` |
-| Syllable/stress/duration/pitch-contour assembly | `BackEnd.c` (`Fill_Phon_Buf_2` and related) | Not ported — the remaining blocker between tokenized words and a synthesizable phoneme plan |
-| Pronunciation dictionary lookup | `english_lex.c`/`English.lex` | Ported (`lintalker/_lexicon.py`), verified bit-exact for 249 test words (`test/test_lexicon.py`); not yet wired into stress/plan assembly above |
+| Sentence-level stress/word/punctuation/syllable bookkeeping | `BackEnd.c` (`Collect_FE_Tokens` + `Flag_PhonBuf_1`/`MarkSyllable`/`MarkSyllableStart`) | Ported (`lintalker/_assembly.py`), verified bit-exact against the C reference for 4 sentences (`test/test_assembly.py`) |
+| Duration/pitch-contour assembly into a synthesizable phoneme plan | `BackEnd.c` (`Fill_Phon_Buf_2`, `Mod_Duration`, `Pitch_RaiseAndFall`) | Not ported — the remaining blocker to a real `synthesize_text()` |
+| Pronunciation dictionary lookup | `english_lex.c`/`English.lex` | Ported (`lintalker/_lexicon.py`), verified bit-exact for 249 test words (`test/test_lexicon.py`) |
 | Morphology (prefix/suffix stripping, compounds) | `Morph.c` | Not ported |
 
 **What this means today:** you can synthesize audio from an already-built
