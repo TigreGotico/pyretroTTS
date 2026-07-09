@@ -23,9 +23,10 @@ counterpart is checked out locally as `lintalker-c`).
 | Top-level engine API (init/speak/rate/pitch/volume) | `Engine.c` | Ported for everything not depending on unported text tokenization; see `docs/architecture.md` for the exact list of stubs |
 | Text tokenization + per-word dispatch | `FrontEnd.c` (partial) | Ported (`lintalker/_frontend.py`): splits text into words + punctuation, dispatches each through `EngToP`. Does not assemble a synthesizable phoneme plan — see `docs/architecture.md` |
 | Sentence-level stress/word/punctuation/syllable bookkeeping | `BackEnd.c` (`Collect_FE_Tokens` + `Flag_PhonBuf_1`/`MarkSyllable`/`MarkSyllableStart`) | Ported (`lintalker/_assembly.py`), verified bit-exact against the C reference for 4 sentences (`test/test_assembly.py`) |
-| Allophone selection + plosive release (dark L, R-coloring, flapping, glottalization, ...) | `BackEnd.c` (`Fill_Phon_Buf_2`), `formantSynth.c` (`Insert_Closure_Release`) | Ported (`lintalker/_phonbuf2.py`), verified bit-exact against the C reference across voices/sentences (`test/test_phonbuf2.py`) |
-| Per-phoneme duration assignment | `BackEnd.c` (`Mod_Duration`) | Ported (`lintalker/_moduration.py`), verified bit-exact against the C reference across voices/sentences (`test/test_phonbuf2.py`) |
-| Pitch-contour assembly into a synthesizable phoneme plan | `BackEnd.c` (`Pitch_RaiseAndFall`/`Fill_Pitch_Buf`) | Not ported — the remaining blocker to a real `synthesize_text()` |
+| Allophone selection + plosive release (dark L, R-coloring, flapping, glottalization, ...) | `BackEnd.c` (`Fill_Phon_Buf_2`), `formantSynth.c` (`Insert_Closure_Release`) | Ported (`lintalker/_phonbuf2.py`), verified bit-exact against the C reference across voices/sentences (`test/test_assembly_pipeline.py`) |
+| Sentence-level pitch-contour ctrl-bit flagging | `BackEnd.c` (`Pitch_RaiseAndFall`) | Ported (`lintalker/_pitchcontour.py`), verified bit-exact against the C reference across voices/sentences (`test/test_assembly_pipeline.py`) |
+| Per-phoneme duration assignment | `BackEnd.c` (`Mod_Duration`) | Ported (`lintalker/_moduration.py`), verified bit-exact against the C reference across voices/sentences (`test/test_assembly_pipeline.py`) |
+| Pitch buffer assembly into a synthesizable phoneme plan | `BackEnd.c` (`Fill_Pitch_Buf`) | Not ported — the remaining blocker to a real `synthesize_text()` |
 | Pronunciation dictionary lookup | `english_lex.c`/`English.lex` | Ported (`lintalker/_lexicon.py`), verified bit-exact for 249 test words (`test/test_lexicon.py`) |
 | Morphology (prefix/suffix stripping, compounds) | `Morph.c` | Not ported |
 

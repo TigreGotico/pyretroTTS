@@ -33,11 +33,14 @@ release phoneme's hardcoded duration with its own generic formula, which
 was confirmed to diverge from the C reference until the call order was
 fixed (see `test/test_phonbuf2.py`).
 
-NOT included here (called from `ParseSentence` around `Fill_Phon_Buf_2`,
-BackEnd.c:4165-4186, not yet ported): `synth_AdjustPhons1` (a true no-op in
-the C reference -- confirmed by reading its empty body in
-`formantSynth.c`) and `Pitch_RaiseAndFall`. `Mod_Duration` is ported in
-`_moduration.py` (see its own module docstring for scope/gaps).
+`Pitch_RaiseAndFall` is ported in `_pitchcontour.py` and must run BEFORE
+`mod_duration()`/`insert_closure_release()` (matching `ParseSentence`'s
+`Fill_Phon_Buf_2 -> Pitch_RaiseAndFall -> Mod_Duration -> synth_AdjustPhons2`
+order). `Mod_Duration` is ported in `_moduration.py` (see its own module
+docstring for scope/gaps). `synth_AdjustPhons1` (a `ParseSentence` hook
+alongside `synth_AdjustPhons2`) is a true no-op in the C reference
+(confirmed by reading its empty body in `formantSynth.c`) and needs no
+porting.
 `Fill_Pitch_Buf`/`StartNew_PitchClause` (`Calc_Ramp_Steps`/
 `start_new_pitch_clause` are already ported in `_backend.py`, but nothing
 yet calls `Fill_Pitch_Buf` to populate `pitch_Buf_Freq`/`pitch_Buf_Time`/
