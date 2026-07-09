@@ -23,7 +23,8 @@ counterpart is checked out locally as `lintalker-c`).
 | Top-level engine API (init/speak/rate/pitch/volume) | `Engine.c` | Ported for everything not depending on unported text tokenization; see `docs/architecture.md` for the exact list of stubs |
 | Text tokenization + per-word dispatch | `FrontEnd.c` (partial) | Ported (`lintalker/_frontend.py`): splits text into words + punctuation, dispatches each through `EngToP`. Does not assemble a synthesizable phoneme plan — see `docs/architecture.md` |
 | Syllable/stress/duration/pitch-contour assembly | `BackEnd.c` (`Fill_Phon_Buf_2` and related) | Not ported — the remaining blocker between tokenized words and a synthesizable phoneme plan |
-| Morphology, dictionary lookup | `Morph.c`, `english_lex.c` | Not ported |
+| Pronunciation dictionary lookup | `english_lex.c`/`English.lex` | Ported (`lintalker/_lexicon.py`), verified bit-exact for 249 test words (`test/test_lexicon.py`); not yet wired into stress/plan assembly above |
+| Morphology (prefix/suffix stripping, compounds) | `Morph.c` | Not ported |
 
 **What this means today:** you can synthesize audio from an already-built
 phoneme plan via `lintalker.api.synthesize_phonemes()`, and you can turn a

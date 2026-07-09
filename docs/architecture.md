@@ -14,7 +14,7 @@
 | `BackEnd.c` (`DoCtrl`, the per-phoneme `CMDQueue` dispatcher: absolute/relative pitch, volume, mod) | `lintalker/_embeddedcmd.py` | Ported (see `test/test_embeddedcmd.py`); `C_reset`/`C_voice` are unimplemented/no-op the same way upstream leaves them, pending `ResetVoice`/`NewVoice` |
 | `EmbeddedCmd.c` (the FrontEnd backtick-escape text parser, e.g. `` `p200` ``, a distinct mechanism from `DoCtrl` above — it sets `PendingCommands` bits that `FrontEnd.c` later turns into `CMDQueue` entries via `QueueCommand`) | not ported | Depends on the unported `FrontEnd.c` tokenizer |
 | `Morph.c` | not ported | Prefix/suffix stripping, compound-word handling |
-| `english_lex.c`/`English.lex` | not ported | Binary pronunciation dictionary + lookup |
+| `english_lex.c`/`English.lex` | `lintalker/_lexicon.py` | Dictionary lookup (`lookup(word)`), verified bit-exact against the real engine for 249 words spanning common/rare/compound-noun/abbreviation entries (`test/test_lexicon.py`). Not yet wired into stress/plan assembly — see "Known gaps". |
 | `Sounds.c` | not ported | Embedded sound effects (bells, etc.) — raw PCM blobs, not logic |
 
 Fixed-point arithmetic mirrors the C reference's `kPrecision=13` scheme;
@@ -76,12 +76,14 @@ plausible numeric range.
   ordinary content words, not just an edge case. Compound-noun detection
   (`vv->is_Compound_Noun`, `_Comp_` opcode) is populated the same way, only
   from the dictionary decode (`FrontEnd.c:1495-1496`, `1549-1550`).
-  Porting `Fill_Phon_Buf_2` correctly therefore needs the `english_lex`
-  dictionary (or a documented, measured approximation such as treating
-  every word as a content word) before it — see the dictionary-lookup gap
-  below.
-- No pronunciation-exception dictionary lookup (`english_lex` not ported)
-  — words fall through to letter-to-sound rules only.
+  `lintalker/_lexicon.py:lookup(word)` provides the dictionary primitive
+  this needs (`None` return means fall back to `_engtop.engtop()`, the
+  same signal `FrontEnd.c:2039` uses) — wiring it into `Fill_Phon_Buf_2`'s
+  POS/compound-noun/phoneme-override handling is not yet done. Its
+  `phon_str`/`phon_hold` fields carry raw opcodes (including literal
+  `_pRise_`/`_pFall_` values standing in for compound/word markers per the
+  C reference's storage format) that still need `Fill_Phon_Buf_2`'s own
+  translation step, not a shortcut through `LexEntry.is_compound`.
 - `Morph.c` (prefix/suffix stripping, compound-word handling) not ported.
 - The FrontEnd backtick-escape command parser (`EmbeddedCmd.c`) is not
   ported, so nothing currently populates `CMDQueue` outside of tests —
