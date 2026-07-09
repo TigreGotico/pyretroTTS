@@ -22,18 +22,22 @@ checks are always true here and are omitted.
 
 Also includes `insert_closure_release()`, a port of `Insert_Closure_Release`
 (`formantSynth.c` -- the body of `synth_AdjustPhons2`, called right after
-`Fill_Phon_Buf_2` in the real `ParseSentence`): inserts a release phoneme
+`Mod_Duration` in the real `ParseSentence`): inserts a release phoneme
 (`_IX_`/`_AX_`) before word-final silence after a phoneme with
-`kHasReleaseF` (plosives). Note this runs, in the real engine, AFTER
-`Mod_Duration` has already filled `dur_Buf` (it shifts `dur_Buf` entries
-too when inserting) -- since `Mod_Duration` isn't ported yet, calling this
-today only usefully validates the `phon_Buf_2`/`phon_Ctrl_Buf_2` effect,
-not the duration shift.
+`kHasReleaseF` (plosives), shifting `dur_Buf` entries too. CALL ORDER
+MATTERS: `_moduration.mod_duration()` must run BEFORE
+`insert_closure_release()` (matching `ParseSentence`'s
+`Fill_Phon_Buf_2 -> Pitch_RaiseAndFall -> Mod_Duration -> synth_AdjustPhons2`
+order) -- calling it the other way round lets `mod_duration` overwrite the
+release phoneme's hardcoded duration with its own generic formula, which
+was confirmed to diverge from the C reference until the call order was
+fixed (see `test/test_phonbuf2.py`).
 
 NOT included here (called from `ParseSentence` around `Fill_Phon_Buf_2`,
 BackEnd.c:4165-4186, not yet ported): `synth_AdjustPhons1` (a true no-op in
 the C reference -- confirmed by reading its empty body in
-`formantSynth.c`), `Pitch_RaiseAndFall`, `Mod_Duration`, and
+`formantSynth.c`) and `Pitch_RaiseAndFall`. `Mod_Duration` is ported in
+`_moduration.py` (see its own module docstring for scope/gaps).
 `Fill_Pitch_Buf`/`StartNew_PitchClause` (`Calc_Ramp_Steps`/
 `start_new_pitch_clause` are already ported in `_backend.py`, but nothing
 yet calls `Fill_Pitch_Buf` to populate `pitch_Buf_Freq`/`pitch_Buf_Time`/
@@ -107,8 +111,13 @@ def fill_phon_buf_2(vv, sa) -> None:
             last_stored_phon = vv.phon_Buf_2[vv.phonBuf_2_In_Index - 1]
         last_flags = _flags(PhonFlags2, last_stored_phon)
 
-        # No embedded-command/singing input is ported -- these are always 0.
-        user_cmd = user_pitch = user_dur = user_note = user_rate = 0
+        # No embedded-command/singing input is ported, so there is never an
+        # override -- user_dur defaults to kDur_One (100%, the C reference's
+        # own "no override" value; NOT 0, which would zero every duration
+        # once Set_The_Dur divides by it), the rest to 0.
+        from ._consts import kDur_One
+        user_cmd = user_pitch = user_note = user_rate = 0
+        user_dur = kDur_One
 
         target_phon = cur_phon
         del_fwd = False

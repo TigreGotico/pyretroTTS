@@ -1,0 +1,292 @@
+"""Port of `Mod_Duration` (`BackEnd.c:1362-2031`): assigns each phoneme's
+duration (`vv.dur_Buf`) based on stress, syllable position, phonetic
+context (obstruent voicing, clusters, glides), and speaking rate.
+
+Reads `vv.phon_Buf_2`/`vv.phon_Ctrl_Buf_2` (filled by `_phonbuf2.py`) via
+the already-ported `e_get_phon`/`e_get_phon_ctrl`. Writes `vv.dur_Buf`.
+
+NOT ported: the `sync_On_Marker`/`singScript`/`singing` branches
+(`BackEnd.c:1938-2029`) that further adjust `dur_Buf` against a
+sample-marker table or embedded note-timing script. These only fire when
+`vv.sync_On_Marker`/`vv.singScript`/`vv.singing` is set; for plain-text
+synthesis on non-singing voices (all 8 stock voices, and any
+special-effect voice driven by plain text rather than a hand-built note
+script) they're always false, so this is a real, narrow gap: it would
+matter only for text-driven synthesis on note-singing voices
+(GoodNews/BadNews/PipeOrgan/Cellos/Bells/Hysterical), not for the general
+case. Likewise the `temp = vv.user_Rate_Buf2[i]` embedded-rate-change
+check (`BackEnd.c:1888-1901`, calling the unported `Init_Rate_Params`) is
+always a no-op here since `user_Rate_Buf2` is always zero (no
+embedded-command source is ported -- see docs/architecture.md).
+"""
+from __future__ import annotations
+
+from ._consts import (
+    k1pct, kOneHalf, kDurStepRes,
+    kStopF, kVoicedF, kFric, kVocLiq, kPlosFricF, kNasalF, kSonorantF,
+    kVowelF, kVowel1F, kConsonantF, kAffricateF, kGStopF,
+    kPrimOrEmphStress, kEmphaticStress, kSecondaryStress, kPrimaryStress,
+    kMore_Than_One_Syllable_In_Word, kFirst_Syllable_In_Word,
+    kWord_End, kVerb_End, kTerm_End, kWord_Initial_Consonant,
+    kStressedWInitial, kSyllableOrderField, kSyllableTypeField,
+    kSilenceTypeField, kSilenceTypeShift, kSilenceDuration,
+    kFrameTime, kNormal_Speech_Rate,
+)
+from ._phonemes import _SIL_, _w_, _l_, _DX_, _SH_, _s_, _TH_, _LX_
+
+# BackEnd.c's Mod_Duration has its own local `#define k100pct_Dur 128`
+# (percent_Duration's base scale, distinct from k100percent=0x10000).
+_K100PCT_DUR = 128
+# mt4.h:516 -- `#define pct 655` (0.01 * 65536), same value as k1pct but a
+# separate C macro name used throughout this specific function.
+_PCT = 655
+
+
+def _flags(phon_flags2, phon):
+    if phon is None or not (0 <= phon < len(phon_flags2)):
+        return 0
+    return phon_flags2[phon]
+
+
+def mod_duration(vv) -> None:
+    """Port of `Mod_Duration`. Writes `vv.dur_Buf[1:vv.phonBuf_2_In_Index]`
+    (`vv.dur_Buf[0]` is always 1, matching `BackEnd.c:1397`)."""
+    from ._backend import e_get_phon, e_get_phon_ctrl
+    from ._data import PhonFlags2
+
+    vv.markerIndex = 0
+    vv.dur_Buf[0] = 1  # initial SIL = 5ms
+
+    for i in range(1, vv.phonBuf_2_In_Index):
+        cur_phon = e_get_phon(vv, i)
+        cur_ctrl = e_get_phon_ctrl(vv, i)
+        cur_syllable_type = cur_ctrl & kSyllableTypeField
+        cur_stress = cur_ctrl & 0x1C00  # kStressField
+        cur_flags = _flags(PhonFlags2, cur_phon)
+        cur_is_vowel = bool(cur_flags & kVowelF)
+
+        prev_phon = e_get_phon(vv, i - 1)
+        prev_ctrl = e_get_phon_ctrl(vv, i - 1)
+        prev_flags = _flags(PhonFlags2, prev_phon)
+
+        next_phon = e_get_phon(vv, i + 1)
+        next_ctrl = e_get_phon_ctrl(vv, i + 1)
+        next_flags = _flags(PhonFlags2, next_phon)
+
+        next2_phon = e_get_phon(vv, i + 2)
+        next2_ctrl = e_get_phon_ctrl(vv, i + 2)
+        next2_flags = _flags(PhonFlags2, next2_phon)
+
+        percent_duration = _K100PCT_DUR
+        fixed_duration = 0
+        max_dur = vv.maxDurTbl[cur_phon]
+        min_dur = vv.minDurTbl[cur_phon]
+        dur_hold = 0
+        set_the_dur = False
+
+        # --- #1 Pause insertion ---
+        if cur_phon == _SIL_:
+            temp_s = (cur_ctrl & kSilenceTypeField) >> kSilenceTypeShift
+            if temp_s:
+                dur_hold = vv.BoundryDurTbl[temp_s]
+            else:
+                dur_hold = 200
+            dur_hold = (dur_hold * vv.rate_Ratio) >> 16
+            if (not vv.singing) and (cur_ctrl & kSilenceDuration):
+                dur_hold = vv.user_Note_Buf2[i]
+            if dur_hold < 10:
+                dur_hold = 10
+            set_the_dur = True
+
+        if not set_the_dur:
+            # --- #2 Clause-final lengthening ---
+            if cur_syllable_type & kTerm_End:
+                if cur_flags & kStopF:
+                    fixed_duration = 0
+                elif (cur_flags & kVoicedF) and (cur_flags & kFric):
+                    fixed_duration = 20
+                elif (cur_flags & kVocLiq) and (next_flags & kPlosFricF) and not (next_flags & kVoicedF):
+                    fixed_duration = 15
+                else:
+                    fixed_duration = 40
+
+                if next_flags & kSonorantF:
+                    fixed_duration -= 20
+
+                if (vv.phonBuf_2_In_Index < 10) and cur_stress and cur_is_vowel:
+                    fixed_duration += (10 - vv.phonBuf_2_In_Index) * 5
+
+            if cur_is_vowel:
+                # --- #3 Non-phrase-final shortening of vowels ---
+                if cur_syllable_type < kVerb_End:
+                    percent_duration = (percent_duration * 60 * _PCT) >> 16
+
+                # --- #4 Non-word-final shortening of vowels ---
+                if not (cur_stress & kPrimOrEmphStress) and not (cur_ctrl & kMore_Than_One_Syllable_In_Word):
+                    if cur_stress & kSecondaryStress:
+                        percent_duration = (percent_duration * 85 * _PCT) >> 16
+                    else:
+                        percent_duration = (percent_duration * 55 * _PCT) >> 16
+                elif (cur_ctrl & kMore_Than_One_Syllable_In_Word) and (cur_syllable_type < kWord_End) and not (cur_stress & kPrimOrEmphStress):
+                    if (cur_ctrl & kSyllableOrderField) <= kFirst_Syllable_In_Word:
+                        percent_duration = (percent_duration * 85 * _PCT) >> 16
+                    else:
+                        percent_duration = (percent_duration * 80 * _PCT) >> 16
+
+                # --- #5 Polysyllabic shortening ---
+                if cur_ctrl & kMore_Than_One_Syllable_In_Word:
+                    percent_duration = (percent_duration * 80 * _PCT) >> 16
+
+            # --- #6 Non-word-initial consonant shortening ---
+            if (not cur_is_vowel) and not (cur_ctrl & kWord_Initial_Consonant):
+                if (cur_flags & kFric) and (cur_syllable_type & kWord_End):
+                    fixed_duration += 20
+                else:
+                    percent_duration = (percent_duration * 85 * _PCT) >> 16
+
+            # --- #7 Unstressed shortening ---
+            if not (cur_stress & kPrimOrEmphStress):
+                if not (cur_flags & kPlosFricF) and not (cur_flags & kGStopF):
+                    min_dur = min_dur - (min_dur >> 2)
+
+                if cur_is_vowel:
+                    if (cur_ctrl & kSyllableOrderField) == 0x0200:  # kMid_Syllable_In_Word
+                        percent_duration = (percent_duration * 55 * _PCT) >> 16
+                    else:
+                        percent_duration = (percent_duration * 70 * _PCT) >> 16
+                else:
+                    if _w_ <= cur_phon <= _l_:
+                        percent_duration = (percent_duration * 60 * _PCT) >> 16
+                    else:
+                        percent_duration = (percent_duration * 70 * _PCT) >> 16
+
+            # --- #8 Lengthening for emphasis ---
+            # (eFlag is sentence-local running state; ported as a plain
+            # local rather than persisted across calls, since each call
+            # processes one full sentence in one pass -- matching how
+            # `firstPass`/`total_Dur`/`vowel_Index` are also sentence-local
+            # in the C source, just declared once per Mod_Duration call.)
+            if i == 1:
+                mod_duration._eflag = False
+            if (cur_ctrl & kWord_Initial_Consonant) or (cur_is_vowel and (cur_stress != kEmphaticStress)):
+                mod_duration._eflag = False
+            if cur_stress == kEmphaticStress:
+                mod_duration._eflag = True
+            if mod_duration._eflag:
+                if cur_is_vowel:
+                    fixed_duration += 60
+                else:
+                    fixed_duration += 20
+
+            # --- #9 Postvocalic context of vowels ---
+            voc_flag = False
+            the_obstr = _SIL_
+            num_1 = 0x10000  # k100percent
+            if cur_is_vowel or (
+                ((cur_flags & kVocLiq) or (cur_flags & kNasalF))
+                and not (cur_ctrl & kStressedWInitial)
+                and (next_flags & kPlosFricF)
+            ):
+                if not (next_flags & kVowelF) and not (next_ctrl & kStressedWInitial):
+                    the_obstr = next_phon
+                    if (
+                        ((next_flags & kVocLiq) or (next_flags & kNasalF))
+                        and not (next2_ctrl & kStressedWInitial)
+                        and (next2_flags & kPlosFricF)
+                    ):
+                        voc_flag = True
+                        the_obstr = next2_phon
+
+                    if the_obstr != _SIL_:
+                        obstr_flags = _flags(PhonFlags2, the_obstr)
+                        if not (obstr_flags & kVoicedF):
+                            fixed_duration = fixed_duration - (fixed_duration >> 1)
+                            num_1 = k1pct * 80
+                            if obstr_flags & (kStopF | kAffricateF):
+                                num_1 = k1pct * 55
+                        elif obstr_flags & kPlosFricF:
+                            num_1 = k1pct * 120
+                            if not (obstr_flags & kStopF) and (the_obstr != _DX_) and (cur_flags & kPrimOrEmphStress):
+                                fixed_duration += 25
+                        elif obstr_flags & kNasalF:
+                            num_1 = k1pct * 85
+
+                if (cur_syllable_type < kTerm_End) or voc_flag:
+                    num_1 = (num_1 >> 1) + kOneHalf
+
+                percent_duration = (percent_duration * num_1) >> 16
+
+            # --- #10 Shortening/lengthening in clusters ---
+            if cur_is_vowel:
+                if next_flags & kVowelF:
+                    fixed_duration += 30
+                if (
+                    ((cur_ctrl & kSyllableOrderField) == kFirst_Syllable_In_Word)
+                    and (cur_ctrl & kPrimOrEmphStress)
+                    and not (prev_ctrl & kWord_Initial_Consonant)
+                ):
+                    fixed_duration += 25
+                if next_phon == _LX_:
+                    fixed_duration -= 20
+            elif cur_flags & kConsonantF:
+                if (next_flags & kConsonantF) and (cur_syllable_type < kTerm_End):
+                    num_1 = k1pct * 55
+                    if (cur_flags & kNasalF) and (next_ctrl & kWord_Initial_Consonant):
+                        num_1 = k1pct * 150
+                    min_dur = min_dur - (min_dur >> 2)
+                    if (cur_phon == _s_) or (cur_phon == _TH_):
+                        if next_flags & kStopF:
+                            num_1 = k1pct * 50
+                        if next_phon == _SH_:
+                            dur_hold = 12
+                            set_the_dur = True
+                    if not set_the_dur:
+                        percent_duration = (percent_duration * num_1) >> 16
+
+                if not set_the_dur and (prev_flags & kConsonantF):
+                    num_1 = k1pct * 55
+                    min_dur = min_dur - (min_dur >> 2)
+                    if cur_flags & kStopF:
+                        if prev_phon == _s_:
+                            num_1 = k1pct * 60
+                        elif (prev_flags & kNasalF) and not cur_stress:
+                            num_1 = k1pct * 10
+                    percent_duration = (percent_duration * num_1) >> 16
+
+            if not set_the_dur:
+                # --- #11 Lengthening due to plosive aspiration ---
+                if (cur_flags & kSonorantF) and not (prev_flags & kVoicedF) and (prev_flags & kStopF):
+                    fixed_duration += 20
+
+                # --- #12 Lengthening due to glide ---
+                if (cur_flags & kVowel1F) and (prev_flags & 0x100) and not (prev_flags & kNasalF):  # kSonorConsonF
+                    if fixed_duration == 0:
+                        fixed_duration = 20
+
+                # --- Lengthen short phrases ---
+                if (vv.phonBuf_2_In_Index < 10) and (min_dur != max_dur):
+                    fixed_duration += (5 - (vv.phonBuf_2_In_Index >> 1)) * kFrameTime
+
+                # user_Rate_Buf2 is always 0 in this port (no embedded
+                # commands) -- the rate-change check is always a no-op.
+
+                dur_hold = ((percent_duration * (max_dur - min_dur)) >> 7) + min_dur
+                if (vv.speech_Rate != kNormal_Speech_Rate) and (dur_hold != 0):
+                    dur_hold = (dur_hold * vv.rate_Ratio_LowGain) >> 16
+                    fixed_duration = (fixed_duration * vv.rate_Ratio) >> 16
+                dur_hold += fixed_duration
+
+        # --- Set_The_Dur ---
+        dur_hold = (dur_hold * vv.user_Dur_Buf2[i]) >> kDurStepRes
+        dur_hold //= kFrameTime
+
+        if (cur_phon != _SIL_) and (dur_hold < 8 // kFrameTime):
+            dur_hold = 8 // kFrameTime
+
+        vv.dur_Buf[i] = dur_hold
+
+        # sync_On_Marker/singScript/singing branches (BackEnd.c:1938-2029)
+        # are not ported -- see module docstring.
+
+
+mod_duration._eflag = False

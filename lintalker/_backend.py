@@ -398,6 +398,7 @@ class VoiceVar:
         self.phonFlags2 = PhonFlags2
         self.maxDurTbl = MaxDurTbl
         self.minDurTbl = MinDurTbl
+        self.BoundryDurTbl = BoundryDur
         self.logOf2Tbl = logOf2Tbl
         self.OctFreqTbl = OctFreqTbl
         self.ExpOf2Tbl = ExpOf2Tbl
