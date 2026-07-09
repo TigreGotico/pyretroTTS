@@ -1,0 +1,15 @@
+name: Release Workflow
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [dev]
+  workflow_dispatch:
+
+jobs:
+  release:
+    uses: OpenVoiceOS/gh-automations/.github/workflows/publish-alpha.yml@dev
+    secrets: inherit
+    with:
+      package_name: lintalker
+      version_file: lintalker/version.py

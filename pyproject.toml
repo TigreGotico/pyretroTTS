@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lintalker"
+dynamic = ["version"]
+description = "Python port of the DECtalk speech synthesizer"
+readme = "README.md"
+license = {text = "Apache-2.0"}
+authors = [{name = "OpenVoiceOS", email = "jarbasai@mailfence.com"}]
+requires-python = ">=3.10"
+keywords = ["tts", "dectalk", "formant-synthesis", "speech-synthesis"]
+dependencies = []
+
+[project.optional-dependencies]
+test = [
+    "pytest>=7.0.0,<9",
+    "pytest-timeout>=2.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/dectalk/lintalker"
+Repository = "https://github.com/dectalk/lintalker"
+
+[tool.setuptools]
+packages = ["lintalker"]
+
+[tool.setuptools.dynamic]
+version = {attr = "lintalker.version.__version__"}

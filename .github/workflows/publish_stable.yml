@@ -1,0 +1,14 @@
+name: Publish Stable
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+jobs:
+  publish:
+    uses: OpenVoiceOS/gh-automations/.github/workflows/publish-stable.yml@dev
+    secrets: inherit
+    with:
+      package_name: lintalker
+      version_file: lintalker/version.py
