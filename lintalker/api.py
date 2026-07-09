@@ -62,6 +62,7 @@ def synthesize_phonemes(
     pitch_time: Iterable[int] = (),
     pitch_flags: Iterable[int] = (),
     vv: Optional[VoiceVar] = None,
+    end_punctuation: int = 0,
 ) -> bytes:
     """Synthesize a phoneme plan into raw 16-bit PCM audio (little-endian, mono).
 
@@ -69,6 +70,20 @@ def synthesize_phonemes(
     phoneme sequence (see ``lintalker._phonemes`` for phoneme ids). ``pitch_*``
     describe an optional pitch contour overlay, as produced by the C
     reference's frontend.
+
+    ``end_punctuation`` must be the same value `build_phoneme_plan` computed
+    for this plan (its 7th return value) whenever the plan came from real
+    text ending in a comma or question mark: `Calc_Ramp_Steps`
+    (`BackEnd.c:678-739`) halves the pitch decline ramp step for those two
+    terminators, and it reads `vv->end_Punctuation` directly, not something
+    derived from the phoneme/ctrl arrays -- omitting it silently doubles the
+    pitch decline rate for the whole clause. This was a real, confirmed bug:
+    `build_phoneme_plan`'s own internal `VoiceVar` set `end_Punctuation`
+    correctly before running its own `Calc_Ramp_Steps` pass, but that value
+    never reached the SEPARATE `VoiceVar` this function creates for the
+    actual synthesis pass, which re-runs `Calc_Ramp_Steps` from scratch with
+    `end_Punctuation` still at its default (0) -- affecting every
+    comma-containing or yes/no-question sentence, on every voice.
     """
     phonemes = list(phonemes)
     ctrls = list(ctrls)
@@ -79,6 +94,7 @@ def synthesize_phonemes(
 
     if vv is None:
         vv = new_voice(voice_dict)
+    vv.end_Punctuation = end_punctuation
 
     for i, (p, c, d) in enumerate(zip(phonemes, ctrls, durs)):
         vv.phon_Buf_2[i] = p
@@ -115,8 +131,9 @@ def pcm_to_wav(pcm: bytes, path: str, sample_rate: int = SamplingRate) -> str:
 
 
 def build_phoneme_plan(voice_dict: dict, text: str):
-    """Build a `(phonemes, ctrls, durs, pitch_freq, pitch_time, pitch_flags)`
-    plan from English text, matching `ParseSentence`'s real pipeline order:
+    """Build a `(phonemes, ctrls, durs, pitch_freq, pitch_time, pitch_flags,
+    end_punctuation)` plan from English text, matching `ParseSentence`'s
+    real pipeline order:
     `Collect_FE_Tokens -> Fill_Phon_Buf_2 -> Pitch_RaiseAndFall ->
     Mod_Duration -> synth_AdjustPhons2(Insert_Closure_Release) ->
     Calc_Ramp_Steps -> Fill_Pitch_Buf`.
@@ -153,6 +170,7 @@ def build_phoneme_plan(voice_dict: dict, text: str):
     return (
         vv.phon_Buf_2[:n], vv.phon_Ctrl_Buf_2[:n], vv.dur_Buf[:n],
         vv.pitch_Buf_Freq[:pn], vv.pitch_Buf_Time[:pn], vv.pitch_Buf_Flags[:pn],
+        vv.end_Punctuation,
     )
 
 
@@ -198,6 +216,9 @@ def synthesize_text(voice_dict: dict, text: str) -> bytes:
 
     pcm_chunks = []
     for clause in clauses:
-        phonemes, ctrls, durs, pitch_freq, pitch_time, pitch_flags = build_phoneme_plan(voice_dict, clause)
-        pcm_chunks.append(synthesize_phonemes(voice_dict, phonemes, ctrls, durs, pitch_freq, pitch_time, pitch_flags))
+        phonemes, ctrls, durs, pitch_freq, pitch_time, pitch_flags, end_punctuation = build_phoneme_plan(voice_dict, clause)
+        pcm_chunks.append(synthesize_phonemes(
+            voice_dict, phonemes, ctrls, durs, pitch_freq, pitch_time, pitch_flags,
+            end_punctuation=end_punctuation,
+        ))
     return b"".join(pcm_chunks)

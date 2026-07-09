@@ -35,15 +35,31 @@ trap -- assert on `len(c_frames) > 0` (or an exact length match) whenever
 a test's "expected" data comes from parsing external output, not just
 absence of mismatches.
 
-"testing one two three" is not included in single-voice checks: it hits
-the pre-existing, independently-documented `kBND_Sep6` phrase-boundary gap
-(see `test_assembly_pipeline.py`/`test_pitchbuf.py`), which cascades into
-a real frame-level divergence that isn't a bug in this test's own scope.
-
 Bells/Hysterical are excluded from the all-voices sweep below: they hit
 the pre-existing, independently-documented `kUseSyncSnd` external
 sample-marker gap (see docs/architecture.md), which shows up here as a
 genuine frame-COUNT mismatch, not just value differences.
+
+TWO FURTHER REAL BUGS found via a broader multi-sentence sweep (a user
+report that several voices "still sound like shit" on ordinary sentences,
+despite this file being green): (1) `build_phoneme_plan`'s internal
+`VoiceVar` computed `end_Punctuation` correctly before running its own
+`Calc_Ramp_Steps`, but that value was never passed to the SEPARATE
+`VoiceVar` `synthesize_phonemes`/`run_python_backend` use for the actual
+synthesis pass, which re-ran `Calc_Ramp_Steps` from scratch with
+`end_Punctuation` still 0 -- silently doubling the pitch decline rate
+(`Calc_Ramp_Steps` halves it for `_Comma_`/`_Quest_`, `BackEnd.c:715-716`)
+for every comma-containing or yes/no-question sentence, on every voice.
+Fixed by making `build_phoneme_plan` return `end_punctuation` as a 7th
+value and threading it through. (2) `_assembly.collect_fe_tokens` didn't
+model ANY non-punctuation phrase boundary (the pre-existing, narrower
+`kBND_Sep6` gap on "ONE" turned out to be the SAME missing mechanism, just
+first observed on a single word) -- a missing `kPhraseReset` pitch-buffer
+entry mid-sentence silently made `down_Ramp_Offset` (hence `f0`) drift for
+the rest of the sentence on ordinary prose like "the quick brown fox jumps
+over the lazy dog." Fixed with a Morph.c `PlacePhrasing` SEP6
+approximation (content-word -> function-word POS transition) -- see
+`_assembly.py`'s docstring at that code and docs/architecture.md.
 """
 import os
 import sys
@@ -85,8 +101,9 @@ def _check(text, voice_name):
     # ends a Collect_FE_Tokens cycle in the real engine too.
     py_frames = []
     for clause in split_clauses(text):
-        phonemes, ctrls, durs, pitch_freq, pitch_time, pitch_flags = build_phoneme_plan(voice_dict, clause)
+        phonemes, ctrls, durs, pitch_freq, pitch_time, pitch_flags, end_punctuation = build_phoneme_plan(voice_dict, clause)
         vv = setup_python_voice(voice_dict)
+        vv.end_Punctuation = end_punctuation
         clause_frames, vv = run_python_backend(vv, phonemes, ctrls, durs, pitch_freq, pitch_time, pitch_flags)
         py_frames.extend(clause_frames)
 
@@ -142,8 +159,9 @@ def test_comma_clause_boundary_frame_count():
 
     py_frames = []
     for clause in split_clauses(text):
-        phonemes, ctrls, durs, pf, pt, pfl = build_phoneme_plan(voice_dict, clause)
+        phonemes, ctrls, durs, pf, pt, pfl, end_punctuation = build_phoneme_plan(voice_dict, clause)
         vv = setup_python_voice(voice_dict)
+        vv.end_Punctuation = end_punctuation
         clause_frames, vv = run_python_backend(vv, phonemes, ctrls, durs, pf, pt, pfl)
         py_frames.extend(clause_frames)
 
@@ -167,28 +185,62 @@ def test_wh_question_vs_yesno_question_frame_exact():
     lookup is ported, so this approximates Morph.c's kInterr tag check --
     see docs/architecture.md "Known gaps").
 
-    "how are you today?" is asserted frame-exact (no sustained pitch ramp
-    long enough to hit the separate f0-drift gap). "are you happy?" (a
-    genuine yes/no question, correctly keeping _Quest_/kBND_Quest) is only
-    asserted on frame COUNT, since that drift gap does show up there --
-    this test's job is confirming pitch-buffer SHAPE for both question
-    types, not re-verifying the unrelated drift gap."""
+    Both "how are you today?" and "are you happy?" (a genuine yes/no
+    question, correctly keeping _Quest_/kBND_Quest) are asserted
+    frame-exact -- the latter also exercises the `end_Punctuation`
+    propagation fix (see `test_end_punctuation_propagation_frame_exact`),
+    since `_Quest_` is one of the two terminators `Calc_Ramp_Steps` halves
+    the pitch decline ramp for."""
     _check("how are you today?", "Fred")
+    _check("are you happy?", "Fred")
 
-    voice_idx, voice_dict = _VOICES["Fred"]
-    text = "are you happy?"
-    c_stdout, c_stderr, wav_path = run_c(voice_idx, text)
-    c_frames = parse_frames(c_stdout)
-    assert c_frames
-    py_frames = []
-    for clause in split_clauses(text):
-        phonemes, ctrls, durs, pf, pt, pfl = build_phoneme_plan(voice_dict, clause)
-        vv = setup_python_voice(voice_dict)
-        clause_frames, vv = run_python_backend(vv, phonemes, ctrls, durs, pf, pt, pfl)
-        py_frames.extend(clause_frames)
-    assert len(py_frames) == len(c_frames), (
-        f"frame count mismatch (c={len(c_frames)}, py={len(py_frames)})"
-    )
+
+def test_end_punctuation_propagation_frame_exact():
+    """Regression test for a real bug: `build_phoneme_plan`'s internal
+    `VoiceVar` set `end_Punctuation` correctly before running its own
+    `Calc_Ramp_Steps`, but that value was never passed to the SEPARATE
+    `VoiceVar` `synthesize_phonemes`/`run_python_backend` use for the
+    actual synthesis pass -- which re-ran `Calc_Ramp_Steps` from scratch
+    with `end_Punctuation` still at its default (0), silently skipping the
+    `>>= 1` halve `Calc_Ramp_Steps` applies for `_Comma_`/`_Quest_`
+    (`BackEnd.c:715-716`), doubling the pitch decline ramp step for the
+    rest of the clause. Confirmed via direct instrumentation: Fred's
+    `down_Ramp_Step` for "good morning everyone," came out as 31531
+    instead of the real engine's 15765 (exactly 2x) before this fix.
+    Fixed by having `build_phoneme_plan` return `end_punctuation` as a 7th
+    value (see `api.py`) and threading it through
+    `synthesize_phonemes`/`synthesize_text`. A comma clause and a genuine
+    yes/no question (the two terminators `Calc_Ramp_Steps` halves for) are
+    both covered here since either could regress independently."""
+    _check("good morning everyone,", "Fred")
+    _check("are you happy?", "Fred")
+
+
+def test_sep6_phrase_boundary_frame_exact():
+    """Regression test for a real bug: `_assembly.collect_fe_tokens` did
+    not model ANY non-punctuation phrase boundary. The pre-existing,
+    narrower `kBND_Sep6` gap (previously only observed on the single word
+    "ONE" in "testing one two three", masked out in
+    `test_assembly.py`/`test_assembly_pipeline.py`) turned out to be the
+    SAME missing mechanism as a much more general, high-impact bug: a
+    missing `kPhraseReset` pitch-buffer entry mid-sentence (`BackEnd.c:
+    640-645`) silently made `down_Ramp_Offset` -- and therefore `f0` --
+    drift for the rest of ANY ordinary sentence containing a
+    content-word-to-function-word transition (e.g. a verb followed by a
+    preposition, as in "jumps over"), which is most sentences longer than
+    a few words. Fixed with a `Morph.c` `PlacePhrasing` SEP6 approximation
+    in `_assembly.py` (content-word -> function-word POS transition,
+    Noun/Verb/Adj/Adv -> anything else, unless the current word is
+    clause-final) -- see that code's docstring and docs/architecture.md.
+    Exercising this also required fixing a second, compounding bug: the
+    POS-choice placeholder (`pos_code1[0]`) picked kAdv over kPrep for
+    "to" (`pos_code1=[11,12,3,-1]`), wrongly classifying it as a SEP6
+    "content" POS and placing the boundary one word later than the real
+    engine -- fixed with a narrow bias toward kPrep when it's among the
+    candidates (see `make_fe_word_token`'s docstring)."""
+    _check("the quick brown fox jumps over the lazy dog.", "Fred")
+    _check("testing one two three", "Fred")
+    _check("welcome to the show.", "Fred")
 
 
 def test_note_driven_singing_voices_frame_exact():

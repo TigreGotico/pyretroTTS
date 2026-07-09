@@ -17,10 +17,10 @@ no throwaway C instrumentation is needed here.
 
 With all four stages wired in this order, phonemes/ctrl/durations are
 bit-exact against the C reference with NO masking needed, across 4 voices
-and 4 sentences -- except one pre-existing, narrower gap: a
-non-punctuation `kBND_Sep6` phrase-boundary marker on certain
-dictionary-tagged words (e.g. "ONE"), already documented in
-`test_assembly.py`, since `_frontend.py` only detects trailing `. , ! ?`.
+and 4 sentences, including the non-punctuation `kBND_Sep6` phrase-boundary
+marker on certain dictionary-tagged words (e.g. "ONE") -- `_assembly.py`'s
+`collect_fe_tokens` approximates Morph.c's SEP6 rule (content-word ->
+function-word POS transition) with a fixed Noun/Verb/Adj/Adv check.
 """
 import os
 import sys
@@ -36,8 +36,6 @@ from lintalker.api import new_voice
 from lintalker._data import Fred_Voice, Kathy_Voice, Junior_Voice, Zarvox_Voice
 
 from test_voices import run_c, parse_sentence_plan
-
-_KBND_SEP6 = 0xC00000
 
 _VOICES = {"Fred": Fred_Voice, "Kathy": Kathy_Voice, "Junior": Junior_Voice, "Zarvox": Zarvox_Voice}
 _VOICE_IDX = {"Fred": 0, "Kathy": 1, "Junior": 3, "Zarvox": 6}
@@ -86,16 +84,14 @@ def test_i_am_fully_bit_exact():
     assert py_dur == c_dur
 
 
-def test_testing_one_two_three_matches_modulo_known_bnd_gap():
-    """The one known residual gap: index 7 ("ONE", dictionary-tagged
-    kAdj) carries an extra kBND_Sep6 phrase-boundary marker in the C
-    reference that this port doesn't produce (see test_assembly.py)."""
+def test_testing_one_two_three_fully_bit_exact():
+    """Index 7 ("ONE", dictionary-tagged kAdj) carries a kBND_Sep6
+    phrase-boundary marker (see test_assembly.py's oracle test)."""
     py_phon, py_ctrl, py_dur = _run_python("testing one two three")
     c_phon, c_ctrl, c_dur = _run_c_plan(0, "testing one two three")
     assert py_phon == c_phon
     assert py_dur == c_dur
-    masked = [c & ~_KBND_SEP6 for c in c_ctrl]
-    assert py_ctrl == masked
+    assert py_ctrl == c_ctrl
 
 
 def test_matches_across_voices():
@@ -107,8 +103,7 @@ def test_matches_across_voices():
             c_phon, c_ctrl, c_dur = _run_c_plan(_VOICE_IDX[voice_name], text)
             assert py_phon == c_phon, f"{voice_name} {text!r} phon mismatch"
             assert py_dur == c_dur, f"{voice_name} {text!r} dur mismatch"
-            masked = [c & ~_KBND_SEP6 for c in c_ctrl]
-            assert py_ctrl == masked, f"{voice_name} {text!r} ctrl mismatch"
+            assert py_ctrl == c_ctrl, f"{voice_name} {text!r} ctrl mismatch"
 
 
 if __name__ == "__main__":

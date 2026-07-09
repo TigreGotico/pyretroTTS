@@ -222,19 +222,16 @@ def test_oracle_hello():
 
 
 def test_oracle_testing_one_two_three():
-    """Bit-exact except index 7 (the word "ONE", dictionary-tagged kAdj),
-    which carries an extra kBND_Sep6 phrase-boundary marker (0xc00000,
-    i.e. (kBND_Sep6=12) << kSilenceTypeShift) in the C reference that this
-    port doesn't produce -- add_BND/phrasingBND for non-punctuation-
-    triggered boundaries (e.g. around certain quantifier/numeral words)
-    isn't modeled (see docs/architecture.md). This is the one documented,
-    narrow residual gap; masked out here since it's independent of
-    syllable marking."""
+    """Bit-exact against the real C engine, including index 7 (the word
+    "ONE", dictionary-tagged kAdj), which carries a kBND_Sep6
+    phrase-boundary marker (0xc00000, i.e. (kBND_Sep6=12) <<
+    kSilenceTypeShift): `collect_fe_tokens` approximates Morph.c's SEP6
+    rule ("content word -> function word" transition) with a fixed
+    Noun/Verb/Adj/Adv POS-set check -- see docs/architecture.md and the
+    approximation's docstring in `_assembly.py`."""
     sa = collect_fe_tokens("testing one two three")
     assert sa.phon_buf == _ORACLE_TOTT_PHON
-    extra_bnd_mask = ~0xC00000
-    masked_c = [c & extra_bnd_mask for c in _ORACLE_TOTT_CTRL]
-    assert sa.ctrl_buf == masked_c
+    assert sa.ctrl_buf == _ORACLE_TOTT_CTRL
 
 
 _ORACLE_IAM_PHON = [23, 11, 3, 33, 23]

@@ -171,11 +171,11 @@ from typing import Optional
 
 from ._consts import (
     kUndefPOS, kNoun, kVerb, kAdj, kAdv, kInterr, kInterj, kVPart, kQuant,
-    kIPron, kRPron,
+    kIPron, kRPron, kPrep,
     kPrimaryStress, kSecondaryStress, kEmphaticStress, kStressField,
     kContent_Word, kWord_Start, kWord_Initial_Consonant, kCompoundNoun,
-    kTerm_Bound, kPrep_Start, kVerb_Start, kSilenceTypeShift,
-    kBND_Pause, kBND_Decl, kBND_Quest, kBND_Emph, kBND_None,
+    kTerm_Bound, kPrep_Start, kVerb_Start, kSilenceTypeShift, kSilenceTypeField,
+    kBND_Pause, kBND_Decl, kBND_Quest, kBND_Emph, kBND_None, kBND_Sep6,
 )
 from ._phonemes import (
     _SIL_, _Word_, _Period_, _Comma_, _Quest_, _Exclam_, _Comp_, _Prep_,
@@ -270,6 +270,20 @@ def make_fe_word_token(word: str, punct: Optional[str]) -> FEWordToken:
         # disambiguation algorithm -- see module docstring.
         first_pos = tok.pos_code1[0] if tok.pos_code1 else kUndefPOS
         tok.pos_choice = first_pos if first_pos != kUndefPOS else kUndefPOS
+        # Narrow bias, NOT real Set_POS disambiguation: when kPrep is among
+        # the candidates but isn't pos_code1[0] (e.g. "to" lists kAdv=11
+        # first, pos_code1=[11,12,3,-1]), prefer kPrep. Confirmed via direct
+        # instrumentation of the C reference that "to" resolves to a
+        # preposition in ordinary sentences ("welcome to the show."); this
+        # port's placeholder was picking kAdv, which fed the SEP6
+        # phrase-boundary approximation below the WRONG POS (an ambiguous
+        # function word wrongly classified as a SEP6-content POS), placing
+        # the boundary one word later than the real engine. This bias is a
+        # frequency heuristic (prepositional use vastly dominates adverbial
+        # use for the closed-class words affected), not context resolution
+        # -- a real Set_POS port would replace it. See docs/architecture.md.
+        if tok.pos_choice != kPrep and kPrep in tok.pos_code1:
+            tok.pos_choice = kPrep
     else:
         # No dictionary entry -> _engtop.engtop() rule-engine fallback.
         # FrontEnd.c:1650 calls SetPOStoVal(t, kNoun) right after EngToP(),
@@ -391,6 +405,7 @@ def collect_fe_tokens(text: str) -> SentenceAssembly:
     word_stress_2_index: Optional[int] = None
     word_vowel_index: Optional[int] = None
     word_was_emph = False
+    word_start_indices: list = []  # sa.words[i] starts at phon_buf index word_start_indices[i]
 
     def promote_word_emphasis() -> None:
         """BackEnd.c:3908-3927 / 4072-4090 -- if the previous word carried
@@ -416,6 +431,7 @@ def collect_fe_tokens(text: str) -> SentenceAssembly:
             promote_word_emphasis()
             word_was_emph = False
 
+        word_start_indices.append(in_index[0])
         flag_current(kWord_Start)
         word_initial = True
         sa.is_compound_noun = False
@@ -513,6 +529,38 @@ def collect_fe_tokens(text: str) -> SentenceAssembly:
             sa.end_punctuation = phon
             word_initial = True
             sa.is_compound_noun = False
+
+    # --- mid-sentence phrase boundary, SEP6 only (Morph.c:PlacePhrasing:262-271):
+    # "content/function tone group boundary" -- a boundary is placed at the
+    # START of a word whose POS is NOT one of {Noun,Verb,Adj,Adv} when the
+    # PRECEDING word's POS IS one of those, unless the current word is
+    # immediately followed by terminal punctuation (Morph.c's next_Punct
+    # check). Confirmed via direct instrumentation of the C reference: for
+    # "the quick brown fox jumps over the lazy dog.", the real engine sets
+    # this exact boundary (kBND_Sep6=12) on "over"'s first phoneme (prev
+    # word "jumps" is kVerb, "over" is kPrep) with NO silence phoneme
+    # inserted (Collect_FE_Tokens's add_BND only inserts a _SIL_ for
+    # boundary types >= kBND_Paren_L that AREN'T kBND_Sep6,
+    # BackEnd.c:3819-3826) -- this port previously missed it entirely,
+    # which silently dropped a `kPhraseReset` entry in Fill_Pitch_Buf
+    # (BackEnd.c:640-645) and made `down_Ramp_Offset` (and therefore `f0`)
+    # drift for the rest of the sentence on every voice. Only SEP6 is
+    # approximated here (not the SEP1-5 rules, which need real syntactic
+    # category distinctions -- conjunctions, subordinate/relative clauses --
+    # this port doesn't have); see docs/architecture.md "Known gaps".
+    _SEP6_CONTENT_POS = {kNoun, kVerb, kAdj, kAdv}
+    for wi in range(1, len(sa.words)):
+        prev_tok = sa.words[wi - 1]
+        cur_tok = sa.words[wi]
+        is_last_word = wi == len(sa.words) - 1
+        if (
+            prev_tok.pos_choice in _SEP6_CONTENT_POS
+            and cur_tok.pos_choice not in _SEP6_CONTENT_POS
+            and not is_last_word
+        ):
+            idx = word_start_indices[wi]
+            if not (sa.ctrl_buf[idx] & kSilenceTypeField):
+                sa.ctrl_buf[idx] |= (kBND_Sep6 << kSilenceTypeShift)
 
     # --- implicit terminal silence on EOF with no punctuation seen
     # (BackEnd.c:3805-3814): if the input never hit a recognized terminal

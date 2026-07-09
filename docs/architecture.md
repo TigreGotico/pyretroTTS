@@ -90,19 +90,50 @@ single-sentence text is.
 
 ## Known gaps
 
-- Small (initially ±1, growing to ±2/±3) `f0` drift accumulates over long,
-  multi-syllable sustained pitch ramps in sufficiently long sentences
-  (confirmed reproduction: `"the quick brown fox jumps over the lazy
-  dog."` on Fred — 512 frame mismatches, all `f0`, growing roughly
-  monotonically with frame index; short sentences like "hello world" are
-  unaffected; also reproduces on `"are you happy?"`, see
-  `test/test_synthesize_text.py::test_wh_question_vs_yesno_question_frame_exact`).
-  Root cause not yet identified; suspect a fixed-point rounding difference
-  in `_backend.interpolate_pitch`'s per-frame ramp accumulation
-  (`down_Ramp_Offset`/`baseLine_Offset`) that compounds frame over frame,
-  but this has not been traced to a specific line. This is the current
-  highest-value open correctness gap — it affects ordinary, reasonably
-  long plain-text input on every voice, not an edge case.
+- (Fixed) What was tracked here as an unexplained `f0` drift over long
+  sentences was actually TWO separate, real bugs, both confirmed via
+  direct instrumentation of the C reference and now fixed:
+  1. `build_phoneme_plan`'s internal `VoiceVar` computed `end_Punctuation`
+     correctly before running its own `Calc_Ramp_Steps`, but that value
+     was never passed to the SEPARATE `VoiceVar` `synthesize_phonemes`/
+     `synthesize_text` create for the actual synthesis pass, which re-ran
+     `Calc_Ramp_Steps` from scratch with `end_Punctuation` still 0 —
+     silently skipping the `>>= 1` halve `Calc_Ramp_Steps` applies for
+     `_Comma_`/`_Quest_` (`BackEnd.c:715-716`), doubling the pitch decline
+     ramp step for every comma-containing or yes/no-question clause, on
+     every voice. Fixed by having `build_phoneme_plan` return
+     `end_punctuation` as a 7th value and threading it through — see
+     `test/test_synthesize_text.py::test_end_punctuation_propagation_frame_exact`.
+  2. `_assembly.collect_fe_tokens` modeled NO non-punctuation phrase
+     boundary at all. The pre-existing, narrower `kBND_Sep6` gap
+     (previously only observed on the single word "ONE" in "testing one
+     two three") turned out to be the SAME missing mechanism as a much
+     more general bug: a missing `kPhraseReset` pitch-buffer entry
+     mid-sentence (`BackEnd.c:640-645`) silently made `down_Ramp_Offset`
+     — hence `f0` — drift for the rest of any sentence containing a
+     content-word-to-function-word transition (e.g. "jumps over"), which
+     is most sentences longer than a few words. Fixed with a `Morph.c`
+     `PlacePhrasing` SEP6 approximation in `_assembly.py` (content-word ->
+     function-word POS transition, unless clause-final) — see
+     `test/test_synthesize_text.py::test_sep6_phrase_boundary_frame_exact`
+     and that fix's own docstring in `_assembly.py` for the POS-choice
+     bias (kPrep over kAdv) it also required for words like "to".
+  A broader multi-sentence, multi-voice sweep after both fixes went from
+  71/105 to 79/105 exact combinations (the remaining ones are the
+  cross-clause `VoiceVar`-reset gap below, the still-open "once upon a
+  time..." gap below, and the `GoodNews`/`BadNews`/`PipeOrgan`/`Cellos`
+  note-driven voices, not yet investigated for this specific sentence).
+- A genuinely new, still-open structural bug: `"once upon a time there
+  was a princess."` produces a phoneme/word sequence that matches the C
+  reference exactly, but `ctrl_buf` (stress/duration-affecting bits)
+  diverges starting at "upon" (index 2) on every voice, producing a
+  consistent ~7-8 frame COUNT deficit. Not yet traced to a specific line;
+  distinct from the SEP6 gap above (confirmed: the SEP6 boundary itself
+  ends up on the wrong word here too — index 5 instead of C's index 13 —
+  but that's downstream of the earlier ctrl divergence, not the root
+  cause). Worth a dedicated line-by-line audit of `Mod_Duration`/stress
+  assignment for multi-syllable dictionary words with ambiguous stress
+  patterns.
 - (Fixed) WH-question vs. yes/no-question intonation: a trailing `?` was
   unconditionally mapped to `_Quest_`/`kBND_Quest` (rising question
   intonation). Direct instrumentation of the C reference
