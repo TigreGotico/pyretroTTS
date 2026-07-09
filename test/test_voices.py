@@ -174,7 +174,6 @@ def setup_python_voice(voice_dict):
     vv = VoiceVar()
     init_voice(vv, voice_dict)
     vv.FEinputDone = True
-    vv.singing = False
     vv.newSentence = True
     vv.start_of_Paragraph_Flag = False
     vv.stress_Active_Time = 0
