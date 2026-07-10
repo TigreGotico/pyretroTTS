@@ -85,8 +85,63 @@ def tokenize(text: str) -> list[tuple[str, str | None]]:
         w = ''.join(c for c in w if c.isalpha() or c == "'")
         if not w:
             continue
-        tokens.append((w.upper(), punct))
+        w = w.upper()
+        if punct == '.':
+            # A known dictionary abbreviation (e.g. "MR.", looked up
+            # WITH the period as part of its key, is_abbrev=True) keeps
+            # the period as part of the word instead of trailing
+            # punctuation -- matches SearchAllDicts finding tok->tokStr
+            # with the period appended (FrontEnd.c:524-526) and setting
+            # tok->isAbbriv, rather than treating it as end-of-clause.
+            from ._lexicon import lookup
+            entry = lookup(w + '.')
+            if entry is not None and entry.is_abbrev:
+                w = w + '.'
+                punct = None
+        tokens.append((w, punct))
     return tokens
+
+
+def _is_abbreviation_period(text: str, period_pos: int) -> bool:
+    """Port of the abbreviation-period check `GetNextToken` makes before
+    treating a `.` as sentence-terminal (`FrontEnd.c:515-545`/`1514-1515`/
+    `1563-1564`): a `.` right after a word that's a DICTIONARY entry
+    WITH the period included as part of its lookup key (e.g. `"MR."`,
+    confirmed present in `_lexicon.py` with `is_abbrev=True` -- the real
+    engine's `SearchAllDicts` sets `tok->isAbbriv` from exactly this) is
+    NOT a sentence boundary, provided there's more text after it
+    (`vv->NextCh != kEOFCh` -- if the abbreviation is the very last
+    thing in the input, it's still treated as the end, matching
+    `FrontEnd.c:527`/`541`'s `&& (vv->NextCh != kEOFCh)` guard).
+    """
+    if period_pos + 1 >= len(text):
+        return False  # abbreviation at the very end of input -> real sentence end
+    j = period_pos
+    while j > 0 and (text[j - 1].isalpha() or text[j - 1] == "'"):
+        j -= 1
+    word = text[j:period_pos]
+    if not word:
+        return False
+    from ._lexicon import lookup
+    entry = lookup(word.upper() + '.')
+    return bool(entry is not None and entry.is_abbrev)
+
+
+def _split_on(text: str, pattern: str) -> list[str]:
+    import re
+    chunks: list[str] = []
+    start = 0
+    for m in re.finditer(pattern, text):
+        if m.group() == '.' and _is_abbreviation_period(text, m.start()):
+            continue  # e.g. "Mr." -- not a real boundary, keep scanning
+        chunk = text[start:m.end()].strip()
+        if chunk:
+            chunks.append(chunk)
+        start = m.end()
+    tail = text[start:].strip()
+    if tail:
+        chunks.append(tail)
+    return chunks
 
 
 def split_sentences(text: str) -> list[str]:
@@ -95,29 +150,19 @@ def split_sentences(text: str) -> list[str]:
     terminal mark. A trailing fragment with no terminal punctuation (e.g.
     unpunctuated input) is returned as its own final "sentence".
 
-    Whitespace-only or empty results are dropped. This is a plain string
-    splitter, not a further port of FrontEnd.c/Morph.c sentence-boundary
-    logic (which also handles abbreviations like "Dr." not ending a
-    sentence) -- see module docstring.
+    A `.` immediately after a known dictionary ABBREVIATION (e.g. "Mr.",
+    "Dr.", "St." -- see `_is_abbreviation_period`) does NOT end a
+    sentence here, matching the real engine's `tok->isAbbriv` check
+    (`FrontEnd.c:515-545`). Whitespace-only or empty results are dropped.
     """
-    import re
-    sentences: list[str] = []
-    start = 0
-    for m in re.finditer(r'[.!?]', text):
-        chunk = text[start:m.end()].strip()
-        if chunk:
-            sentences.append(chunk)
-        start = m.end()
-    tail = text[start:].strip()
-    if tail:
-        sentences.append(tail)
-    return sentences
+    return _split_on(text, r'[.!?]')
 
 
 def split_clauses(text: str) -> list[str]:
     """Split `text` on ANY of `. , ! ?` (unlike `split_sentences()`, which
     only splits on sentence-terminal `. ! ?`), each substring retaining its
-    own trailing mark.
+    own trailing mark. Like `split_sentences()`, a `.` immediately after a
+    known dictionary abbreviation does not split here either.
 
     This matches `Collect_FE_Tokens`'s real behavior, confirmed by reading
     `BackEnd.c:3991-4006`: a comma sets `gotSentence = true` and returns
@@ -134,18 +179,7 @@ def split_clauses(text: str) -> list[str]:
     thing as one clause does not (a real, confirmed divergence found via
     frame-count mismatches before this function existed).
     """
-    import re
-    clauses: list[str] = []
-    start = 0
-    for m in re.finditer(r'[.,!?]', text):
-        chunk = text[start:m.end()].strip()
-        if chunk:
-            clauses.append(chunk)
-        start = m.end()
-    tail = text[start:].strip()
-    if tail:
-        clauses.append(tail)
-    return clauses
+    return _split_on(text, r'[.,!?]')
 
 
 def words_to_phonemes(text: str) -> list[int]:

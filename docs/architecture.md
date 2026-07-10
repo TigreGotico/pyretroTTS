@@ -479,6 +479,19 @@ single-sentence text is.
   modes, decimals, and the full `SpeakTokenAsNumber`/`GetNextToken`
   tokenizer state machine (ordinals, phone numbers, currency) -- all
   larger, separate pieces of scope.
+- (Fixed) Abbreviation-period handling: `GetNextToken` doesn't treat a
+  `.` right after a known dictionary abbreviation (e.g. "MR.", "DR.",
+  "ST.", looked up WITH the period as part of its key, `is_abbrev=True`
+  in `_lexicon.py`) as ending a sentence or clause, unless the
+  abbreviation is the very last thing in the input (`FrontEnd.c:515-545`
+  /`1514-1515`/`1563-1564`'s `tok->isAbbriv` and
+  `vv->NextCh != kEOFCh` guard). `_frontend.py`'s `tokenize()` now keeps
+  the period attached to the word in that case instead of stripping it
+  as trailing punctuation, and `_is_abbreviation_period`/`_split_on`
+  make `split_sentences`/`split_clauses` skip that `.` as a boundary.
+  Verified frame-exact against the C reference for "mr. smith went
+  home.", "dr. jones is here.", and "st. louis is a city." — see
+  `test/test_abbreviations.py`.
 - (Partially fixed) `EmbeddedCmd.c`'s bracket-delimited text-command
   parser (e.g. `[[pbas200]]`, `[[`/`]]` being `mt4.h`'s
   `defaultCmdBeginDelim`/`defaultCmdEndDelim`) is now ported for the
