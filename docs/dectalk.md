@@ -15,12 +15,14 @@ DECtalk markup dialect still renders through MacinTalk
 
 ## Status
 
-Phase 1 (the vocal tract model, `vtm/`) is **ported and bit-exact**. Phase 2
-ports one layer of the text front end: `phdraw`, the `ph/` frame drawer that
-interpolates per-phoneme targets into the Klatt parameter frames `vtm.py`
-consumes. The rest of the front end (`cmd/`, `lts/`, and the `ph/` stages that
-build `phdraw`'s input) is not ported, so there is still no text-to-speech;
-`pyretrotts/dectalk/engine.py` synthesizes from Klatt parameter frames.
+Phase 1 (the vocal tract model, `vtm/`) is **ported and bit-exact**. The whole
+`ph/` chain above it is now ported and composed: `phclause.speak_phonemes`
+(`phclause.py`) runs `phsort -> phalloph -> us_phtiming -> phinton -> per-frame
+loop -> vtm` entirely in Python and reproduces the oracle WAV **sample for sample
+for all ten voices** from a phoneme+stress+sentence-structure `symbols[]` stream
+(the `lts/`/`cmd/` output). What remains for full text-to-speech is that front
+layer -- the `lts/` letter-to-sound rule engine, numbers, homographs, and the
+other languages -- which turns text into that `symbols[]` stream.
 
 | Piece | Module | State |
 |---|---|---|
@@ -41,6 +43,7 @@ build `phdraw`'s input) is not ported, so there is still no text-to-speech;
 | Phoneme+stress alphabet, `LOG_PHONEMES` renderer | `lts.py` | bit-exact vs oracle over the capture corpus |
 | US main-dictionary load + lookup (`ls_dict.c`) | `dictionary.py` | payload bit-exact for unique-grapheme words |
 | `[: ]` command tokenizer (voice/rate/mode) | `cmd.py` | tokenization + control state |
+| `ph/` clause orchestrator (`phclause`) | `phclause.py` | **phoneme -> PCM sample-exact vs C (10 voices)** |
 | `lts/` rules, numbers, abbreviations, homograph POS | — | **not ported** |
 
 ## The oracle
@@ -509,12 +512,82 @@ capture per input suffices.
 
 ### Full text-to-PCM
 
-The middle layer (`ph/` allophone selection, duration, F0 above `phsettar`) is
-not yet on `dev`, so `dictionary.lookup` output cannot be run end to end to PCM
-inside the port. The dictionary payload is proven against the oracle phoneme
-stream; the allophone -> PCM chain below it is separately proven sample-exact
-(`test_dectalk_endtoend.py`). Composing text -> phonemes -> PCM awaits the
-middle layer.
+The whole `ph/` chain from a phoneme+stress+sentstruc `symbols[]` stream down to
+PCM is now composed and sample-exact (`phclause.py`; see *The phoneme -> PCM
+chain composes*, below). What remains above it is this text front layer -- the
+`lts/` letter-to-sound rule engine, number/abbreviation expansion, and homograph
+disambiguation -- which turns text into that `symbols[]` stream. The dictionary
+payload is proven against the oracle phoneme stream; the LTS rules, numbers, and
+homographs are unported, so text -> `symbols[]` for out-of-dictionary words,
+numbers, and homographs still awaits Phase 6.
+
+## The phoneme -> PCM chain composes (sample-exact, 10 voices)
+
+`phclause.speak_phonemes(voice, clauses)` (`phclause.py`, reproducing
+`phclause`, `ph_claus.c:200`) runs the entire `ph/` chain in Python and returns
+11025 Hz PCM:
+
+    phsort -> phalloph -> us_phtiming -> phinton -> [pht0draw / phdraw / send_pars per frame] -> vtm
+
+Its input is one `symbols[]` (phoneme + stress + sentence-structure) stream per
+clause -- the `lts/`/`cmd/` output, captured from the oracle at the `phclause`
+input boundary (`DECTALK_SORT_DUMP`) for now. Every downstream stage runs in the
+port; nothing is borrowed. It composes the individually bit-exact stages
+(`allophones.py`, `timing.py`, `intonation.py`, `phsettar.py`, `ph.py`,
+`vtm.py`) following `ph_claus.c`'s order and per-frame glue.
+
+**Result: 130/130 cases sample-exact, 3 209 910 / 3 209 910 samples**, over all
+ten voices and thirteen utterances (statements, questions, multi-clause,
+fricative/plosive clusters, nasals, flapping, function words, plosive-final).
+`test/test_dectalk_phoneme_pcm.py` drives it against the oracle WAV; the golden
+gate `test/dectalk_phoneme_pcm_golden` + `test/test_dectalk_phoneme_pcm_golden.py`
+locks it from a real capture of ten `symbols[]` vectors (2 501 330 samples, ten
+voices), runs in CI without the oracle, and is verified to bite on an
+`f0minimum` speaker mutation.
+
+### The glue and the cross-stage subtleties
+
+The chain is pure integration -- no new porting -- but three cross-stage
+contracts had to be matched:
+
+- **`phinton` lengthens the stream.** `phinton` inserts a reduced vowel after a
+  clause-final plosive *after* `us_phtiming` runs, so the stream reaching
+  `phsettar`/`pht0draw` is longer than the timing stage's output. The compose
+  order runs `phinton` before the per-frame loop and drives the loop over its
+  (longer) output.
+- **F0 and `phsettar` state persist across clauses.** A multi-clause utterance is
+  driven through **one** `Pht0draw` (the F0 `beginfall`/filter/glottalization
+  state carries; first clause seeds `nf0ev = -2`, the rest `-1`) and **one**
+  `PhsettarState` and `send_pars` delay buffer. The `PARAMETER` array
+  (this phone's `tarend` -> next phone's `tarlas`), the `breathysw` flag, and the
+  previous frame's drawn TILT all carry across the clause boundary exactly as the
+  C `pDph_t` does; resetting any of them per clause diverges at the next clause's
+  GEN_SIL onset (whose forward TILT rule reads the prior frame's tilt).
+- **`parstochip[OUT_PH]` tracks the F0 segment pointer, not the audio phone.**
+  The only vtm use of the phone code is the limit-cycle silence rampdown
+  (`vtm.py:425`, `PH & PVALUE == 0` for GEN_SIL). The phone code the vtm reads is
+  drawn from `pht0draw`'s segment pointer `np_drawt0` -- which advances with its
+  own `extrad` plosive/voiceless offsets -- not from the main-loop audio phone
+  index; the two differ by a few frames around each boundary. Feeding the audio
+  phone index instead mis-times the GEN_SIL rampdown by a frame and cascades
+  hundreds of PCM samples.
+
+The speaker-definition scalars the chain reads (`malfem`; the `phdraw` offsets
+`spdefb1off`/`f0_dep_tilt`/`spdeftltoff`/`spdeflaxprcnt`; the F0 scalars
+`f0basefall`/`f0_lp_filter`/`f0minimum`/`f0scalefac`/`size_hat_rise`/
+`scale_str_rise`/`assertiveness`) are resolved by the unported Phase-3
+`ph/p_us_vdf*.c` (setspdef) layer. They are constant per voice; `PH_SPEAKERS`
+holds them captured verbatim from one oracle run per voice, exactly as
+`voices.SPEAKERS` holds the resolved `vtm` speaker state. Variable Val (9)
+resolves to Perfect Paul (0). The intonation question flag `cbsymbol` is the one
+per-clause input beyond the stream: it is 1 for a question clause
+(`phsort` clausetype `QUESTION`), 0 otherwise.
+
+No new latent cross-stage bug surfaced during composition (the `ldspdef`
+BOOL-is-`unsigned char` defect was already found and fixed on an earlier compose
+test); the `np_drawt0`/audio-phone split above is a documented data contract, not
+a bug.
+
 ## What the duration stage (`us_phtiming`) is
 
 `phclause` runs `phsort -> phalloph -> us_phtiming -> phinton` before the
@@ -759,15 +832,24 @@ stage, not an oracle dependency.
   `p_us_tim0.c`), allophone selection (`phsort`/`phalloph`, `ph_sort.c`/
   `ph_aloph1.c`), and the F0 contour (`phinton`/`pht0draw`, `ph_inton0.c`/
   `ph_drwt01.c`) are all ported and bit-exact against the C across ten voices
-  (`timing.py`, `allophones.py`, `intonation.py`). With these merged the whole
-  `ph/` chain from a phoneme+stress stream down to PCM is ported; what remains
-  above it is the text front end (`lts/` letter-to-sound rules and `cmd/`), which
-  turns text into that phoneme stream.
-- **No text input.** The whole `cmd/` -> `lts/` -> `ph/` chain that turns text
-  and `[: ]` markup into parameter frames is unported. `engine.py` takes frames,
-  not text. Driving it therefore requires porting the rest of the front end
-  (Phase 3+) or, as the tests do, replaying frames captured from the oracle. This
-  is the single biggest obstacle to a self-contained DECtalk.
+  (`timing.py`, `allophones.py`, `intonation.py`), and `phclause.py` composes
+  them with `phsettar`/`ph`/`vtm` into a **sample-exact phoneme -> PCM chain**
+  (see above). What remains for a self-contained DECtalk is only the text front
+  layer (`lts/` letter-to-sound rules, numbers, homographs, `cmd/` markup
+  effects), which turns text into the `symbols[]` phoneme stream `phclause`
+  consumes.
+- **Speaker-definition scalars are captured, not resolved.** `phclause.PH_SPEAKERS`
+  holds the per-voice `ph/`-layer speaker scalars (`malfem`, the `phdraw` offsets,
+  the F0 scalars) captured from the oracle, because the `ph/p_us_vdf*.c`
+  (setspdef) resolution of the high-level `[:dv]` voice definitions is Phase 3 and
+  unported. A new `[:dv]` custom voice would need those scalars resolved, not
+  looked up.
+- **No text input.** The `cmd/` -> `lts/` chain that turns text and `[: ]` markup
+  into the `symbols[]` phoneme stream is unported (LTS rules, numbers,
+  homographs). `phclause` takes that stream; `engine.py` takes frames. Driving
+  either from text still requires the front layer (Phase 6) or, as the tests do,
+  replaying the `symbols[]` stream captured from the oracle. This is the single
+  biggest remaining obstacle to a self-contained DECtalk.
 - **US English, 11025 Hz only.** The port hard-codes the `VTM1`,
   `PC_SAMPLE_RATE == 11025`, `SAMPLE_RATE_INCREASE` path. The 8 kHz / mu-law
   path (`SAMPLE_RATE_DECREASE`) and the float `FP_VTM` variant are not ported;
