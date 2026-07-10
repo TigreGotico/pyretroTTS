@@ -326,6 +326,7 @@ class ControlBlock:
 class FormantVar:
     """Analogous to formantVar struct in Fsynth.h."""
     __slots__ = (
+        "vd",
         "Acoeff1", "Acoeff2", "Acoeff3", "Acoeff4", "Acoeff4p", "Acoeff5", "Acoeff6",
         "AcoeffNP", "AcoeffNZ", "Af", "Av", "Back_Loci_Tbl", "BandNoisePtr", "Bcoeff1",
         "Bcoeff2", "Bcoeff3", "Bcoeff4", "Bcoeff4p", "Bcoeff5", "Bcoeff6", "BcoeffNP",
@@ -1607,6 +1608,7 @@ def _init_notes(vv: VoiceVar, vd: Voice) -> None:
 def init_voice(vv: VoiceVar, vd: Voice) -> None:
     """Configure the synthesizer from a voice definition (see `_data.py`)."""
     zz: FormantVar = vv.synthVars
+    zz.vd = vd  # zz->vd: the voice synth_ResetVoice reloads
 
     _init_glottal_source(vv, zz, vd)
     _init_source_gains(vv, zz, vd)
@@ -1626,6 +1628,57 @@ def init_voice(vv: VoiceVar, vd: Voice) -> None:
     init_fixed_formants(zz)
     _init_rate_and_vibrato(vv, vd)
     _init_notes(vv, vd)
+
+
+def init_pitch_params(vv: VoiceVar) -> None:
+    """Init_Pitch_Params (`BackEnd.c:4333-4355`): reset the pitch baseline, the
+    declination ramp, and the pitch-smoothing filter."""
+    vv.VP_baselinePitch = vv.voiceNaturalPitch
+
+    vv.baselineFall_START = kHZ_7 + vv.VP_baselineFall
+    vv.baselineFall_END = kHZ_7 - vv.VP_baselineFall
+
+    vv.pFilter_Out1 = vv.baselineFall_START << kStepSizeRes
+    vv.pFilter_Out2 = vv.pFilter_Out1
+    vv.pFilter_Out1_Save1 = vv.pFilter_Out1
+    vv.pFilter_Out2_Save1 = vv.pFilter_Out2
+    vv.pFilter_Out1_Save2 = vv.pFilter_Out1
+    vv.pFilter_Out2_Save2 = vv.pFilter_Out2
+
+    vv.pFilter_In_Gain = vv.VP_quickness
+    vv.pFilter_FB_Gain = k100percent - vv.VP_quickness
+
+    vv.pitch_Clause_StartTime = 10 // kFrameTime
+    vv.pitch_Boundry = kNeverHappens
+    vv.low_Gain_CP = False
+
+
+def synth_reset_voice(vv: VoiceVar) -> None:
+    """synth_ResetVoice (`Say.c:1506-1515`): reload the voice this synthesizer
+    was built from, rebuilding its glottal waveform."""
+    zz: FormantVar = vv.synthVars
+    init_voice(vv, zz.vd)
+
+
+def reset_voice(vv: VoiceVar) -> None:
+    """ResetVoice (`BackEnd.c:4359-4381`): reload the voice and return rate,
+    pitch, volume and singing state to the values it asks for."""
+    synth_reset_voice(vv)
+
+    if vv.numOfNotes > 1:
+        vv.singScript = True
+        vv.singing = True
+        from ._engine import e_set_tempo
+        e_set_tempo(vv, vv.tempo)
+    else:
+        vv.singScript = False
+        vv.singing = False
+
+    vv.user_Volume = 256  # 100%
+    synth_set_volume(vv, vv.user_Volume)
+
+    init_rate_params(vv)
+    init_pitch_params(vv)
 
 
 def _inv_dft(zz: FormantVar, vWave: list, vWave1: list | None = None,

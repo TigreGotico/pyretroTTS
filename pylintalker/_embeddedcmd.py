@@ -9,15 +9,13 @@ of the pipeline: once a phoneme plan is built, some phonemes carry a count of
 queued control words in `user_Cmd_Buf2`, and `say_frame` calls `do_ctrl` once
 per frame to apply that phoneme's share of them.
 
-`C_reset` raises NotImplementedError: it needs `ResetVoice`, which is not
-ported. `C_voice` is a no-op, as in the C source, whose case body is commented
-out.
+`C_voice` is a no-op, as in the C source, whose case body is commented out.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from ._backend import VoiceVar, e_midi_to_pitch, set_volume
+from ._backend import VoiceVar, e_midi_to_pitch, reset_voice, set_volume
 from ._consts import (
     C_absMod,
     C_absPitch,
@@ -29,6 +27,7 @@ from ._consts import (
     C_sync,
     C_voice,
     kLastPOS,
+    kMaxVoice,
     kMIDI_50HZ,
     kMinRate,
     kNormal_Speech_Rate,
@@ -228,6 +227,9 @@ class BracketCommands:
     #: word_index -> a packed note word: MIDI pitch in kNotePitch, length code
     #: in kNoteDur. Any note switches the voice into singing mode.
     notes: dict[int, int] = field(default_factory=dict)
+    #: word_index -> a marker time, in queue order. Markers switch the voice
+    #: into marker-synced singing.
+    markers: dict[int, int] = field(default_factory=dict)
     #: beats per minute, from the last `tempo` command, or None
     tempo: int | None = None
     #: rate in force at the end of the clause, or None if no rate command ran
@@ -278,6 +280,7 @@ def scan_bracket_commands(text: str, initial_rate: int = kNormal_Speech_Rate) ->
     raw_phon_overrides = {}
     char_overrides = {}
     notes = {}
+    markers = {}
     tempo = None
     last_rate = initial_rate
     out_parts = []
@@ -366,6 +369,26 @@ def scan_bracket_commands(text: str, initial_rate: int = kNormal_Speech_Rate) ->
             # e_set_tempo, which it would drive, is ported.
             value, _ = _parse_fixed_value(inner, _skip_spaces(inner, 4))
             tempo = value >> 16
+            i = end + len(END)
+            continue
+
+        if keyword == 'MARK':
+            # Parse_marker_Command; applied by EC_marker (BackEnd.c), which
+            # records the marker time and flags the phoneme it precedes.
+            value, _ = _parse_fixed_value(inner, _skip_spaces(inner, 4))
+            markers[word_count] = value
+            i = end + len(END)
+            continue
+
+        if keyword == 'SVOX':
+            # Parse_svox_Command: an internal voice number, 1..kMaxVoice, no
+            # fractional part. EC_svox queues it as C_voice, which DoCtrl
+            # leaves as a no-op -- the C source's own case body is commented out.
+            value, _ = _parse_fixed_value(inner, _skip_spaces(inner, 4))
+            voice_num = value >> 16
+            if not 1 <= voice_num <= kMaxVoice:
+                voice_num = 1
+            commands.append((word_count, C_voice, voice_num))
             i = end + len(END)
             continue
 
@@ -530,6 +553,7 @@ def scan_bracket_commands(text: str, initial_rate: int = kNormal_Speech_Rate) ->
         raw_phonemes=raw_phon_overrides,
         spelled=char_overrides,
         notes=notes,
+        markers=markers,
         tempo=tempo,
         final_rate=last_rate if rates else None,
     )
@@ -568,10 +592,10 @@ def do_ctrl(vv: VoiceVar) -> None:
             set_volume(vv, (vv.user_Volume << 8) + ctrlData)
 
         elif ctrlType == C_reset:
-            raise NotImplementedError(
-                "do_ctrl: C_reset requires e_ResetFE (FrontEnd.c) and "
-                "ResetVoice (fsynth.c), neither of which is ported."
-            )
+            # DoCtrl also calls e_ResetFE, which resets FrontEnd.c's streaming
+            # parser. This port has no such parser -- text is parsed per clause
+            # -- so there is nothing to reset there.
+            reset_voice(vv)
 
         elif ctrlType == C_voice:
             pass  # upstream DoCtrl's C_voice case body is itself commented out

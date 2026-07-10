@@ -160,14 +160,23 @@ def test_multiple_queued_commands_drain_in_order():
     assert vv.cmdBufCount == 2
 
 
-def test_reset_raises_not_implemented():
-    vv = _new_vv()
+def test_reset_reloads_the_voice():
+    """C_reset -> ResetVoice (BackEnd.c:4359): the voice is reloaded and volume,
+    rate and pitch return to what it asks for."""
+    from pylintalker._data import Fred_Voice
+    from pylintalker.api import new_voice
+
+    vv = new_voice(Fred_Voice)
+    natural = vv.voiceNaturalPitch
+    vv.user_Volume = 1
+    vv.VP_baselinePitch = 9999
+
     _queue(vv, (C_reset, 0))
-    try:
-        do_ctrl(vv)
-        raise AssertionError("expected NotImplementedError")
-    except NotImplementedError:
-        pass
+    do_ctrl(vv)
+
+    assert vv.user_Volume == 256
+    assert vv.VP_baselinePitch == natural
+    assert vv.singing is False
 
 
 def test_voice_is_a_noop():

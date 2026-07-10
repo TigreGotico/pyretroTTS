@@ -22,7 +22,13 @@ from ._backend import (
     start_new_pitch_clause,
     start_talk,
 )
-from ._consts import SamplingRate, kNoMarker, kSpeakLastFrame, kSpeakNewPhon
+from ._consts import (
+    SamplingRate,
+    kMaxMarkers,
+    kNoMarker,
+    kSpeakLastFrame,
+    kSpeakNewPhon,
+)
 from ._embeddedcmd import scan_bracket_commands
 from ._engine import e_set_tempo
 from ._frontend import split_clauses
@@ -208,6 +214,20 @@ def build_phoneme_plan(
         e_set_tempo(vv, commands.tempo)
     if commands.notes:
         vv.singing = True  # EC_note sets this in the C source
+    if commands.markers:
+        # EC_marker: record each marker time, up to kMaxMarkers-1. Beyond that
+        # the C source turns marker-synced singing off rather than overflow.
+        times = list(commands.markers.values())
+        if len(times) < kMaxMarkers:
+            for idx, time in enumerate(times):
+                vv.markerBuf[idx] = time
+            vv.markerIndex = len(times)
+            vv.lastMarkerIndex = max(1, len(times))
+            vv.sync_On_Marker = True
+            vv.singing = True
+        else:
+            vv.sync_On_Marker = False
+            vv.singing = False
 
     sa = collect_fe_tokens(commands.text, commands)
     # collect_fe_tokens counted each queued command against the phoneme it was

@@ -175,9 +175,8 @@ only `-v <voice> <text>` and shows no sign of recognizing either delimiter as a
 command. `[[` and `]]` are used because the C source names them as the defaults,
 not because this reference confirmed them.
 
-**`C_reset` raises `NotImplementedError`.** It needs `synth_ResetVoice`
-(`Say.c:1506`), which is not ported. `C_voice` is a no-op,
-matching the C source, whose case body is commented out.
+**`C_voice` is a no-op**, matching the C source, whose case body is commented
+out. `svox` parses and queues, and then changes nothing, exactly as upstream.
 
 **Number grouping is unverified end to end.** Individual number words are
 bit-exact. The reference's `Symbols` dictionary has corrupt `"100"`/`"1000"`
@@ -190,13 +189,10 @@ against.
 **`Search_Suffix`'s trie is approximated.** `_morph.py` uses an ordered
 `endswith()` cascade rather than the `SuffixTab` data at `Data.c:3848`.
 
-**Four embedded commands are unimplemented.** The C engine accepts nineteen;
-`note`, `tempo`, `marker` and `svox` have no parser here. `note` and `tempo`
-are MacinTalk's singing controls: their consumers are already ported (
-`Mod_Duration`'s note-retiming branches, `Note_Times[]`), so only the parsing
-and the `user_Note_Buf1` wiring are missing. `user_Dur_Buf2` and
-`user_Pitch_Buf2` consequently have no source.
+**`user_Dur_Buf2` and `user_Pitch_Buf2` have no source.** All nineteen embedded
+commands are implemented, but none of them writes those two per-phoneme override
+channels. `Fill_Phon_Buf_2` carries them through faithfully; nothing fills them.
 
-**`Engine.c`'s text entry points are absent.** `e_SpeakBuffer`, `e_UseVoice`,
-`e_ResetParams` and `e_ReinitVoice` reach into `FrontEnd.c` and `fsynth.c`.
-`api.synthesize_text` and `_backend.init_voice` do those jobs instead.
+**`e_SpeakBuffer` and `e_UseVoice` are absent.** They drive `FrontEnd.c`'s
+streaming parser and `fsynth.c`'s voice loader. `api.synthesize_text` and
+`_backend.init_voice` do those jobs instead.

@@ -2,14 +2,15 @@
 
 Port of Engine.c, a thin dispatch layer over the synthesizer in `_backend.py`.
 Text is spoken through `api.synthesize_text`, not from here: Engine.c's
-e_SpeakBuffer/e_UseVoice/e_ResetParams entry points reach into FrontEnd.c and
-fsynth.c, whose jobs `api.py` and `_backend.init_voice` do instead.
+e_SpeakBuffer and e_UseVoice entry points reach into FrontEnd.c and fsynth.c,
+whose jobs `api.py` and `_backend.init_voice` do instead.
 """
 from __future__ import annotations
 
 from ._backend import (
     VoiceVar,
     init_rate_params,
+    reset_voice,
     start_talk,
     synth_set_volume,
 )
@@ -190,6 +191,17 @@ def e_set_speech_mod(vv: VoiceVar, info: int) -> None:
 
 
 
+
+
+def e_reset_params(vv: VoiceVar) -> None:
+    """e_ResetParams (Engine.c) -> ResetVoice. The e_ResetFE call has no
+    counterpart: this port has no streaming front-end parser to reset."""
+    reset_voice(vv)
+
+
+def e_reinit_voice(vv: VoiceVar) -> None:
+    """e_ReinitVoice (Engine.c) -> ResetVoice."""
+    reset_voice(vv)
 
 
 def e_set_tempo(vv: VoiceVar, tempo: int) -> None:

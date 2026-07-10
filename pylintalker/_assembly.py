@@ -78,6 +78,7 @@ from ._consts import (
     kRelPro,
     kRPron,
     kRVaux,
+    kSampleMarker,
     kSecondaryStress,
     kSilenceDuration,
     kSilenceTypeShift,
@@ -722,6 +723,7 @@ def collect_fe_tokens(
     raw_phon_overrides = commands.raw_phonemes
     char_overrides = commands.spelled
     note_overrides = commands.notes
+    marker_overrides = commands.markers
 
     sa = SentenceAssembly()
     in_index = 1  # mirrors phonBuf_1_In_Index
@@ -890,6 +892,10 @@ def collect_fe_tokens(
         if note_overrides and _wi in note_overrides:
             ensure(in_index)
             sa.note_buf[in_index] = note_overrides[_wi]
+        # --- EC_marker (BackEnd.c): flags this word's first phoneme as a
+        # sample marker; build_phoneme_plan records the marker times.
+        if marker_overrides and _wi in marker_overrides:
+            flag_current(kSampleMarker)
         # --- pbas/pmod/volm/rset/sync: queued against this word's own start
         # slot, exactly as QueueCommand counts them against
         # phonBuf_1_In_Index (BackEnd.c:3598).
