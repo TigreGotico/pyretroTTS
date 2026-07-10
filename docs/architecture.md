@@ -157,12 +157,35 @@ single-sentence text is.
   via `_frontend.split_clauses` — see that function's docstring for why
   commas are included, confirmed against `BackEnd.c:3991-4006`) uses an
   independently-reset `VoiceVar` per clause rather than the real engine's
-  single continuous `Talk()` session — cross-clause prosody continuity
-  (baseline pitch carrying over) isn't preserved. Frame COUNT is verified
-  correct for comma-containing sentences
-  (`test/test_synthesize_text.py::test_comma_clause_boundary_frame_count`);
-  full bit-exactness across a clause boundary is not separately verified
-  from the `f0`-drift gap above.
+  single continuous `Talk()` session (`BackEnd.c:4264-4298`: `Start_Talk`
+  runs once, `ParseSentence` is simply called again per clause inside
+  `e_Fill_Next_Frame`, `BackEnd.c:4224-4231`, without re-running
+  `Start_Talk`/`synth_Start_Talk`). Frame COUNT is verified correct for
+  comma-containing sentences on ordinary voices
+  (`test/test_synthesize_text.py::test_comma_clause_boundary_frame_count`),
+  and each clause's OWN frames are independently frame-exact against the
+  C reference (confirmed for both halves of `"good morning everyone,
+  welcome to the show."`) — the approximation only costs continuity
+  *across* the clause boundary itself, not correctness within a clause.
+  For note-driven singing voices (GoodNews/BadNews/PipeOrgan/Cellos) this
+  is audibly worse than for ordinary voices: at every comma the voice's
+  note/song position and formant-synthesis state (`init_control_blocks`,
+  frame-buffer double-buffering) restart from scratch, producing a real
+  glitch — reported by a user as Cellos "still sound[ing] like garbage"
+  on `"...dog, how are you today?"`, confirmed by resynthesizing the same
+  text as one clause (no comma), which came out frame-exact. A first
+  attempt at a real fix (share one `VoiceVar`/frame loop across all
+  clauses of a `synthesize_text` call, calling `Start_Talk` only once and
+  manually replicating `BackEnd.c:4230`'s `cur_PhonBuf_Index_CF = 0;
+  speakState = kSpeakNewPhon` transition between clauses) was tried and
+  reverted: it produced a frame-COUNT regression (1883 frames vs. the
+  real engine's 1673 for the repro sentence on Cellos) rather than a fix
+  — the real engine's per-frame state-machine transition between
+  `ParseSentence` calls happens *inside* one `e_Fill_Next_Frame` call
+  (immediately continuing to process a new frame in the same call), not
+  as a separate step between two outer-loop iterations the way this
+  port's `e_fill_next_frame`/driving loop split is structured, and getting
+  that interleaving bit-exact needs more careful work than a single pass.
 - No `Morph.c` (prefix/suffix stripping, compound-word handling) — words
   are looked up in `english_lex` as-is or fall through to letter-to-sound
   rules; morphological variants of dictionary words (e.g. an inflected
