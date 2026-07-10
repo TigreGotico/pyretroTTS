@@ -91,6 +91,18 @@ _MILLION = [33, 1, 25, 29, 1, 34]
 _BILLION = [45, 1, 25, 29, 1, 34]
 _POWERS = {1: _THOUSAND, 2: _MILLION, 3: _BILLION}
 
+# "OH" -- unlike _HUNDRED/_THOUSAND/etc. above (extracted from ordinary
+# dictionary words as a corruption workaround), this is a DIRECT,
+# bit-exact transcription of `Data.c:3840`'s compiled-in constant
+# `OhPhonStr[] = {3, _Word_, _Stress1_, _OW_}` (a literal C source byte
+# array, not a runtime dictionary lookup -- no Symbols-dictionary
+# corruption or verification caveat applies to it at all), with the
+# leading `_Word_` opcode dropped for the same reason `_ONES`/`_TEENS`/
+# `_TENS` above don't carry one either (this port's number-reading
+# functions add a single `_Word_` prefix once, at the very start of
+# their output, rather than one per real-engine sub-word group).
+_OH = [56, 14]
+
 
 def _two_digit_phonemes(tens: int, units: int) -> list:
     """Port of `AppendTwoDigitPhonemes` (`FrontEnd.c:1708-1738`)."""
@@ -170,6 +182,52 @@ def number_to_phonemes(digits: str):
                 out += _three_digit_phonemes(h, t, u)
                 if power in _POWERS:
                     out += _POWERS[power]
+    return [_Word_] + out
+
+
+def is_year_number(digits: str) -> bool:
+    """Port of `SpeakTokenAsNumber`'s automatic `kYearSpecial` detection
+    (`FrontEnd.c:1978-1990`): a plain 4-digit number token starting with
+    `1` (i.e. 1001-1999) is automatically read year-style instead of as
+    a grouped cardinal, UNLESS it's exactly `"1000"`. This is a real,
+    narrow limitation of the C reference ITSELF -- years starting with
+    any other digit (e.g. "2023") are never detected this way, matching
+    `tok->tokStr[1] == '1'`'s literal check -- not a scope reduction made
+    by this port. (The real engine also suppresses this when the token
+    carries `kAddDollar`/`kAddCent`/`kHasComma` flags -- i.e. currency
+    amounts and comma-grouped numbers are never read as years -- but
+    since those flags aren't set anywhere in this port's simplified
+    tokenizer to begin with, plain 4-digit tokens never carry them.)
+    """
+    return len(digits) == 4 and digits[0] == '1' and digits != '1000'
+
+
+def year_to_phonemes(digits: str):
+    """Port of `PartialNumberToPhonemes`'s `kYearSpecial` branch
+    (`FrontEnd.c:1778-1795`, invoked repeatedly by the real incremental
+    synth loop -- collapsed into one pass here, the same simplification
+    `number_to_phonemes` already makes): splits a 4-digit year into two
+    2-digit groups and reads each with `AppendTwoDigitPhonemes`, EXCEPT
+    when a group's tens digit is `0`: `01`-`09` is read "oh" + the units
+    digit (`vv->OhPhonStr`, see `_OH` above) rather than just the units
+    digit alone (unlike the generic 2-digit case, which has no such "oh"
+    insertion), and `00` is read as `_HUNDRED` (a direct port of the
+    `SearchAllDicts(vv, "\\p100", ...)` call in that branch -- the same
+    `Symbols`-dictionary numeric key already confirmed corrupted for the
+    general 1000s-labeling case, substituted here the same well-justified
+    way: as the ordinary dictionary word "hundred"). No `AND` insertion
+    (unlike the generic case): the year branch has no equivalent of the
+    generic 2-digit case's `haveSpoken`/`AND` logic at all. `digits` must
+    satisfy `is_year_number(digits)`.
+    """
+    def _group(tens: int, units: int) -> list:
+        if tens != 0:
+            return _two_digit_phonemes(tens, units)
+        if units != 0:
+            return _OH + _two_digit_phonemes(0, units)
+        return list(_HUNDRED)
+
+    out = _group(int(digits[0]), int(digits[1])) + _group(int(digits[2]), int(digits[3]))
     return [_Word_] + out
 
 

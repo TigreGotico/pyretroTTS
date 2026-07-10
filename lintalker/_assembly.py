@@ -261,14 +261,26 @@ def make_fe_word_token(word: str, punct: Optional[str], digit_by_digit: bool = F
     this word's position, `EmbeddedCmd.c`'s `ChangeNumberMode`/
     `FrontEnd.c:2057-2062`'s `kDigitByDigit` check) routes to
     `_numbers.digit_by_digit_phonemes` instead, reading each digit on
-    its own rather than grouping them into a cardinal number.
+    its own rather than grouping them into a cardinal number. A plain
+    4-digit token matching `_numbers.is_year_number` (e.g. "1984") is
+    automatically read year-style (`_numbers.year_to_phonemes`) instead
+    of grouped, matching `SpeakTokenAsNumber`'s automatic `kYearSpecial`
+    detection (`FrontEnd.c:1978-1990`) -- this happens by default, not
+    behind any embedded command, the same way it does in the real engine.
     """
     if word.isdigit():
-        from ._numbers import number_to_phonemes, digit_by_digit_phonemes
+        from ._numbers import number_to_phonemes, digit_by_digit_phonemes, is_year_number, year_to_phonemes
+
+        if digit_by_digit:
+            _digits_phon_str = digit_by_digit_phonemes(word)
+        elif is_year_number(word):
+            _digits_phon_str = year_to_phonemes(word)
+        else:
+            _digits_phon_str = number_to_phonemes(word)
 
         return FEWordToken(
             word=word,
-            phon_str=digit_by_digit_phonemes(word) if digit_by_digit else number_to_phonemes(word),
+            phon_str=_digits_phon_str,
             from_dictionary=True,
             pos_code1=[kAdj, kUndefPOS, kUndefPOS, kUndefPOS],
             comp_pos1=kHas_Adj,

@@ -121,6 +121,53 @@ def test_nmbr_embedded_command_switches_to_digit_by_digit():
     assert sa.words[0].phon_str != number_to_phonemes("123")
 
 
+def test_is_year_number():
+    from lintalker._numbers import is_year_number
+
+    assert is_year_number("1984")
+    assert is_year_number("1000") is False  # explicitly excluded (FrontEnd.c:1985)
+    assert is_year_number("2023") is False  # only years starting with '1' are detected
+    assert is_year_number("123") is False   # not 4 digits
+    assert is_year_number("12345") is False
+
+
+def test_year_to_phonemes_two_groups():
+    from lintalker._numbers import year_to_phonemes, _two_digit_phonemes
+
+    assert year_to_phonemes("1984") == [_Word_] + _two_digit_phonemes(1, 9) + _two_digit_phonemes(8, 4)
+
+
+def test_year_to_phonemes_oh_insertion():
+    from lintalker._numbers import year_to_phonemes, _two_digit_phonemes, _OH
+
+    # 1905 -> "nineteen oh five" (second group's tens digit is 0, units isn't)
+    assert year_to_phonemes("1905") == [_Word_] + _two_digit_phonemes(1, 9) + _OH + _two_digit_phonemes(0, 5)
+
+
+def test_year_to_phonemes_round_hundred():
+    from lintalker._numbers import year_to_phonemes, _two_digit_phonemes, _HUNDRED
+
+    # 1900 -> "nineteen hundred" (second group is "00")
+    assert year_to_phonemes("1900") == [_Word_] + _two_digit_phonemes(1, 9) + _HUNDRED
+
+
+def test_number_token_reads_as_year_by_default():
+    from lintalker._assembly import make_fe_word_token
+    from lintalker._numbers import year_to_phonemes, number_to_phonemes
+
+    tok = make_fe_word_token("1984", None)
+    assert tok.phon_str == year_to_phonemes("1984")
+
+    # A 4-digit number NOT starting with '1' keeps ordinary cardinal reading.
+    tok2 = make_fe_word_token("2023", None)
+    assert tok2.phon_str == number_to_phonemes("2023")
+
+    # digit_by_digit mode overrides year detection too.
+    from lintalker._numbers import digit_by_digit_phonemes
+    tok3 = make_fe_word_token("1984", None, digit_by_digit=True)
+    assert tok3.phon_str == digit_by_digit_phonemes("1984")
+
+
 def test_nmbr_mode_latches_until_switched_back():
     from lintalker._embeddedcmd import scan_bracket_commands
     from lintalker._assembly import collect_fe_tokens

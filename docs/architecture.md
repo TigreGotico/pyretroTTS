@@ -475,10 +475,47 @@ single-sentence text is.
   `test/test_numbers.py` for what IS verified (every individual word,
   plus the grouping algorithm's own internal consistency) and what
   isn't (the assembled multi-digit output against a real reference).
-  NOT ported: `ProcessNumberString`'s year/clock/dollar/cent special
-  modes, decimals, and the full `SpeakTokenAsNumber`/`GetNextToken`
-  tokenizer state machine (ordinals, phone numbers, currency) -- all
-  larger, separate pieces of scope.
+  (Fixed) Year reading: `SpeakTokenAsNumber` (`FrontEnd.c:1978-1990`)
+  automatically flags a plain 4-digit token as `kYearSpecial` when it
+  starts with `1` and isn't exactly `"1000"` (years 1001-1999 only --
+  a real, narrow limitation of the C reference itself, matching its
+  literal `tok->tokStr[1] == '1'` check, not a scope reduction this port
+  made) and has no dollar/cent/comma flags (moot here -- this port's
+  tokenizer never sets those). `PartialNumberToPhonemes`'s
+  `kYearSpecial` branch (`FrontEnd.c:1778-1795`) splits the 4 digits
+  into two 2-digit groups and reads each with `AppendTwoDigitPhonemes`,
+  except a group with tens-digit `0` gets an "oh" inserted before its
+  units digit (e.g. "1905" -> "nineteen OH five", unlike the generic
+  2-digit case, which has no such insertion) via `Data.c:3840`'s
+  `OhPhonStr` constant, or reads as `_HUNDRED` if the whole group is
+  `"00"` (e.g. "1900" -> "nineteen hundred", the same `Symbols`-
+  dictionary `"\p100"` lookup and substitution already used for
+  thousands-labeling above). No `AND` insertion (the year branch has no
+  equivalent of the generic case's `haveSpoken`/`AND` logic at all).
+
+  Unlike `_HUNDRED`/`_THOUSAND`/etc. above, `_numbers._OH` needed NO
+  extraction from the compiled `test_harness` at all and carries no
+  verification caveat: `Data.c:3840`'s `OhPhonStr[] = {3, _Word_,
+  _Stress1_, _OW_}` is a literal, compile-time C source byte array
+  (not a runtime dictionary lookup subject to the `Symbols` corruption),
+  so it's a direct, bit-exact transcription of the source constant into
+  this port's phoneme-opcode names.
+
+  `_assembly.make_fe_word_token` applies year detection by DEFAULT for
+  any plain 4-digit token (`_numbers.is_year_number`/`year_to_phonemes`),
+  the same automatic way the real engine does it -- not behind any
+  embedded command. Verified: `test/test_numbers.py`'s
+  `test_year_to_phonemes_two_groups`/`test_year_to_phonemes_oh_
+  insertion`/`test_year_to_phonemes_round_hundred`/`test_number_token_
+  reads_as_year_by_default`.
+
+  NOT ported: `ProcessNumberString`'s clock/dollar/cent special modes,
+  ordinals, decimals, and the full `SpeakTokenAsNumber`/`GetNextToken`
+  tokenizer state machine needed to detect them from surrounding
+  punctuation/context (a leading `$`, a trailing `:`/`.`/`¢`, etc.) --
+  all larger, separate pieces of tokenizer-context-detection scope
+  beyond the plain-digit-token path this port's simplified `_frontend.py`
+  tokenizer has.
 - (Fixed) Abbreviation-period handling: `GetNextToken` doesn't treat a
   `.` right after a known dictionary abbreviation (e.g. "MR.", "DR.",
   "ST.", looked up WITH the period as part of its key, `is_abbrev=True`

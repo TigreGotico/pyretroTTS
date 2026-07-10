@@ -80,8 +80,12 @@ via a dictionary lookup and do not end a sentence/clause
 `FrontEnd.c`'s `tok->isAbbriv` check. The `nmbr` embedded command
 (`[[nmbr LTRL]]`/`[[nmbr NORM]]`) switches digit-string tokens between
 digit-by-digit reading ("123" -> "one two three") and normal cardinal
-grouping. Remaining known gaps: `char`/`mode` embedded commands and
-ordinal/decimal/currency/year/phone-number reading modes — see
+grouping. A plain 4-digit number starting with "1" (1001-1999, e.g.
+"1984") is automatically read year-style ("nineteen eighty-four")
+instead of as a grouped cardinal, matching the real engine's own
+narrow, automatic `kYearSpecial` detection. Remaining known gaps:
+`char`/`mode` embedded commands and
+ordinal/decimal/currency/phone-number reading modes — see
 `docs/architecture.md` for
 specifics. You can still synthesize from an
 already-built phoneme plan directly via
