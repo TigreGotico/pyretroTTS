@@ -1,4 +1,4 @@
-# Creating a voice in lintalker: from zero to hero
+# Creating a voice in pylintalker: from zero to hero
 
 This guide explains, from first principles, how DECtalk (and this port)
 turns a set of ~70 numbers into a speaking voice, and walks through
@@ -96,7 +96,7 @@ the parameter list below, these "characters" are just presets.
 
 ## Part 2: the voice dict
 
-In this codebase, a voice is a plain Python `dict` (see `lintalker/_data.py`
+In this codebase, a voice is a plain Python `dict` (see `pylintalker/_data.py`
 for the 17 built-in ones: `Fred_Voice`, `Kathy_Voice`, ..., `Cellos_Voice`).
 It's read once by `_backend.init_voice(vv, voice_dict)` (called from
 `api.new_voice()`) to populate a `VoiceVar` instance — the mutable
@@ -209,7 +209,7 @@ you want (a "base male" like `Fred_Voice`, "base female" like
 existing character) and change a handful of keys:
 
 ```python
-# in your own module, or appended to lintalker/_data.py
+# in your own module, or appended to pylintalker/_data.py
 MyRobot_Voice = dict(Fred_Voice)   # shallow copy is fine -- lists like
                                     # vWave/notes aren't mutated in place
 MyRobot_Voice.update({
@@ -226,7 +226,7 @@ MyRobot_Voice.update({
 Then use it exactly like a built-in voice:
 
 ```python
-from lintalker.api import synthesize_text, pcm_to_wav
+from pylintalker.api import synthesize_text, pcm_to_wav
 pcm = synthesize_text(MyRobot_Voice, "hello, I am a robot.")
 pcm_to_wav(pcm, "robot.wav")
 ```
@@ -295,8 +295,8 @@ runs without crashing and sounds like what you intended." A minimal smoke
 check:
 
 ```python
-from lintalker.api import synthesize_text, pcm_to_wav
-from lintalker._data import PhonFlags2  # sanity: package imports fine
+from pylintalker.api import synthesize_text, pcm_to_wav
+from pylintalker._data import PhonFlags2  # sanity: package imports fine
 
 pcm = synthesize_text(MyRobot_Voice, "testing one two three.")
 assert len(pcm) > 0

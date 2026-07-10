@@ -10,8 +10,8 @@ verification caveat.
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from lintalker._letters import LETTER_PHONEMES, spell_word
-from lintalker._phonemes import _Word_, _b_, _IY_, _s_, _EH_, _f_
+from pylintalker._letters import LETTER_PHONEMES, spell_word
+from pylintalker._phonemes import _Word_, _b_, _IY_, _s_, _EH_, _f_
 
 
 def test_all_26_letters_present():
@@ -39,8 +39,8 @@ def test_spell_word_skips_non_letter_characters():
 
 
 def test_end_to_end_via_synthesize_text_does_not_crash():
-    from lintalker.api import synthesize_text
-    from lintalker._data import Fred_Voice
+    from pylintalker.api import synthesize_text
+    from pylintalker._data import Fred_Voice
 
     pcm = synthesize_text(Fred_Voice, "[[char LTRL]]cab[[char NORM]] home")
     assert len(pcm) > 0

@@ -7,7 +7,7 @@ its lookup key and `is_abbrev=True`.
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from lintalker._frontend import tokenize, split_clauses, split_sentences
+from pylintalker._frontend import tokenize, split_clauses, split_sentences
 
 
 def test_tokenize_keeps_period_on_known_abbreviation():

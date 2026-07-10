@@ -35,19 +35,19 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 C_BIN = os.path.expanduser("~/AgentWorkspaces/ovos/lintalker-c/bin/Debug/test_harness")
 
-from lintalker._backend import (
+from pylintalker._backend import (
     VoiceVar, FormantVar, init_voice, fill_samp_buf,
     start_talk, e_fill_next_frame,
     calc_ramp_steps, start_new_pitch_clause,
     say_frame,
 )
-import lintalker._backend as be
-from lintalker._consts import (
+import pylintalker._backend as be
+from pylintalker._consts import (
     kFrame1, kFrame2, kOnePtOh, k100percent,
     kSpeakNewPhon, kSpeakPhon, kSpeakLastFrame,
     kNoMarker,
 )
-from lintalker._data import (
+from pylintalker._data import (
     Fred_Voice, Kathy_Voice, Princess_Voice, Junior_Voice, Ralph_Voice,
     Whisper_Voice, Zarvox_Voice, Trinoids_Voice, Bubbles_Voice,
     Boing_Voice, Bells_Voice, Hysterical_Voice, Deranged_Voice,

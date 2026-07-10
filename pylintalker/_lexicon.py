@@ -70,7 +70,7 @@ for `English.lex`):
 
 Each phoneme byte in the string is copied through unchanged
 (`FrontEnd.c:1245`/`1288`) -- it is already a phoneme id from the
-`mt4.h:288-315` enum, mirrored in `lintalker/_phonemes.py`. This includes
+`mt4.h:288-315` enum, mirrored in `pylintalker/_phonemes.py`. This includes
 literal `_Stress1_`/`_Stress2_` opcodes (stress is NOT flag-bit-packed in
 this dictionary) and literal `_pRise_`/`_pFall_` opcodes standing in for the
 not-yet-ported compound/word-boundary markers (`kDictComp`/`kDictWord`,

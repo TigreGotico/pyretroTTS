@@ -26,9 +26,9 @@ None of `Morph.c`, the embedded-command parser (`EmbeddedCmd.c`), or the real
 `FrontEnd.c` token stream are ported in this repo (see
 `docs/architecture.md`). Per this phase's task, `Collect_FE_Tokens` is
 therefore adapted to consume:
-  - `lintalker/_frontend.py:tokenize()` for the word/punctuation stream
+  - `pylintalker/_frontend.py:tokenize()` for the word/punctuation stream
     (stand-in for the `e_ParseNextWord_FUNC` token source), and
-  - `lintalker/_lexicon.py:lookup()` for real dictionary fields
+  - `pylintalker/_lexicon.py:lookup()` for real dictionary fields
     (`pos_code1`/`pos_code2`/`comp_pos1`/`comp_pos2`/`is_compound`/
     `phon_str`/`phon_hold`/`is_abbrev`/`has_alt`) when the word is in
     `english_lex`, falling back to `_engtop.engtop()` for words the

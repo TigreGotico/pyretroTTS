@@ -1,5 +1,5 @@
-"""List the 17 built-in DECtalk voices ported into lintalker._data."""
-from lintalker import _data
+"""List the 17 built-in DECtalk voices ported into pylintalker._data."""
+from pylintalker import _data
 
 VOICE_NAMES = [
     "Fred", "Kathy", "Princess", "Junior", "Ralph", "Whisper",

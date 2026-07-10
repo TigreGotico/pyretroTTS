@@ -12,8 +12,8 @@ all.
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from lintalker._rawphon import parse_raw_phonemes, split_into_word_groups, MAGIC_MAP
-from lintalker._phonemes import (
+from pylintalker._rawphon import parse_raw_phonemes, split_into_word_groups, MAGIC_MAP
+from pylintalker._phonemes import (
     _Stress1_, _Stress2_, _Word_, _AA_, _p_, _t_, _Comma_, _Period_,
     _EmphWord_, _SIL_,
 )

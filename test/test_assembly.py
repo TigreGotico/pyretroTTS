@@ -1,4 +1,4 @@
-"""Tests for `lintalker._assembly` -- Phase 1 of the `Collect_FE_Tokens`
+"""Tests for `pylintalker._assembly` -- Phase 1 of the `Collect_FE_Tokens`
 (`BackEnd.c:3712-4157`) port.
 
 VALIDATION STATUS: `test_harness.c`'s built-in dump only prints
@@ -30,14 +30,14 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from lintalker._assembly import make_fe_word_token, collect_fe_tokens
-from lintalker._morph import resolve_pos
-from lintalker._consts import (
+from pylintalker._assembly import make_fe_word_token, collect_fe_tokens
+from pylintalker._morph import resolve_pos
+from pylintalker._consts import (
     kUndefPOS, kNoun, kArt, kPrimaryStress, kSecondaryStress,
     kEmphaticStress, kContent_Word, kWord_Start, kCompoundNoun,
     kTerm_Bound, kStressField,
 )
-from lintalker._phonemes import _Word_, _Period_, _Comma_, _Quest_, _Exclam_
+from pylintalker._phonemes import _Word_, _Period_, _Comma_, _Quest_, _Exclam_
 
 
 # ---------------------------------------------------------------------------
@@ -101,11 +101,11 @@ def test_dictionary_miss_falls_back_to_engtop_with_noun_pos():
 def test_trailing_punct_maps_to_phrase_boundary():
     tok = make_fe_word_token("STOP", ".")
     assert tok.trailing_punct == "."
-    from lintalker._consts import kBND_Decl
+    from pylintalker._consts import kBND_Decl
     assert tok.phrase_bnd == kBND_Decl
 
     tok2 = make_fe_word_token("STOP", None)
-    from lintalker._consts import kBND_None
+    from pylintalker._consts import kBND_None
     assert tok2.phrase_bnd == kBND_None
 
 
@@ -154,7 +154,7 @@ def test_compound_hint_present_but_not_yet_translated_to_comp_opcode():
     assert tok.is_compound_hint is True
     # kDictComp is an alias for the literal _pRise_ opcode (mt4.h:759) --
     # confirm it is present un-translated, i.e. _Comp_ itself is absent.
-    from lintalker._phonemes import _Comp_
+    from pylintalker._phonemes import _Comp_
     assert _Comp_ not in tok.phon_str
 
     sa = collect_fe_tokens("chickenpox now.")

@@ -1,4 +1,4 @@
-"""Tests for `lintalker._pitchbuf` (`store_f0_and_time`, `fill_pitch_buf`),
+"""Tests for `pylintalker._pitchbuf` (`store_f0_and_time`, `fill_pitch_buf`),
 the port of `Fill_Pitch_Buf`/`Store_F0_and_Time` (`BackEnd.c:337-671`).
 
 Validated directly against the C reference's pitch buffer dump (the `N`
@@ -26,14 +26,14 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, os.path.dirname(__file__))
 
-from lintalker._assembly import collect_fe_tokens
-from lintalker._phonbuf2 import fill_phon_buf_2, insert_closure_release
-from lintalker._pitchcontour import pitch_raise_and_fall
-from lintalker._moduration import mod_duration
-from lintalker._pitchbuf import fill_pitch_buf
-from lintalker._backend import calc_ramp_steps
-from lintalker.api import new_voice
-from lintalker._data import Fred_Voice, Kathy_Voice, Junior_Voice, Zarvox_Voice
+from pylintalker._assembly import collect_fe_tokens
+from pylintalker._phonbuf2 import fill_phon_buf_2, insert_closure_release
+from pylintalker._pitchcontour import pitch_raise_and_fall
+from pylintalker._moduration import mod_duration
+from pylintalker._pitchbuf import fill_pitch_buf
+from pylintalker._backend import calc_ramp_steps
+from pylintalker.api import new_voice
+from pylintalker._data import Fred_Voice, Kathy_Voice, Junior_Voice, Zarvox_Voice
 
 from test_voices import run_c, parse_sentence_plan
 

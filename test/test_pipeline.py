@@ -2,21 +2,21 @@
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from lintalker._backend import (
+from pylintalker._backend import (
     VoiceVar, FormantVar,
     init_voice, fill_samp_buf,
     start_talk, e_fill_next_frame,
     calc_ramp_steps, start_new_pitch_clause,
     say_frame,
 )
-import lintalker._backend as be
+import pylintalker._backend as be
 
-from lintalker._consts import (
+from pylintalker._consts import (
     kFrame1, kFrame2, kOnePtOh, k100percent,
     kSpeakNewPhon, kSpeakPhon, kSpeakLastFrame,
     kNoMarker,
 )
-from lintalker._data import Fred_Voice
+from pylintalker._data import Fred_Voice
 
 REFERENCE_PHONEMES = [23, 11, 54, 3, 33, 22, 23]
 REFERENCE_CTRL = [1, 268500993, 0, 268502089, 9, 16393, 2621440]

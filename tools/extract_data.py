@@ -8,7 +8,7 @@ import re, os, sys
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 C_SRC = os.path.join(os.path.dirname(REPO), "lintalker-c", "src")
 C_INC = os.path.join(os.path.dirname(REPO), "lintalker-c", "include")
-OUT = os.path.join(REPO, "lintalker", "lintalker")
+OUT = os.path.join(REPO, "pylintalker", "pylintalker")
 
 
 def strip_c_comments(text):

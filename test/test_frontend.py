@@ -1,4 +1,4 @@
-"""Tests for the (partial) FrontEnd.c port in lintalker/_frontend.py.
+"""Tests for the (partial) FrontEnd.c port in pylintalker/_frontend.py.
 
 These tests cover tokenization + per-word rule-based letter-to-sound
 (engtop) in isolation. The full pipeline built on top of `tokenize()`
@@ -12,8 +12,8 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from lintalker._frontend import tokenize, words_to_phonemes, split_sentences
-from lintalker._phonemes import _Period_, _Comma_, _Quest_, _Exclam_, _Word_
+from pylintalker._frontend import tokenize, words_to_phonemes, split_sentences
+from pylintalker._phonemes import _Period_, _Comma_, _Quest_, _Exclam_, _Word_
 
 
 def test_tokenize_splits_words_and_punct():

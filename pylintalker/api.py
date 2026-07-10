@@ -101,7 +101,7 @@ def synthesize_phonemes(
     """Synthesize a phoneme plan into raw 16-bit PCM audio (little-endian, mono).
 
     ``phonemes``/``ctrls``/``durs`` are parallel arrays describing the
-    phoneme sequence (see ``lintalker._phonemes`` for phoneme ids). ``pitch_*``
+    phoneme sequence (see ``pylintalker._phonemes`` for phoneme ids). ``pitch_*``
     describe an optional pitch contour overlay, as produced by the C
     reference's frontend.
 

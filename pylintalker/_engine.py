@@ -173,7 +173,7 @@ def e_speak_buffer(vv: VoiceVar, text_buf, byte_len: int, control_flags: int) ->
         "e_speak_buffer requires e_StartParse (FrontEnd.c) and Talk "
         "(BackEnd.c), neither of which is ported. Fill vv.phon_Buf_2 / "
         "vv.phon_Ctrl_Buf_2 / vv.dur_Buf directly and call "
-        "lintalker._backend.start_talk()/e_fill_next_frame() instead."
+        "pylintalker._backend.start_talk()/e_fill_next_frame() instead."
     )
 
 
@@ -280,7 +280,7 @@ def e_use_voice(vv: VoiceVar, voice_dict: dict) -> int:
     """
     raise NotImplementedError(
         "e_use_voice requires synth_Init + NewVoice (fsynth.c); use "
-        "lintalker._backend.init_voice(vv, voice_dict) directly instead."
+        "pylintalker._backend.init_voice(vv, voice_dict) directly instead."
     )
 
 

@@ -14,12 +14,12 @@ docs/architecture.md).
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from lintalker._numbers import number_to_phonemes
-from lintalker._phonemes import _Word_
+from pylintalker._numbers import number_to_phonemes
+from pylintalker._phonemes import _Word_
 
 
 def _decode(phons):
-    from lintalker import _phonemes as P
+    from pylintalker import _phonemes as P
     names = {v: k for k, v in vars(P).items() if k.startswith('_') and isinstance(v, int)}
     return [names.get(p, p) for p in phons]
 
@@ -74,8 +74,8 @@ def test_zero_alone():
 
 
 def test_end_to_end_via_synthesize_text_does_not_crash():
-    from lintalker.api import synthesize_text
-    from lintalker._data import Fred_Voice
+    from pylintalker.api import synthesize_text
+    from pylintalker._data import Fred_Voice
 
     for text in ["123", "i have 42 apples.", "the year 2023.", "0", "1000000"]:
         pcm = synthesize_text(Fred_Voice, text)
@@ -83,8 +83,8 @@ def test_end_to_end_via_synthesize_text_does_not_crash():
 
 
 def test_number_token_gets_kadj_pos():
-    from lintalker._assembly import make_fe_word_token
-    from lintalker._consts import kAdj
+    from pylintalker._assembly import make_fe_word_token
+    from pylintalker._consts import kAdj
 
     tok = make_fe_word_token("123", None)
     assert tok.pos_code1[0] == kAdj
@@ -92,7 +92,7 @@ def test_number_token_gets_kadj_pos():
 
 
 def test_frontend_tokenize_preserves_digit_tokens():
-    from lintalker._frontend import tokenize
+    from pylintalker._frontend import tokenize
 
     tokens = tokenize("i have 123 dollars.")
     words = [w for w, _ in tokens]
@@ -100,16 +100,16 @@ def test_frontend_tokenize_preserves_digit_tokens():
 
 
 def test_digit_by_digit_reads_each_digit_separately():
-    from lintalker._numbers import digit_by_digit_phonemes, _ONES
+    from pylintalker._numbers import digit_by_digit_phonemes, _ONES
 
     assert digit_by_digit_phonemes("123") == [_Word_] + _ONES[1] + _ONES[2] + _ONES[3]
     assert digit_by_digit_phonemes("0") == [_Word_] + _ONES[0]
 
 
 def test_nmbr_embedded_command_switches_to_digit_by_digit():
-    from lintalker._embeddedcmd import scan_bracket_commands
-    from lintalker._assembly import collect_fe_tokens
-    from lintalker._numbers import digit_by_digit_phonemes, number_to_phonemes
+    from pylintalker._embeddedcmd import scan_bracket_commands
+    from pylintalker._assembly import collect_fe_tokens
+    from pylintalker._numbers import digit_by_digit_phonemes, number_to_phonemes
 
     clean, _cmds, _emph, _sil, _pos, _rates, _final_rate, nmbr, _rawphon, _char = scan_bracket_commands(
         "[[nmbr LTRL]]123"
@@ -122,7 +122,7 @@ def test_nmbr_embedded_command_switches_to_digit_by_digit():
 
 
 def test_is_year_number():
-    from lintalker._numbers import is_year_number
+    from pylintalker._numbers import is_year_number
 
     assert is_year_number("1984")
     assert is_year_number("1000") is False  # explicitly excluded (FrontEnd.c:1985)
@@ -132,28 +132,28 @@ def test_is_year_number():
 
 
 def test_year_to_phonemes_two_groups():
-    from lintalker._numbers import year_to_phonemes, _two_digit_phonemes
+    from pylintalker._numbers import year_to_phonemes, _two_digit_phonemes
 
     assert year_to_phonemes("1984") == [_Word_] + _two_digit_phonemes(1, 9) + _two_digit_phonemes(8, 4)
 
 
 def test_year_to_phonemes_oh_insertion():
-    from lintalker._numbers import year_to_phonemes, _two_digit_phonemes, _OH
+    from pylintalker._numbers import year_to_phonemes, _two_digit_phonemes, _OH
 
     # 1905 -> "nineteen oh five" (second group's tens digit is 0, units isn't)
     assert year_to_phonemes("1905") == [_Word_] + _two_digit_phonemes(1, 9) + _OH + _two_digit_phonemes(0, 5)
 
 
 def test_year_to_phonemes_round_hundred():
-    from lintalker._numbers import year_to_phonemes, _two_digit_phonemes, _HUNDRED
+    from pylintalker._numbers import year_to_phonemes, _two_digit_phonemes, _HUNDRED
 
     # 1900 -> "nineteen hundred" (second group is "00")
     assert year_to_phonemes("1900") == [_Word_] + _two_digit_phonemes(1, 9) + _HUNDRED
 
 
 def test_number_token_reads_as_year_by_default():
-    from lintalker._assembly import make_fe_word_token
-    from lintalker._numbers import year_to_phonemes, number_to_phonemes
+    from pylintalker._assembly import make_fe_word_token
+    from pylintalker._numbers import year_to_phonemes, number_to_phonemes
 
     tok = make_fe_word_token("1984", None)
     assert tok.phon_str == year_to_phonemes("1984")
@@ -163,15 +163,15 @@ def test_number_token_reads_as_year_by_default():
     assert tok2.phon_str == number_to_phonemes("2023")
 
     # digit_by_digit mode overrides year detection too.
-    from lintalker._numbers import digit_by_digit_phonemes
+    from pylintalker._numbers import digit_by_digit_phonemes
     tok3 = make_fe_word_token("1984", None, digit_by_digit=True)
     assert tok3.phon_str == digit_by_digit_phonemes("1984")
 
 
 def test_nmbr_mode_latches_until_switched_back():
-    from lintalker._embeddedcmd import scan_bracket_commands
-    from lintalker._assembly import collect_fe_tokens
-    from lintalker._numbers import digit_by_digit_phonemes, number_to_phonemes
+    from pylintalker._embeddedcmd import scan_bracket_commands
+    from pylintalker._assembly import collect_fe_tokens
+    from pylintalker._numbers import digit_by_digit_phonemes, number_to_phonemes
 
     clean, _cmds, _emph, _sil, _pos, _rates, _final_rate, nmbr, _rawphon, _char = scan_bracket_commands(
         "[[nmbr LTRL]]12 [[nmbr NORM]]34"
@@ -183,7 +183,7 @@ def test_nmbr_mode_latches_until_switched_back():
 
 
 def test_tokenize_dollar_prefix_kept_as_digit_token():
-    from lintalker._frontend import tokenize
+    from pylintalker._frontend import tokenize
 
     dollar_indices = []
     tokens = tokenize("i have $5.", dollar_indices)
@@ -195,7 +195,7 @@ def test_dollar_prefix_no_longer_silently_dropped():
     # Regression guard: before dollar-amount reading was ported, "$5"
     # had no alpha characters left after tokenize()'s fallback filter,
     # so the whole token vanished instead of being read as a number.
-    from lintalker._frontend import tokenize
+    from pylintalker._frontend import tokenize
 
     tokens = tokenize("i have $5.")
     words = [w for w, _ in tokens]
@@ -203,15 +203,15 @@ def test_dollar_prefix_no_longer_silently_dropped():
 
 
 def test_dollar_phonemes_plural_and_singular():
-    from lintalker._numbers import dollar_phonemes, number_to_phonemes, _DOLLAR
+    from pylintalker._numbers import dollar_phonemes, number_to_phonemes, _DOLLAR
 
     assert dollar_phonemes("5") == [_Word_] + number_to_phonemes("5")[1:] + _DOLLAR
     assert dollar_phonemes("1") == [_Word_] + number_to_phonemes("1")[1:] + _DOLLAR[:-1]
 
 
 def test_dollar_amount_reaches_word_token_end_to_end():
-    from lintalker._assembly import collect_fe_tokens
-    from lintalker._numbers import dollar_phonemes, number_to_phonemes
+    from pylintalker._assembly import collect_fe_tokens
+    from pylintalker._numbers import dollar_phonemes, number_to_phonemes
 
     sa = collect_fe_tokens("i have $5.")
     dollar_word = sa.words[2]
@@ -224,8 +224,8 @@ def test_dollar_bypasses_year_detection():
     # "$1984" must read as a plain cardinal + "dollars", NOT as a year
     # (SpeakTokenAsNumber's kYearSpecial check explicitly excludes
     # kAddDollar tokens, FrontEnd.c:1982-1983).
-    from lintalker._assembly import make_fe_word_token
-    from lintalker._numbers import dollar_phonemes, year_to_phonemes
+    from pylintalker._assembly import make_fe_word_token
+    from pylintalker._numbers import dollar_phonemes, year_to_phonemes
 
     tok = make_fe_word_token("1984", None, is_dollar=True)
     assert tok.phon_str == dollar_phonemes("1984")
@@ -233,7 +233,7 @@ def test_dollar_bypasses_year_detection():
 
 
 def test_tokenize_decimal_splits_into_three_tokens():
-    from lintalker._frontend import tokenize
+    from pylintalker._frontend import tokenize
 
     frac_indices = []
     tokens = tokenize("it costs 3.14 dollars.", _decimal_frac_out=frac_indices)
@@ -249,15 +249,15 @@ def test_decimal_no_longer_silently_dropped():
     # Regression guard: before this was ported, "3.14" had no alpha
     # characters left after tokenize()'s fallback filter (digits AND
     # the "." both get stripped), so the whole token vanished.
-    from lintalker._frontend import tokenize
+    from pylintalker._frontend import tokenize
 
     words = [w for w, _ in tokenize("it costs 3.14 dollars.")]
     assert "3" in words and "POINT" in words and "14" in words
 
 
 def test_decimal_fraction_read_digit_by_digit():
-    from lintalker._assembly import collect_fe_tokens
-    from lintalker._numbers import digit_by_digit_phonemes, number_to_phonemes
+    from pylintalker._assembly import collect_fe_tokens
+    from pylintalker._numbers import digit_by_digit_phonemes, number_to_phonemes
 
     sa = collect_fe_tokens("it costs 3.14 dollars.")
     frac_word = sa.words[4]
@@ -270,7 +270,7 @@ def test_decimal_not_applied_to_dollar_prefixed_token():
     # $3.14 isn't handled by the plain-decimal path (the real engine
     # routes it through the SEPARATE "AND ... cents" branch instead,
     # see below) -- so it must not get the plain-decimal "POINT" reading.
-    from lintalker._frontend import tokenize
+    from pylintalker._frontend import tokenize
 
     tokens = tokenize("it costs $3.14 total.")
     words = [w for w, _ in tokens]
@@ -278,7 +278,7 @@ def test_decimal_not_applied_to_dollar_prefixed_token():
 
 
 def test_tokenize_dollar_decimal_splits_into_dollars_and_and_cents():
-    from lintalker._frontend import tokenize
+    from pylintalker._frontend import tokenize
 
     dollar_indices, cent_indices = [], []
     tokens = tokenize(
@@ -294,15 +294,15 @@ def test_tokenize_dollar_decimal_splits_into_dollars_and_and_cents():
 
 
 def test_cent_phonemes_plural_and_singular():
-    from lintalker._numbers import cent_phonemes, number_to_phonemes, _CENT
+    from pylintalker._numbers import cent_phonemes, number_to_phonemes, _CENT
 
     assert cent_phonemes("25") == [_Word_] + number_to_phonemes("25")[1:] + _CENT
     assert cent_phonemes("1") == [_Word_] + number_to_phonemes("1")[1:] + _CENT[:-1]
 
 
 def test_dollar_and_cents_reaches_word_tokens_end_to_end():
-    from lintalker._assembly import collect_fe_tokens
-    from lintalker._numbers import dollar_phonemes, cent_phonemes
+    from pylintalker._assembly import collect_fe_tokens
+    from pylintalker._numbers import dollar_phonemes, cent_phonemes
 
     sa = collect_fe_tokens("it costs $5.25 total.")
     assert sa.words[2].word == "5"
@@ -313,15 +313,15 @@ def test_dollar_and_cents_reaches_word_tokens_end_to_end():
 
 
 def test_cent_amount_reads_as_cardinal_not_digit_by_digit():
-    from lintalker._assembly import collect_fe_tokens
-    from lintalker._numbers import digit_by_digit_phonemes
+    from pylintalker._assembly import collect_fe_tokens
+    from pylintalker._numbers import digit_by_digit_phonemes
 
     sa = collect_fe_tokens("it costs $5.25 total.")
     assert sa.words[4].phon_str != digit_by_digit_phonemes("25")
 
 
 def test_tokenize_clock_splits_hour_and_minutes():
-    from lintalker._frontend import tokenize
+    from pylintalker._frontend import tokenize
 
     clock_indices = []
     tokens = tokenize("it is 3:45 now.", _clock_out=clock_indices)
@@ -330,7 +330,7 @@ def test_tokenize_clock_splits_hour_and_minutes():
 
 
 def test_tokenize_clock_requires_exactly_two_minute_digits():
-    from lintalker._frontend import tokenize
+    from pylintalker._frontend import tokenize
 
     # "3:5" (one minute digit) isn't clock-shaped -- matches the real
     # engine's own tok->tokStr[0] == 2 length check.
@@ -340,7 +340,7 @@ def test_tokenize_clock_requires_exactly_two_minute_digits():
 
 
 def test_clock_phonemes_normal_oh_and_oclock():
-    from lintalker._numbers import clock_phonemes, _two_digit_phonemes, _OH, _CLOCK
+    from pylintalker._numbers import clock_phonemes, _two_digit_phonemes, _OH, _CLOCK
 
     assert clock_phonemes("45") == [_Word_] + _two_digit_phonemes(4, 5)
     assert clock_phonemes("05") == [_Word_] + _OH + _two_digit_phonemes(0, 5)
@@ -348,8 +348,8 @@ def test_clock_phonemes_normal_oh_and_oclock():
 
 
 def test_clock_time_reaches_word_tokens_end_to_end():
-    from lintalker._assembly import collect_fe_tokens
-    from lintalker._numbers import number_to_phonemes, clock_phonemes
+    from pylintalker._assembly import collect_fe_tokens
+    from pylintalker._numbers import number_to_phonemes, clock_phonemes
 
     sa = collect_fe_tokens("it is 3:45 now.")
     assert sa.words[2].word == "3"

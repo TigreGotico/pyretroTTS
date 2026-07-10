@@ -1,7 +1,7 @@
 """
-Bit-exact test for the english_lex dictionary-lookup port (lintalker._lexicon).
+Bit-exact test for the english_lex dictionary-lookup port (pylintalker._lexicon).
 
-This validates `lintalker._lexicon.lookup()` against output captured from the
+This validates `pylintalker._lexicon.lookup()` against output captured from the
 real C dictionary lookup, compiled as a standalone throwaway harness
 (`lex_harness.c`, built and run against the actual compiled object files
 `obj/Debug/{Data,english_lex,Linux,FrontEnd,Morph,EngToP,Sounds,Engine,
@@ -23,7 +23,7 @@ bytes through verbatim -- no `kPrimeStress` flag-bit stripping and no
 `_pRise_`/`_pFall_` opcodes (aliased as `kDictComp`/`kDictWord`, `mt4.h:759-
 760`) pass straight through to whoever consumes `tok->phonStr` next --
 `Fill_Phon_Buf_2` (`BackEnd.c:2469-2846`, not yet ported), not this
-dictionary decode. `lintalker/_lexicon.py`'s docstring documents this in
+dictionary decode. `pylintalker/_lexicon.py`'s docstring documents this in
 detail.
 
 REFERENCE below covers, by design:
@@ -50,8 +50,8 @@ All 250 words matched the C reference bit-exact at capture time.
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from lintalker._lexicon import lookup
-from lintalker._phonemes import _Word_
+from pylintalker._lexicon import lookup
+from pylintalker._phonemes import _Word_
 
 # word -> None (not found) or a dict of decoded fields, captured from the
 # standalone C harness described above.

@@ -1,4 +1,4 @@
-"""End-to-end validation of `lintalker.api.synthesize_text()`/
+"""End-to-end validation of `pylintalker.api.synthesize_text()`/
 `build_phoneme_plan()`: text in, per-frame synthesis state out, compared
 against the real C engine's full pipeline (`FrontEnd.c` + `BackEnd.c`)
 frame-by-frame -- the same rigor `test_voices.py` already applies to
@@ -72,10 +72,10 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, os.path.dirname(__file__))
 
-import lintalker._backend as be
-from lintalker._backend import kFrame1
-from lintalker.api import synthesize_text
-from lintalker._data import (
+import pylintalker._backend as be
+from pylintalker._backend import kFrame1
+from pylintalker.api import synthesize_text
+from pylintalker._data import (
     Fred_Voice, Kathy_Voice, Princess_Voice, Junior_Voice, Ralph_Voice,
     Whisper_Voice, Zarvox_Voice, Trinoids_Voice, Bubbles_Voice, Boing_Voice,
     Bells_Voice, Hysterical_Voice,
@@ -446,8 +446,8 @@ def test_do_morph_pos_from_suffix():
     `make_fe_word_token("TIMED", None).pos_code1` resolves to `[kVerb,
     kUndefPOS, kUndefPOS, kUndefPOS]`, not the root "TIME"'s own
     (ambiguous) candidate list."""
-    from lintalker._assembly import make_fe_word_token
-    from lintalker._consts import kVerb, kUndefPOS
+    from pylintalker._assembly import make_fe_word_token
+    from pylintalker._consts import kVerb, kUndefPOS
 
     tok = make_fe_word_token("TIMED", None)
     assert tok.pos_code1 == [kVerb, kUndefPOS, kUndefPOS, kUndefPOS], tok.pos_code1
