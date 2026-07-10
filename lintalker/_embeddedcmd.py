@@ -186,16 +186,30 @@ def scan_bracket_commands(text: str):
     separately from `commands` (see below) since it isn't a `CMDQueue`
     entry.
 
+    Also recognizes `cmnt` (`Parse_cmnt_Command`, `EmbeddedCmd.c:521-525`
+    -- a genuine no-op even in the real engine, it just skips the rest
+    of the command) and `vers` (`Parse_vers_Command`, `EmbeddedCmd.c:768
+    -778` -- validates the version argument is `1.0`/`0.0` and otherwise
+    logs a parse error; has no state-changing effect either way) as
+    silently-stripped no-ops, and `dlim` (`Parse_dlim_Command`,
+    `EmbeddedCmd.c:527-556`): changes the begin/end delimiters used for
+    subsequent commands later in the SAME `text` (matches
+    `ChangeDelimiters`'s real scope -- it only affects commands parsed
+    afterward, mid-utterance). Its two arguments are each a decimal
+    character CODE (e.g. `91` for `[`), matching `Get32BitValue`'s
+    `newBegin >> 16`/`newEnd >> 16` extraction (a plain integer part,
+    no fractional digits expected in practice).
+
     NOT ported: `rate` (routes through `vv->lastRate`/
     `user_Rate_Buf1`, not `CMDQueue`, and `e_set_speech_rate`'s
     non-singing branch already isn't ported -- see `_engine.py`),
-    `rset`/`vers`/`xtnd`/`char`/`cmnt`/`dlim`/`mode`/`nmbr`/`slnc`/
-    `sync` (each its own separate parser/side-effect, not reachable via
-    `CMDQueue` or a plain token field the way `emph` is), and
-    mid-clause phoneme-accurate positioning (a command found after the
-    Nth word of ONE clause is applied before that clause's Nth word,
-    but this port has no opcode-in-phon_str pipeline the way the real
-    engine's `StuffBECommand`/`Parse_Embedded_Command` do -- see module
+    `rset`/`xtnd`/`char`/`mode`/`nmbr`/`slnc`/`sync` (each its own
+    separate parser/side-effect, not reachable via `CMDQueue` or a
+    plain token field the way `emph` is), and mid-clause
+    phoneme-accurate positioning (a command found after the Nth word of
+    ONE clause is applied before that clause's Nth word, but this port
+    has no opcode-in-phon_str pipeline the way the real engine's
+    `StuffBECommand`/`Parse_Embedded_Command` do -- see module
     docstring).
 
     Returns `(clean_text, commands, emphasis)`: `clean_text` is `text`
@@ -205,8 +219,8 @@ def scan_bracket_commands(text: str):
     dict for `emph`. `word_index` is how many words (per
     `_frontend.tokenize`) of `clean_text` PRECEDE that command, i.e. the
     command/override applies to (or right before) that word. An
-    unrecognized keyword, or a span with no `]]` before the end of
-    `text`, is left in `clean_text` untouched (matches
+    unrecognized keyword, or a span with no closing delimiter before
+    the end of `text`, is left in `clean_text` untouched (matches
     `LogParseError`'s effect of leaving `PendingCommands` unset for
     that command -- this port simply doesn't strip what it can't
     parse, rather than raising).
@@ -246,6 +260,28 @@ def scan_bracket_commands(text: str):
         if keyword == 'EMPH' and len(inner) > 4 and inner[4] in '+-':
             emphasis[word_count] = 'emphasize' if inner[4] == '+' else 'deemphasize'
             i = end + len(END)
+            continue
+
+        if keyword in ('CMNT', 'VERS'):
+            # No state-changing effect either way (Parse_cmnt_Command is
+            # a genuine no-op; Parse_vers_Command only ever validates
+            # its argument and logs a parse error on mismatch) -- just
+            # strip the span.
+            i = end + len(END)
+            continue
+
+        if keyword == 'DLIM':
+            old_end_len = len(END)
+            begin_val, j = _parse_fixed_value(inner, 4)
+            while j < len(inner) and inner[j] in ' \t':
+                j += 1
+            end_val, j = _parse_fixed_value(inner, j)
+            begin_code = begin_val >> 16
+            end_code = end_val >> 16
+            if 0 <= begin_code <= 0xFF and 0 <= end_code <= 0xFF:
+                BEGIN = chr(begin_code)
+                END = chr(end_code)
+            i = end + old_end_len
             continue
 
         entry = _BRACKET_COMMANDS.get(keyword)

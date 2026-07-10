@@ -207,6 +207,32 @@ def test_scan_bracket_commands_unrecognized_keyword_left_untouched():
     assert cmds == []
 
 
+def test_scan_bracket_commands_cmnt_and_vers_are_stripped_noops():
+    from lintalker._embeddedcmd import scan_bracket_commands
+
+    clean, cmds, emph = scan_bracket_commands("[[cmnt this is ignored]]hello")
+    assert clean == "hello"
+    assert cmds == [] and emph == {}
+
+    clean, cmds, emph = scan_bracket_commands("[[vers65536]]hello")
+    assert clean == "hello"
+    assert cmds == [] and emph == {}
+
+
+def test_scan_bracket_commands_dlim_changes_subsequent_delimiters():
+    from lintalker._embeddedcmd import scan_bracket_commands
+
+    # '<'=60, '>'=62: switch delimiters mid-text, then use them for pbas.
+    clean, cmds, _emph = scan_bracket_commands("[[dlim60 62]]<pbas60>hello")
+    assert clean == "hello"
+    assert cmds == [(0, C_absPitch, 60 << 16)]
+
+    # Old [[ ]] delimiters no longer recognized after a dlim switch.
+    clean, cmds, _emph = scan_bracket_commands("[[dlim60 62]][[pbas60]]hello")
+    assert clean == "[[pbas60]]hello"
+    assert cmds == []
+
+
 def test_scan_bracket_commands_applied_end_to_end_via_build_phoneme_plan():
     """Regression test for the api.build_phoneme_plan integration: a
     bracketed pbas command actually changes vv.voiceNaturalPitch, and
