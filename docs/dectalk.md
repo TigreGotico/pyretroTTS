@@ -15,9 +15,12 @@ DECtalk markup dialect still renders through MacinTalk
 
 ## Status
 
-Phase 1 (the vocal tract model, `vtm/`) is **ported and bit-exact**. The text
-front end (`cmd/`, `lts/`, `ph/`) is not ported, so there is no text-to-speech
-yet; `pyretrotts/dectalk/engine.py` synthesizes from Klatt parameter frames.
+Phase 1 (the vocal tract model, `vtm/`) is **ported and bit-exact**. Phase 2
+ports one layer of the text front end: `phdraw`, the `ph/` frame drawer that
+interpolates per-phoneme targets into the Klatt parameter frames `vtm.py`
+consumes. The rest of the front end (`cmd/`, `lts/`, and the `ph/` stages that
+build `phdraw`'s input) is not ported, so there is still no text-to-speech;
+`pyretrotts/dectalk/engine.py` synthesizes from Klatt parameter frames.
 
 | Piece | Module | State |
 |---|---|---|
@@ -26,7 +29,9 @@ yet; `pyretrotts/dectalk/engine.py` synthesizes from Klatt parameter frames.
 | Ten voices: names, `[:n?]` codes, resolved chip parameters | `voices.py` | captured from C |
 | Constants, frame-parameter layout | `consts.py` | — |
 | Frame-driven synthesis + WAV writer | `engine.py` | — |
-| Text -> parameter frames (`ph/`) | — | **not ported** (Phase 2+) |
+| Phoneme frame drawer (`phdraw`) | `ph.py` | bit-exact vs C (10 voices) |
+| `ph/` allophone/duration/F0/target-setup stages | — | **not ported** (Phase 3+) |
+| `cmd/` markup, `lts/` letter-to-sound | — | **not ported** (Phase 3+) |
 
 ## The oracle
 
@@ -197,13 +202,77 @@ independent confirmation that the port matches the C reference.
 The gate does bite: mutating `frac4mul`'s shift from `>> 12` to `>> 11` fails
 ten of the twelve golden cases.
 
+## What `ph/` is
+
+`ph/` turns a phoneme + prosody stream into the per-frame Klatt parameter
+vectors `vtm.py` consumes. For the US-English build (`ENGLISH_US`,
+`OLD_INTONATION_AND_TIMING`; the analog of `vtm`'s `VTM1`, set at
+`dectalkf_klsyn.h:248`) the orchestrator is `phclause` (`ph_claus.c:200`), which
+runs the chain
+
+    phsort -> phalloph -> us_phtiming -> phinton -> [per-frame loop]
+
+then, once per output frame (71 samples), the loop (`ph_claus.c:362-508`):
+
+1. advances a frame clock `tcum`; at a phoneme boundary reloads `durfon =
+   allodurs[nphone]`, writes `parstochip[OUT_PH/DU/PH2]`, and calls `phsettar`
+   (`ph_setar.c:561`) to reset each parameter's target and transition specs;
+2. `pht0draw` (`ph_drwt01.c:277`) draws the F0/period `parstochip[OUT_T0]`;
+3. **`phdraw` (`ph_draw.c:229`) draws the fifteen spectral/amplitude parameters**
+   into `parstochip[]` by interpolating the `PARAMETER param[]` state;
+4. `send_pars` (`ph_claus.c:694`) ships `parstochip[]` to the vocal tract model.
+
+The interpolation is fixed point: per-frame deltas (`deldip`, `dftran`,
+`dbtran`) are stored *8, and the running value is shifted back with `DIV_BY8`
+(`>> 3`, `ph_defs.h:382`) to avoid roundoff propagation.
+
+### What is ported: `phdraw`
+
+`pyretrotts/dectalk/ph.py` ports **`phdraw`** for the compiled US path. In that
+build (neither `HLSYN` nor `CHANGES_AFTER_V43` defined) `phdraw` returns at
+`ph_draw.c:4307`, so every executable line is in `ph_draw.c:345-746`: the
+forward/backward/diphthong smoothing of F[1,2,3], FZ, B[1,2,3]; the amplitude
+smoothing of AV, AP, A[2..6], AB, TILT with the special-onset and double-burst
+rules; the AV glottal-stop reduction; and the source-tilt and breathy-voice
+computation. `draw_frame` is a pure per-frame function of the `PARAMETER` blocks
+and the `pDph_t`/`pDphsettar` scalars `phdraw` reads.
+
+Its input -- the interpolation state that `phsettar`, `pht0draw`, and the
+upstream stages produce -- is **captured from the C oracle**, exactly as Phase 1
+captured `phdraw`'s own output (`parstochip`) to validate `vtm.py`. The dumper
+patch instruments `ph_draw.c` (gate on env `DECTALK_PH_DUMP`) to write, per
+frame, an `E` line of `phdraw`'s entry state and an `X` line of the parameters it
+drew; `tools/dump_dectalk_vtm.parse_ph_dump` reads them. Like the `vtm`
+instrumentation, this C patch is kept out of the read-only checkout.
+
+### Verification
+
+- **`test/test_dectalk_ph.py`** -- frame-for-frame diff of Python `draw_frame`
+  against the instrumented C, for all ten voices over four utterances. Skips
+  without the binary. Result: **40/40 cases, every frame identical** (10 voices x
+  4 texts; **12 350 frames**; every one of the sixteen drawn parameters matches).
+- **`test/dectalk_ph_golden.py` + `test/test_dectalk_ph_golden.py` +
+  `test/dectalk_ph_golden.json`** -- a deterministic sha256 gate over
+  `draw_frame` on a hand-authored synthetic `DrawFrame` vector (no DECtalk data)
+  that exercises every branch. It runs in CI without the C. `--write` **refuses
+  to regenerate** the digest unless `draw_frame` first matches the C oracle frame
+  for frame, for all ten voices.
+
 ## Limitations
 
+- **`phdraw` only, within `ph/`.** Phase 2 ports the frame drawer, not the stages
+  that build its input. Allophone selection (`ph_aloph1.c`), duration rules
+  (`p_us_tim0.c`), the F0 contour and `pht0draw` (`ph_inton0.c`, `ph_drwt01.c`),
+  and the target/transition setup `phsettar` (`ph_setar.c`) with its per-voice
+  Klatt target tables (`p_us_rom.c`) are unported; `draw_frame` consumes the
+  interpolation state they produce, captured from the oracle. So `ph.py` cannot
+  yet turn a phoneme string into frames on its own -- it reproduces the last
+  interpolation step exactly, given that step's input.
 - **No text input.** The whole `cmd/` -> `lts/` -> `ph/` chain that turns text
   and `[: ]` markup into parameter frames is unported. `engine.py` takes frames,
-  not text. Driving it therefore requires either porting `ph/` (Phase 2) or, as
-  the tests do, replaying frames captured from the oracle. This is the single
-  biggest obstacle to a self-contained DECtalk.
+  not text. Driving it therefore requires porting the rest of the front end
+  (Phase 3+) or, as the tests do, replaying frames captured from the oracle. This
+  is the single biggest obstacle to a self-contained DECtalk.
 - **US English, 11025 Hz only.** The port hard-codes the `VTM1`,
   `PC_SAMPLE_RATE == 11025`, `SAMPLE_RATE_INCREASE` path. The 8 kHz / mu-law
   path (`SAMPLE_RATE_DECREASE`) and the float `FP_VTM` variant are not ported;
