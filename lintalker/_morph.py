@@ -48,6 +48,7 @@ from ._consts import (
 )
 from ._phonemes import (
     _l_, _IY_, _IX_, _s_, _t_, _d_, _ER_, _NG_, _z_, _m_, _AX_, _n_, _b_, _EL_,
+    _AY_, _IH_,
 )
 
 
@@ -497,8 +498,14 @@ def try_do_morph(word: str):
     /ɪzəm/, optionally + /z/), -OR(S) (adds /ɚ/ via an "-E"-terminated or
     direct root match, optionally + /z/).
 
-    NOT ported: -IZE and its compounds (-IZED/-IZES/-IZING/-IZER and
-    their -S forms) and true compound-noun decomposition -- see module
+    Also ported: -IZE/-IZED/-IZES/-IZING/-IZINGS/-IZER/-IZERS (adds
+    /aɪz/ and the relevant suffix; tried only as a fallback after the
+    corresponding plain -ED/-ING/-INGS/-ER/-ERS/-S decompose, matching
+    `DoMorph`'s own priority of trying "root+IZE is itself a dict entry"
+    first, e.g. "materialize", before falling back to "root minus IZE",
+    e.g. "organize" -> "organ").
+
+    NOT ported: true compound-noun decomposition -- see module
     docstring.
     """
     from ._lexicon import lookup
@@ -563,10 +570,22 @@ def try_do_morph(word: str):
         entry = _decompose_e_common(w[:-3])
         if entry is not None:
             return _append(entry.phon_str, [_ER_, _z_]), entry
+        # Do_IZERS_Morph fallback (Morph.c:1462-1489, dispatch
+        # 2568-2578): "organizers" -> "organ" (no root+"IZE" hit).
+        if w.endswith('IZERS') and len(w) > 5:
+            entry = lookup(w[:-5])
+            if entry is not None:
+                return _append(entry.phon_str, [_AY_, _z_, _ER_, _z_]), entry
     if w.endswith('ER') and len(w) > 2:
         entry = _decompose_e_common(w[:-2])
         if entry is not None:
             return _append(entry.phon_str, [_ER_]), entry
+        # Do_IZER_Morph fallback (Morph.c:1437-1461, dispatch 2555-2566):
+        # "organizer" -> "organ".
+        if w.endswith('IZER') and len(w) > 4:
+            entry = lookup(w[:-4])
+            if entry is not None:
+                return _append(entry.phon_str, [_AY_, _z_, _ER_]), entry
 
     # --- -IED / -ED (Morph.c:1960-1990, dispatch 2504-2552) ---
     if w.endswith('IED') and len(w) > 3:
@@ -577,16 +596,34 @@ def try_do_morph(word: str):
         entry = _decompose_e_common(w[:-2])
         if entry is not None:
             return _store_ed(list(entry.phon_str)), entry
+        # Do_IZED_Morph fallback (Morph.c:1515-1539, dispatch 2705-2718):
+        # "organized" -> "organ".
+        if w.endswith('IZED') and len(w) > 4:
+            entry = lookup(w[:-4])
+            if entry is not None:
+                return _append(entry.phon_str, [_AY_, _z_, _d_]), entry
 
     # --- -INGS / -ING (Morph.c:2073-2084, dispatch 2587-2601) ---
     if w.endswith('INGS') and len(w) > 4:
         entry = _decompose_e_common(w[:-4])
         if entry is not None:
             return _append(entry.phon_str, [_IX_, _NG_, _z_]), entry
+        # Do_IZINGS_Morph fallback (Morph.c:1410-1436, dispatch
+        # 2418-2432): "organizings" -> "organ".
+        if w.endswith('IZINGS') and len(w) > 6:
+            entry = lookup(w[:-6])
+            if entry is not None:
+                return _append(entry.phon_str, [_AY_, _z_, _IH_, _NG_, _z_]), entry
     if w.endswith('ING') and len(w) > 3:
         entry = _decompose_e_common(w[:-3])
         if entry is not None:
             return _append(entry.phon_str, [_IX_, _NG_]), entry
+        # Do_IZING_Morph fallback (Morph.c:1384-1409, dispatch 2401-2416):
+        # "organizing" -> "organ".
+        if w.endswith('IZING') and len(w) > 5:
+            entry = lookup(w[:-5])
+            if entry is not None:
+                return _append(entry.phon_str, [_AY_, _z_, _IH_, _NG_]), entry
 
     # --- -IES / -ES (Morph.c:2178-2302, dispatch 2489-2501/2474-2487) ---
     if w.endswith('IES') and len(w) > 3:
@@ -624,6 +661,20 @@ def try_do_morph(word: str):
                 entry = lookup(root)
                 if entry is not None:
                     return _store_s_or_z(list(entry.phon_str)), entry
+
+    # --- -IZES / -IZE (Morph.c:1490-1566, dispatch 2700-2703/2720-2732) ---
+    # -IZES: Do_S_Morph (via try_s_morph, already tried before this
+    # function) covers the "root+IZE is itself a dict entry" case
+    # ("materializes" -> "materialize"); this is the Do_IZES_Morph
+    # fallback for when it isn't ("organizes" -> "organ").
+    if w.endswith('IZES') and len(w) > 4:
+        entry = lookup(w[:-4])
+        if entry is not None:
+            return _append(entry.phon_str, [_AY_, _z_, _IX_, _z_]), entry
+    if w.endswith('IZE') and len(w) > 3:
+        entry = lookup(w[:-3])
+        if entry is not None:
+            return _append(entry.phon_str, [_AY_, _z_]), entry
 
     # --- -IMENTS / -IMENT / -MENTS / -MENT (Morph.c:2086-2177, dispatch
     # 2664-2717) ---

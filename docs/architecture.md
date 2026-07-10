@@ -236,12 +236,24 @@ single-sentence text is.
   "businesses" (root BUSY), "heroism"/"heroisms" (root HERO), and
   "editor"/"editors" (root EDIT) — see
   `test/test_synthesize_text.py::test_do_morph_suffix_frame_exact`.
-- NOT ported: `Zap_POS`/`SetPOS_FromSuffix`, `DoMorph`'s `-IZE` suffix
-  family (`-IZE`/`-IZED`/`-IZES`/`-IZING`/`-IZINGS`/`-IZER`/`-IZERS`),
-  and true compound-noun decomposition (`Morph.c:1010-2373`), and the
-  rest of `PlacePhrasing`'s rules (SEP1-5, `Morph.c:148-271`) — see task
-  #8. These remain independently-scoped, similarly-sized pieces of
-  `Morph.c` rather than one monolithic remaining task.
+- (Fixed) `try_do_morph` also covers `DoMorph`'s `-IZE` suffix family:
+  `-IZE`/`-IZED`/`-IZES`/`-IZING`/`-IZINGS`/`-IZER`/`-IZERS`
+  (`Morph.c:1384-1566`). Each is tried ONLY as a fallback after the
+  corresponding plain `-ED`/`-ING`/`-INGS`/`-ER`/`-ERS`/`-S` decompose
+  fails, matching `DoMorph`'s own dispatch priority: a word like
+  "materialized" first tries the ordinary `-ED` decompose (root+"E" ->
+  "materialize"), and only if THAT root isn't itself a dictionary entry
+  does it fall back to stripping the full "IZED" and looking up the
+  shorter root directly ("organized" -> "organ"). Verified frame-exact
+  for "itemize"/"itemized"/"itemizes"/"itemizing"/"itemizings"/
+  "itemizer"/"itemizers" (root ITEM, none of which have "itemize" itself
+  in the dictionary, so each exercises the fallback path) — see
+  `test/test_synthesize_text.py::test_do_morph_suffix_frame_exact`.
+- NOT ported: `Zap_POS`/`SetPOS_FromSuffix` and true compound-noun
+  decomposition (`Morph.c:1010-2373`), and the rest of `PlacePhrasing`'s
+  rules (SEP1-5, `Morph.c:148-271`) — see task #8. These remain
+  independently-scoped, similarly-sized pieces of `Morph.c` rather than
+  one monolithic remaining task.
 - (Fixed) Multi-clause synthesis used to give each clause of
   `api.synthesize_text` an independently-reset `VoiceVar`, rather than the
   real engine's single continuous `Talk()` session (`BackEnd.c:4264-4298`:

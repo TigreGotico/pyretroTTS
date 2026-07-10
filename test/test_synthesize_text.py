@@ -371,7 +371,12 @@ def test_do_morph_suffix_frame_exact():
     `-ABLE` ("arguable", root ARGUE, via the `-E`-restoring decompose),
     `-INESS`/`-INESSES` ("business"/"businesses", root BUSY, via the
     "-Y" root recovery), `-ISM`/`-ISMS` ("heroism"/"heroisms", root
-    HERO), and `-OR`/`-ORS` ("editor"/"editors", root EDIT)."""
+    HERO), `-OR`/`-ORS` ("editor"/"editors", root EDIT), and the
+    `-IZE` family `-IZE`/`-IZED`/`-IZES`/`-IZING`/`-IZINGS`/`-IZER`/
+    `-IZERS` ("itemize"/"itemized"/"itemizes"/"itemizing"/"itemizings"/
+    "itemizer"/"itemizers", root ITEM -- none of which have "itemize"
+    itself as a dictionary entry, so each exercises the `Do_IZE*_Morph`
+    fallback rather than the plain suffix decompose)."""
     _check("he timed it perfectly.", "Fred")
     _check("a good timer.", "Fred")
     _check("good timing.", "Fred")
@@ -391,6 +396,13 @@ def test_do_morph_suffix_frame_exact():
     _check("a careful editor.", "Fred")
     _check("the editors met.", "Fred")
     _check("the management decided.", "Fred")
+    _check("they itemize the list.", "Fred")
+    _check("she itemized it.", "Fred")
+    _check("he itemizes everything.", "Fred")
+    _check("they are itemizing it.", "Fred")
+    _check("many itemizings occurred.", "Fred")
+    _check("a careful itemizer.", "Fred")
+    _check("several itemizers helped.", "Fred")
 
 
 if __name__ == "__main__":
