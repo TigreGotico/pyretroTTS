@@ -391,23 +391,24 @@ def _place_phrasing(words: list) -> list:
         is_last = wi == n_words - 1
         next_pos = words[wi + 1].pos_choice if wi + 1 < n_words else kUndefPOS
         next_punct = is_last
-        # Morph.c:83-99: next2/next3 POS are only populated when that
-        # lookahead position is a genuine non-final word; when it lands
-        # exactly on the clause's last word, next2_Punct/next3_Punct is
-        # set instead and the POS stays kUndefPOS (mirrors the C code's
-        # mutually-exclusive `CurTok < LastTok-2`/`== LastTok-2` checks).
-        next2_pos = kUndefPOS
+        # Morph.c:88-108: confirmed via direct instrumentation of the C
+        # reference (dumping word_Count/LastTok/CurTok/next2_Punct while
+        # processing a genuine SEP4 hit) that `next2_Punct`/`next3_Punct`
+        # are NEVER true in the real engine -- dead code. The C source
+        # nests the "== LastTok-2" (or -3) check INSIDE the "< LastTok-2"
+        # (or -3) guard:
+        #   if (CurTok < LastTok-2) { next2_POS = ...;
+        #       if (CurTok == LastTok-2) next2_Punct = true; }
+        # `CurTok < X` and `CurTok == X` can never both hold, so the inner
+        # assignment is unreachable and `next2_Punct`/`next3_Punct` stay
+        # false always; only `next2_POS`/`next3_POS` (gated on the outer
+        # `<` alone) are ever populated. Ported faithfully (bug-for-bug):
+        # `next2_pos`/`next3_pos` populated iff `wi < n_words-2`/`-3`;
+        # `next2_punct`/`next3_punct` always `False`.
+        next2_pos = words[wi + 2].pos_choice if wi < n_words - 2 else kUndefPOS
         next2_punct = False
-        if wi + 2 < n_words - 1:
-            next2_pos = words[wi + 2].pos_choice
-        elif wi + 2 == n_words - 1:
-            next2_punct = True
-        next3_pos = kUndefPOS
+        next3_pos = words[wi + 3].pos_choice if wi < n_words - 3 else kUndefPOS
         next3_punct = False
-        if wi + 3 < n_words - 1:
-            next3_pos = words[wi + 3].pos_choice
-        elif wi + 3 == n_words - 1:
-            next3_punct = True
 
         cur_bnd = kBND_None
         if not next_punct:

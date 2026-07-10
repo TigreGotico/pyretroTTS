@@ -260,7 +260,20 @@ single-sentence text is.
   per-clause word list, so `next_Punct`/`next2_Punct`/`next3_Punct`
   reduce to "is this lookahead position the clause's last word" rather
   than needing any literal mid-clause punctuation token — no token-buffer
-  restructuring was actually required, unlike previously assumed.
+  restructuring was actually required, unlike previously assumed. Also
+  found and fixed, via direct instrumentation of the C reference (a
+  frame-count mismatch on "they read the letter that arrived." led to
+  discovering it): `next2_Punct`/`next3_Punct` are DEAD CODE in the C
+  reference and can never actually become true, since the source nests
+  the "== LastTok-2" (or "-3") check INSIDE the "< LastTok-2" (or "-3")
+  guard (`Morph.c:91-108`) — the two conditions are mutually exclusive,
+  so the inner assignment never executes. This port's first draft
+  treated them as sibling if/elif branches (a reasonable-looking but
+  wrong reading), which made a real SEP4 hit ("that" introducing a
+  relative/complement clause near a clause's end) silently fail to fire.
+  Fixed to match the dead code bug-for-bug: `next2_pos`/`next3_pos` are
+  still populated (gated on the outer `<` check alone), but
+  `next2_punct`/`next3_punct` are simply always `False`.
   Unlike SEP6, a SEP1-5 boundary inserts an ACTUAL `_SIL_` phoneme with
   the boundary type and `kVerb_Start` flags on that inserted phoneme
   (`BackEnd.c:3819-3826`: any boundary type `>= kBND_Paren_L` other than

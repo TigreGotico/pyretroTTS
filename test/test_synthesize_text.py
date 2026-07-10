@@ -280,6 +280,8 @@ def test_sep1_to_sep5_phrase_boundary_frame_exact():
     _check("many people came to the party.", "Fred")
     _check("he ran quickly and then he stopped.", "Fred")
     _check("the dog and the cat played together.", "Fred")
+    _check("they read the letter that arrived.", "Fred")
+    _check("this is the book that i read.", "Fred")
     _check("when he arrives we will leave.", "Fred")
     _check("i think that this is a very good idea.", "Fred")
 
