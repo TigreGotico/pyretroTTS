@@ -72,9 +72,20 @@ notice, not merely an absent licence:
 > authorized sublicensor.
 
 That is a stronger claim than SAM's, which merely lacks a licence. Porting it
-would produce a derivative work of software its owner declares confidential.
-Nothing from it is in this repository, and nothing from it may be added without
-a deliberate decision recorded here.
+produces a derivative work of software its owner declares confidential.
+
+**The repository owner has decided to port it anyway**, on the same terms as
+SAM: a private repository, the risk accepted knowingly. The port is therefore:
+
+- kept in `pyretrotts/dectalk/`, outside the MIT core, with the FONIX notice
+  restated at the top of every file;
+- **not** covered by this project's MIT licence;
+- not published to PyPI or any other channel, and the repository stays private.
+
+Scope of the port: the full stack, all six languages -- `vtm/` (the Klatt
+synthesizer), `ph/` (prosody), `cmd/` (the `[: ]` parser), `lts/` (letter-to-
+sound for US, UK, French, German, Spanish and Latin-American Spanish) and the
+six dictionaries. Roughly 536,000 lines of C.
 
 ## SAM (Software Automatic Mouth) — `pyretrotts/sam/`
 
@@ -118,6 +129,6 @@ deliberately not included.
 | Project code, tests, docs | this project | MIT |
 | MacinTalk engine | Apple Computer | copyright retained, no grant |
 | DECtalk markup | DEC | interface only, nothing vendored |
-| DECtalk engine | Fonix/Force | not yet ported; terms unread |
+| DECtalk engine | Fonix/Force | being ported; proprietary, explicitly not MIT |
 | SAM engine (`pyretrotts/sam/`) | SoftVoice, Inc. | present; not free; explicitly not MIT |
 | Song scores | traditional | public domain |
