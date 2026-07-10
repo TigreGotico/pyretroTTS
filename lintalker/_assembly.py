@@ -553,6 +553,7 @@ def collect_fe_tokens(
     text: str,
     emphasis_overrides: Optional[dict] = None,
     silence_overrides: Optional[dict] = None,
+    pos_overrides: Optional[dict] = None,
 ) -> SentenceAssembly:
     """Adapted port of `Collect_FE_Tokens` (`BackEnd.c:3712-4157`).
 
@@ -562,6 +563,13 @@ def collect_fe_tokens(
     field right after this clause's token list is built -- mirrors
     `FrontEnd.c:343-344`/`369-370`/`460-461` copying `vv->NewEmphasis`
     straight into the next-created token's `tokEmphasis` field.
+
+    `pos_overrides`, if given, is a `{word_index: pos_value}` dict (from
+    `_embeddedcmd.scan_bracket_commands`'s `xtnd`'s `wpos` support)
+    applied to the corresponding word's `pos_code1`/`comp_pos1` fields
+    at the same point as `emphasis_overrides`, before `resolve_pos`
+    runs -- mirrors `SetPOStoVal` (`FrontEnd.c:138-145`) setting
+    `POScode1[0]`/`compPOS1`/`hiRank`/`POScount1` directly on the token.
 
     `silence_overrides`, if given, is a `{word_index: duration}` dict
     (from `_embeddedcmd.scan_bracket_commands`'s `slnc` support, `duration`
@@ -673,6 +681,12 @@ def collect_fe_tokens(
         for _wi, _emph in emphasis_overrides.items():
             if 0 <= _wi < len(_clause_tokens):
                 _clause_tokens[_wi].word_emphasis = _emph
+    if pos_overrides:
+        for _wi, _pos_val in pos_overrides.items():
+            if 0 <= _wi < len(_clause_tokens):
+                _tok = _clause_tokens[_wi]
+                _tok.pos_code1 = [_pos_val, kUndefPOS, kUndefPOS, kUndefPOS]
+                _tok.comp_pos1 = 1 << _pos_val
     resolve_pos(_clause_tokens)
     for _tok in _clause_tokens:
         _tok.is_content_word = _tok.pos_choice in _CONTENT_POS

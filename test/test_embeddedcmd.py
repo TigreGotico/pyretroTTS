@@ -176,7 +176,7 @@ def test_regression_voice_set_never_queues_commands():
 def test_scan_bracket_commands_strips_and_parses_pbas():
     from lintalker._embeddedcmd import scan_bracket_commands
 
-    clean, cmds, _emph, _silences = scan_bracket_commands("[[pbas300]]hello world")
+    clean, cmds, _emph, _silences, _pos = scan_bracket_commands("[[pbas300]]hello world")
     assert clean == "hello world"
     assert cmds == [(0, C_absPitch, 300 << 16)]
 
@@ -184,7 +184,7 @@ def test_scan_bracket_commands_strips_and_parses_pbas():
 def test_scan_bracket_commands_word_index_tracks_preceding_words():
     from lintalker._embeddedcmd import scan_bracket_commands
 
-    clean, cmds, _emph, _silences = scan_bracket_commands("hello [[volm50]] world")
+    clean, cmds, _emph, _silences, _pos = scan_bracket_commands("hello [[volm50]] world")
     assert clean == "hello  world"
     assert cmds == [(1, C_absVol, 50 << 16)]
 
@@ -192,17 +192,17 @@ def test_scan_bracket_commands_word_index_tracks_preceding_words():
 def test_scan_bracket_commands_relative_sign():
     from lintalker._embeddedcmd import scan_bracket_commands
 
-    clean, cmds, _emph, _silences = scan_bracket_commands("[[pbas+50]]hello")
+    clean, cmds, _emph, _silences, _pos = scan_bracket_commands("[[pbas+50]]hello")
     assert cmds == [(0, C_relPitch, 50 << 16)]
 
-    clean, cmds, _emph, _silences = scan_bracket_commands("[[pbas-50]]hello")
+    clean, cmds, _emph, _silences, _pos = scan_bracket_commands("[[pbas-50]]hello")
     assert cmds == [(0, C_relPitch, -(50 << 16))]
 
 
 def test_scan_bracket_commands_unrecognized_keyword_left_untouched():
     from lintalker._embeddedcmd import scan_bracket_commands
 
-    clean, cmds, _emph, _silences = scan_bracket_commands("[[bogus123]]hello")
+    clean, cmds, _emph, _silences, _pos = scan_bracket_commands("[[bogus123]]hello")
     assert clean == "[[bogus123]]hello"
     assert cmds == []
 
@@ -210,11 +210,11 @@ def test_scan_bracket_commands_unrecognized_keyword_left_untouched():
 def test_scan_bracket_commands_cmnt_and_vers_are_stripped_noops():
     from lintalker._embeddedcmd import scan_bracket_commands
 
-    clean, cmds, emph, _silences = scan_bracket_commands("[[cmnt this is ignored]]hello")
+    clean, cmds, emph, _silences, _pos = scan_bracket_commands("[[cmnt this is ignored]]hello")
     assert clean == "hello"
     assert cmds == [] and emph == {}
 
-    clean, cmds, emph, _silences = scan_bracket_commands("[[vers65536]]hello")
+    clean, cmds, emph, _silences, _pos = scan_bracket_commands("[[vers65536]]hello")
     assert clean == "hello"
     assert cmds == [] and emph == {}
 
@@ -223,12 +223,12 @@ def test_scan_bracket_commands_dlim_changes_subsequent_delimiters():
     from lintalker._embeddedcmd import scan_bracket_commands
 
     # '<'=60, '>'=62: switch delimiters mid-text, then use them for pbas.
-    clean, cmds, _emph, _silences = scan_bracket_commands("[[dlim60 62]]<pbas60>hello")
+    clean, cmds, _emph, _silences, _pos = scan_bracket_commands("[[dlim60 62]]<pbas60>hello")
     assert clean == "hello"
     assert cmds == [(0, C_absPitch, 60 << 16)]
 
     # Old [[ ]] delimiters no longer recognized after a dlim switch.
-    clean, cmds, _emph, _silences = scan_bracket_commands("[[dlim60 62]][[pbas60]]hello")
+    clean, cmds, _emph, _silences, _pos = scan_bracket_commands("[[dlim60 62]][[pbas60]]hello")
     assert clean == "[[pbas60]]hello"
     assert cmds == []
 
@@ -257,12 +257,12 @@ def test_scan_bracket_commands_emph():
     next word, a plain per-token field copy (not a CMDQueue entry)."""
     from lintalker._embeddedcmd import scan_bracket_commands
 
-    clean, cmds, emph, _silences = scan_bracket_commands("[[emph+]]hello world")
+    clean, cmds, emph, _silences, _pos = scan_bracket_commands("[[emph+]]hello world")
     assert clean == "hello world"
     assert cmds == []
     assert emph == {0: "emphasize"}
 
-    clean, cmds, emph, _silences = scan_bracket_commands("hello [[emph-]]world")
+    clean, cmds, emph, _silences, _pos = scan_bracket_commands("hello [[emph-]]world")
     assert clean == "hello world"
     assert emph == {1: "deemphasize"}
 
@@ -281,7 +281,7 @@ def test_scan_bracket_commands_slnc():
     plain millisecond value (500)."""
     from lintalker._embeddedcmd import scan_bracket_commands
 
-    clean, cmds, emph, silences = scan_bracket_commands("hello [[slnc500]]world")
+    clean, cmds, emph, silences, _pos = scan_bracket_commands("hello [[slnc500]]world")
     assert clean == "hello world"
     assert silences == {1: 500}
 
@@ -337,11 +337,11 @@ def test_scan_bracket_commands_rset():
     LogParseError's effect of not resetting at all."""
     from lintalker._embeddedcmd import scan_bracket_commands
 
-    clean, cmds, emph, silences = scan_bracket_commands("[[rset0]]hello")
+    clean, cmds, emph, silences, _pos = scan_bracket_commands("[[rset0]]hello")
     assert clean == "hello"
     assert cmds == [(0, C_reset, 0)]
 
-    clean, cmds, emph, silences = scan_bracket_commands("[[rset5]]hello")
+    clean, cmds, emph, silences, _pos = scan_bracket_commands("[[rset5]]hello")
     assert clean == "hello"
     assert cmds == []
 
@@ -355,7 +355,7 @@ def test_scan_bracket_commands_sync():
     from lintalker._embeddedcmd import scan_bracket_commands
     from lintalker._consts import C_sync
 
-    clean, cmds, emph, silences = scan_bracket_commands("[[sync12345]]hello")
+    clean, cmds, emph, silences, _pos = scan_bracket_commands("[[sync12345]]hello")
     assert clean == "hello"
     assert cmds == [(0, C_sync, 12345)]
 
@@ -364,6 +364,43 @@ def test_scan_bracket_commands_sync():
 
     vv = new_voice(Fred_Voice)
     build_phoneme_plan(Fred_Voice, "[[sync12345]]hello", vv)  # must not raise
+
+
+def test_scan_bracket_commands_xtnd_wpos():
+    """Regression test for Parse_xtnd_Command's wpos selector
+    (EmbeddedCmd.c:895-921): the only selector the real dispatch
+    implements, setting the next word's POS directly (SetPOStoVal)."""
+    from lintalker._embeddedcmd import scan_bracket_commands
+    from lintalker._consts import kVerb
+
+    clean, cmds, emph, silences, pos = scan_bracket_commands(
+        "[[xtnd mtk3 wpos 1]]record it"
+    )
+    assert clean == "record it"
+    assert pos == {0: kVerb}
+
+
+def test_scan_bracket_commands_xtnd_wrong_creator_ignored():
+    """A creator code other than kMacInTalkCreator ('mtk3') must be
+    silently ignored -- the command isn't directed at this engine."""
+    from lintalker._embeddedcmd import scan_bracket_commands
+
+    clean, cmds, emph, silences, pos = scan_bracket_commands(
+        "[[xtnd zzz9 wpos 1]]record it"
+    )
+    assert clean == "record it"
+    assert pos == {}
+
+
+def test_xtnd_wpos_override_reaches_pos_choice():
+    """Regression test for the _assembly.collect_fe_tokens integration:
+    a pos_overrides entry resolves an otherwise-ambiguous word (e.g.
+    "record", noun/verb) to the forced POS."""
+    from lintalker._assembly import collect_fe_tokens
+    from lintalker._consts import kVerb
+
+    sa = collect_fe_tokens("record it", pos_overrides={0: kVerb})
+    assert sa.words[0].pos_choice == kVerb
 
 
 if __name__ == "__main__":

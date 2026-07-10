@@ -89,6 +89,36 @@ def _parse_long_value(text: str, i: int):
     return val, i
 
 
+def _skip_spaces(text: str, i: int):
+    n = len(text)
+    while i < n and text[i] in ' \t':
+        i += 1
+    return i
+
+
+def _parse_selector_value(text: str, i: int):
+    """Port of `GetSelectorValue`'s bare (unquoted) form
+    (`EmbeddedCmd.c:292-332`): packs each ASCII character up to the next
+    whitespace into a 32-bit value (`selector = (selector << 8) | ch`),
+    the classic Mac OS four-character-code convention (e.g. `mtk3` ->
+    `kMacInTalkCreator`). Quoted selectors (`'XXXX'`/`"XXXX"`) aren't
+    supported -- not needed for `xtnd`'s two arguments in practice.
+    Returns `(value, next_i)`."""
+    n = len(text)
+    val = 0
+    while i < n and text[i] > ' ':
+        val = (val << 8) | ord(text[i])
+        i += 1
+    return val, i
+
+
+# Versions.h's kMacInTalkCreator ('mtk3') and EmbeddedCmd.c's 'wpos'
+# selector, both four-character codes packed the same way
+# _parse_selector_value builds them.
+_MACINTALK_CREATOR = (ord('m') << 24) | (ord('t') << 16) | (ord('k') << 8) | ord('3')
+_WPOS_SELECTOR = (ord('w') << 24) | (ord('p') << 16) | (ord('o') << 8) | ord('s')
+
+
 def _parse_signed_command_value(text: str, i: int):
     """Port of the common preamble shared by `Parse_pbas_Command`/
     `Parse_pmod_Command`/`Parse_volm_Command` (`EmbeddedCmd.c:625-716`,
@@ -230,24 +260,36 @@ def scan_bracket_commands(text: str):
     case for `C_sync` at all, matching the real `DoCtrl` switch's own
     `default: break;` for it -- a genuine no-op in the reference too).
 
+    Also recognizes `xtnd`'s `wpos` (word part-of-speech) selector
+    (`Parse_xtnd_Command`, `EmbeddedCmd.c:895-921` -- the only selector
+    the real dispatch implements; any other selector, or a creator code
+    other than `kMacInTalkCreator`/`mtk3`, is silently ignored): sets the
+    next word's part-of-speech directly, matching `SetPOStoVal`
+    (`FrontEnd.c:138-145`) -- returned separately as `pos_overrides`,
+    applied by `_assembly.collect_fe_tokens` to the token's
+    `pos_code1`/`comp_pos1` fields right before `resolve_pos` runs, the
+    same insertion point as `emphasis_overrides`.
+
     NOT ported: `rate` (routes through `vv->lastRate`/
     `user_Rate_Buf1`, not `CMDQueue`, and `e_set_speech_rate`'s
     non-singing branch already isn't ported -- see `_engine.py`),
-    `xtnd`/`char`/`mode`/`nmbr` (each its own
+    `char`/`mode`/`nmbr` (each its own
     separate parser/side-effect, not reachable via `CMDQueue` or a
-    plain token field the way `emph` is), and mid-clause
+    plain token field the way `emph`/`xtnd` are), and mid-clause
     phoneme-accurate positioning for `pbas`/`pmod`/`volm` (a command
     found after the Nth word of ONE clause is applied before that
-    clause's Nth word for `emph`/`slnc`, but `pbas`/`pmod`/`volm` are
-    applied as an immediate `do_ctrl` state change at the whole
+    clause's Nth word for `emph`/`slnc`/`xtnd`, but `pbas`/`pmod`/`volm`
+    are applied as an immediate `do_ctrl` state change at the whole
     clause's start instead -- see `api.build_phoneme_plan`).
 
-    Returns `(clean_text, commands, emphasis, silences)`: `clean_text`
-    is `text` with every recognized bracketed command span removed;
-    `commands` is a list of `(word_index, ctrl_type, ctrl_data)` for
-    `pbas`/`pmod`/`volm`; `emphasis` is a `{word_index: "emphasize"|
-    "deemphasize"}` dict for `emph`; `silences` is a `{word_index:
-    duration_ms}` dict for `slnc`. `word_index` is how many words (per
+    Returns `(clean_text, commands, emphasis, silences, pos_overrides)`:
+    `clean_text` is `text` with every recognized bracketed command span
+    removed; `commands` is a list of `(word_index, ctrl_type,
+    ctrl_data)` for `pbas`/`pmod`/`volm`/`rset`/`sync`; `emphasis` is a
+    `{word_index: "emphasize"|"deemphasize"}` dict for `emph`;
+    `silences` is a `{word_index: duration_ms}` dict for `slnc`;
+    `pos_overrides` is a `{word_index: pos_value}` dict for `xtnd wpos`.
+    `word_index` is how many words (per
     `_frontend.tokenize`) of `clean_text` PRECEDE that command, i.e. the
     command/override applies to (or right before) that word. An
     unrecognized keyword, or a span with no closing delimiter before
@@ -261,6 +303,7 @@ def scan_bracket_commands(text: str):
     commands = []
     emphasis = {}
     silences = {}
+    pos_overrides = {}
     out_parts = []
     word_count = 0
     i = 0
@@ -347,6 +390,35 @@ def scan_bracket_commands(text: str):
             i = end + len(END)
             continue
 
+        if keyword == 'XTND':
+            # Parse_xtnd_Command (EmbeddedCmd.c:895-921): a vendor
+            # extension mechanism -- the first argument is a
+            # four-character creator code, checked against
+            # kMacInTalkCreator ('mtk3') and silently ignored if it
+            # doesn't match (some OTHER application's extension, not
+            # ours); the second is a command selector, of which only
+            # 'wpos' (word part-of-speech) is implemented in the real
+            # dispatch (anything else logs kUnknownEmbeddedCmd and does
+            # nothing) -- ported here as `pos_overrides`, matching
+            # `SetPOStoVal`'s effect (`FrontEnd.c:138-145`: sets
+            # `POScode1[0]`/`compPOS1`/`hiRank`/`POScount1` directly on
+            # the token, applied by `_assembly.collect_fe_tokens` before
+            # `resolve_pos` runs, same insertion point as
+            # `emphasis_overrides`).
+            j = _skip_spaces(inner, 4)
+            creator, j = _parse_selector_value(inner, j)
+            if creator == _MACINTALK_CREATOR:
+                j = _skip_spaces(inner, j)
+                selector, j = _parse_selector_value(inner, j)
+                if selector == _WPOS_SELECTOR:
+                    j = _skip_spaces(inner, j)
+                    value, j = _parse_fixed_value(inner, j)
+                    pos_val = value >> 16
+                    if 0 <= pos_val <= kLastPOS:
+                        pos_overrides[word_count] = pos_val
+            i = end + len(END)
+            continue
+
         entry = _BRACKET_COMMANDS.get(keyword)
         if entry is None:
             # Unrecognized keyword -- leave this span untouched (not
@@ -370,7 +442,7 @@ def scan_bracket_commands(text: str):
 
         i = end + len(END)
 
-    return ''.join(out_parts), commands, emphasis, silences
+    return ''.join(out_parts), commands, emphasis, silences, pos_overrides
 
 
 def do_ctrl(vv: VoiceVar) -> None:
