@@ -177,4 +177,9 @@ and run `python3 test/test_voices.py --all`. See `docs/architecture.md`.
 
 ## License
 
-Apache-2.0
+MIT — see `LICENSE`.
+
+That covers the code written for this project. It does not cover the
+synthesizers it ports: MacinTalk is Apple's, DECtalk is DEC's, and SAM's C
+is a derivative of a SoftVoice program with no open licence at all. `NOTICE`
+states the provenance and the encumbrance of each, plainly.

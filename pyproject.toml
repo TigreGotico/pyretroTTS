@@ -7,7 +7,7 @@ name = "pyretrotts"
 dynamic = ["version"]
 description = "Python ports of the classic formant speech synthesizers: MacinTalk and DECtalk"
 readme = "README.md"
-license = {text = "Apache-2.0"}
+license = {text = "MIT"}
 authors = [{name = "OpenVoiceOS", email = "jarbasai@mailfence.com"}]
 requires-python = ">=3.10"
 keywords = ["tts", "dectalk", "macintalk", "formant-synthesis", "speech-synthesis", "retro"]
