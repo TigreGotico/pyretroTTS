@@ -30,7 +30,9 @@ build `phdraw`'s input) is not ported, so there is still no text-to-speech;
 | Constants, frame-parameter layout | `consts.py` | — |
 | Frame-driven synthesis + WAV writer | `engine.py` | — |
 | Phoneme frame drawer (`phdraw`) | `ph.py` | bit-exact vs C (10 voices) |
-| `ph/` allophone/duration/F0/target-setup stages | — | **not ported** (Phase 3+) |
+| Target ROM tables (`p_us_rom_dectalk_1996m_43f.c`) | `targets.py` | read verbatim from `libtts_us.so` |
+| Target lookup (`us_gettar`, `p_us_st0.c`) | `settar.py` | bit-exact vs C (10 voices) |
+| `ph/` allophone/duration/F0 + `phsettar` transition setup | — | **not ported** (Phase 4+) |
 | `cmd/` markup, `lts/` letter-to-sound | — | **not ported** (Phase 3+) |
 
 ## The oracle
@@ -258,16 +260,67 @@ instrumentation, this C patch is kept out of the read-only checkout.
   to regenerate** the digest unless `draw_frame` first matches the C oracle frame
   for frame, for all ten voices.
 
+## What the target ROM and `us_gettar` are
+
+`phsettar` (`ph_setar.c:561`) resets, once per phone, each parameter's target and
+transition specification -- the `PARAMETER` state `phdraw` then interpolates. Its
+innermost step is `gettar`, which for the US build dispatches to **`us_gettar`
+(`p_us_st0.c:67`)**: it reads the per-phoneme Klatt target ROM and applies the
+context rules that pick or shift one target value (or return a negative pointer
+into the diphthong ROM). The compiled US configuration is
+`VOICE_ROM_DECTALK_1996M_43F` (`ph_romi.c` selects
+`p_us_rom_dectalk_1996m_43f.c`) with `OLD_SETTAR` (so `ph_setar.c` includes
+`p_us_st0.c`, not `p_us_st1.c`); in that build `US_TOT_ALLOPHONES == 57`.
+
+### What is ported: the target ROM and `us_gettar`
+
+- **`targets.py`** holds the US target ROM: `US_MALTAR`/`US_FEMTAR` (F1,F2,F3,
+  B1,B2,B3,AV target blocks, 7 x 57), `US_MALDIP`/`US_FEMDIP` (diphthong target
+  sequences), `US_MALAMP`/`US_FEMAMP` (parallel-formant amplitude targets),
+  `US_PLACE`, `US_BEGTYP`, `US_ENDTYP`, `US_PTRAM`, `US_FEATB`, and `PARINI`/
+  `PARTYP`. Several source arrays are written with feature-bit macro tokens, so
+  the values are **read from the built `libtts_us.so` symbols** by
+  `tools/dump_dectalk_targets.py` (a C program that links the library) rather
+  than retyped -- guaranteed identical to the compiled reference. `PARTYP` is a
+  C `char[]`; the dumper types it accordingly.
+- **`settar.py`** ports `us_gettar` for the compiled US path (`OLD_SETTAR`,
+  `SLOWTALK` off): the `partyp`-driven dispatch over the four parameter classes,
+  the `-1`/`< -1` target fallback chain, diphthong-pointer resolution, and every
+  context rule (fricative-after-vowel F1, /n/ B2/B3, glottal/devoiced/`hx` AV,
+  aspiration AP, obstruent burst amplitudes, and the tilt targets). Its input is
+  the allophone/feature stream `phsettar` reads (`allophons[]`, `allofeats[]`,
+  `nallotot`, `malfem`), captured from the oracle.
+
+### Verification
+
+- **`test/test_dectalk_phsettar.py`** -- call-for-call diff of Python `us_gettar`
+  against the instrumented C, for all ten voices over four utterances. The
+  instrumented `p_us_st0.c` dumps, per call, the `(npar, nphone, return)` triple
+  and, per clause, the allophone stream; the port is replayed over the identical
+  stream. Result: **40/40 cases target-exact (28 700 gettar calls, 0
+  mismatches)**. Skipped when the instrumented binary is absent.
+- **`test/dectalk_targets_golden.py` + `test/dectalk_targets_golden.json` +
+  `test/test_dectalk_targets_golden.py`** -- a deterministic sha256 gate over
+  `us_gettar` on a synthetic `Allophones` vector (no captured DECtalk data). It
+  runs in CI without the C. `--write` **refuses to regenerate** the digest unless
+  `us_gettar` first matches the C oracle call for call, for all ten voices.
+
 ## Limitations
 
-- **`phdraw` only, within `ph/`.** Phase 2 ports the frame drawer, not the stages
-  that build its input. Allophone selection (`ph_aloph1.c`), duration rules
-  (`p_us_tim0.c`), the F0 contour and `pht0draw` (`ph_inton0.c`, `ph_drwt01.c`),
-  and the target/transition setup `phsettar` (`ph_setar.c`) with its per-voice
-  Klatt target tables (`p_us_rom.c`) are unported; `draw_frame` consumes the
-  interpolation state they produce, captured from the oracle. So `ph.py` cannot
-  yet turn a phoneme string into frames on its own -- it reproduces the last
-  interpolation step exactly, given that step's input.
+- **`us_gettar` only, within `phsettar`.** Phase 3 ports the innermost target
+  lookup and its ROM, not the transition machinery that wraps it. The rest of
+  `phsettar` -- `init_variables`, `make_dip` (diphthong line generation),
+  `us_forw_smooth_rules`/`us_back_smooth_rules`/`us_special_rules`, `setloc`, and
+  the vowel-vowel coarticulation -- is **not ported**. Those stages turn each
+  `us_gettar` target into the `ftran`/`btran`/`deldip`/`tbacktr`/`tspesh`/`pspesh`
+  interpolation state `phdraw` consumes. So `phsettar -> phdraw -> vtm` does not
+  yet compose end to end: `settar.py` reproduces the target value exactly, but
+  the transition fields between it and `phdraw` are still supplied only by the
+  oracle capture.
+- **`phdraw` and its input.** Allophone selection (`ph_aloph1.c`), duration rules
+  (`p_us_tim0.c`), and the F0 contour and `pht0draw` (`ph_inton0.c`,
+  `ph_drwt01.c`) remain unported; `draw_frame` consumes the interpolation state
+  they produce, captured from the oracle.
 - **No text input.** The whole `cmd/` -> `lts/` -> `ph/` chain that turns text
   and `[: ]` markup into parameter frames is unported. `engine.py` takes frames,
   not text. Driving it therefore requires porting the rest of the front end
