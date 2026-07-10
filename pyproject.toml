@@ -24,7 +24,7 @@ Homepage = "https://github.com/TigreGotico/pyretroTTS"
 Repository = "https://github.com/TigreGotico/pyretroTTS"
 
 [tool.setuptools]
-packages = ["pyretrotts"]
+packages = ["pyretrotts", "pyretrotts.sam"]
 
 [tool.setuptools.dynamic]
 version = {attr = "pyretrotts.version.__version__"}

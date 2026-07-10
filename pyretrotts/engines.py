@@ -23,7 +23,7 @@ from ._phonemes import _SIL_
 from ._voice import Voice
 from .api import pcm_to_wav, synthesize_phonemes, synthesize_text
 
-__all__ = ["Engine", "MacInTalkEngine", "DECtalkEngine"]
+__all__ = ["Engine", "MacInTalkEngine", "DECtalkEngine", "SAMEngine"]
 
 #: default length for a phoneme the score does not time, in milliseconds
 _UNTIMED_MS = 70
@@ -228,3 +228,9 @@ def pcm_peak(pcm: bytes) -> int:
     if not pcm:
         return 0
     return max(abs(v) for v in struct.unpack(f"<{len(pcm) // 2}h", pcm))
+
+
+# Imported at the end so `pyretrotts.sam.engine` can subclass `Engine` above
+# without a circular import. SAM is a separate, differently-licensed engine;
+# see NOTICE.
+from .sam.engine import SAMEngine  # noqa: E402
