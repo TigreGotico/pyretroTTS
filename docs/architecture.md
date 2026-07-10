@@ -182,10 +182,31 @@ single-sentence text is.
   divergence: "once" now resolves to `kConj` (matching the C reference)
   instead of `kAdv`, since it's the first word of an idiomatic clause
   opener, not a plain adverb — confirmed frame-exact
-  (`test/test_synthesize_text.py`). NOT ported: `Zap_POS`/
-  `SetPOS_FromSuffix`/`DoMorph` (compound-word/suffix-stripping
-  decomposition, `Morph.c:1010-2373`) and the rest of `PlacePhrasing`'s
-  rules (SEP1-5, `Morph.c:148-271`) — see the entry below and task #8.
+  (`test/test_synthesize_text.py`).
+- (Fixed) `_morph.py` also ports `Do_S_Morph`/`Store_S_or_Z`
+  (`Morph.c:2306-2322`/`1236-1266`) — the single most common `DoMorph`
+  suffix pattern: a word ending in "S" with no direct dictionary entry
+  (e.g. "dogs", "cats", "wishes") whose root (word minus "S") IS a
+  dictionary entry gets the root's real pronunciation plus a
+  phonetically-correct `/s/`/`/z/`/`/ɪz/` suffix (based on the root's
+  final phoneme's voicing), instead of falling all the way through to
+  `_engtop.engtop()`'s generic letter-to-sound rules. Wired into
+  `_assembly.make_fe_word_token` between the dictionary-hit and
+  `engtop()`-fallback branches, matching `WordToPhonemes`'s real order
+  (`FrontEnd.c:1614-1648`: dictionary → `DoMorph` → `EngToP`) — a morphed
+  word's POS also correctly comes from the ROOT's dictionary entry, not a
+  hardcoded default, matching `SearchAllDicts` populating the token's POS
+  fields when `Do_S_Morph` looks the root up. Verified frame-exact across
+  all three `Store_S_or_Z` branches (voiced/voiceless/sibilant) and
+  multiple voices — see
+  `test/test_synthesize_text.py::test_s_morph_frame_exact`.
+- NOT ported: `Zap_POS`/`SetPOS_FromSuffix` and `DoMorph`'s ~30 OTHER
+  suffix functions (-ING, -ED, -LY, -ER, -EST, -MENT, -NESS, -ABLE, -IZE,
+  -ISM, -OR, and compound-noun decomposition, `Morph.c:1010-2373`) and the
+  rest of `PlacePhrasing`'s rules (SEP1-5, `Morph.c:148-271`) — see task
+  #8. These are all independently-scoped, similarly-sized pieces of
+  `Morph.c` (each suffix function is its own small, testable unit, much
+  like `Do_S_Morph` above) rather than one monolithic remaining task.
 - (Fixed) Multi-clause synthesis used to give each clause of
   `api.synthesize_text` an independently-reset `VoiceVar`, rather than the
   real engine's single continuous `Talk()` session (`BackEnd.c:4264-4298`:

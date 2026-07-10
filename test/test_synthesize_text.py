@@ -339,6 +339,22 @@ def test_kusesyncsnd_marker_frame_exact():
     _check("testing one two three", "Hysterical")
 
 
+def test_s_morph_frame_exact():
+    """Regression test for `_morph.try_s_morph` (`Morph.c`'s `Do_S_Morph`/
+    `Store_S_or_Z`, `Morph.c:2306-2322`/`1236-1266`): a word ending in "S"
+    with no direct dictionary entry (e.g. "DOGS", "CATS", "WISHES") whose
+    root IS a dictionary entry now gets the root's pronunciation plus a
+    phonetically-correct plural/3rd-person-singular suffix, instead of
+    falling all the way through to `_engtop.engtop()`'s generic
+    letter-to-sound rules. Covers all three `Store_S_or_Z` branches: `/z/`
+    after a voiced sound ("dogs"), `/s/` after a voiceless consonant
+    ("cats"), and `/ɪz/` after a sibilant/palatal ("wishes", "buses")."""
+    _check("the dogs bark.", "Fred")
+    _check("cats and dogs.", "Fred")
+    _check("the wishes came true.", "Fred")
+    _check("buses and cars.", "Fred")
+
+
 if __name__ == "__main__":
     import inspect
     mod = sys.modules[__name__]

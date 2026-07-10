@@ -20,18 +20,26 @@ interaction with the dictionary's SECOND phoneme string (`phon_hold`) --
 `alt_choice` is computed and stored on the token
 (`FEWordToken.alt_choice`) but nothing downstream in this port switches
 `phon_str` to `phon_hold` based on it yet (no caller reads `alt_choice`).
-`Zap_POS`/`SetPOS_FromSuffix`/`DoMorph` (compound-word/suffix-stripping
-decomposition) are separate, unported pieces of `Morph.c` -- see
-docs/architecture.md.
+`Zap_POS`/`SetPOS_FromSuffix` and most of `DoMorph`'s ~30 suffix
+functions (compound-word/suffix-stripping decomposition,
+`Morph.c:2374-2373`) are separate, unported pieces of `Morph.c` -- see
+docs/architecture.md. `try_s_morph` below ports the single most common
+case (`Do_S_Morph`/`Store_S_or_Z`, `Morph.c:2306-2322`/`1236-1266`): a
+word ending in "S" with no direct dictionary entry, whose root (minus the
+"S") IS in the dictionary, gets the root's pronunciation plus a
+phonetically-correct `/s/`/`/z/`/`/ɪz/` suffix (the real English
+plural/3rd-person-singular allomorphy rule, based on the root's final
+phoneme's voicing).
 """
 from __future__ import annotations
 
-from typing import List
+from typing import List, Optional
 
 from ._consts import (
     kUndefPOS, kNoun, kVerb, kAdj, kAdv, kPrep, kPPron, kRelPro, kDPron,
     kIPron, kRPron, kVaux, kRVaux, kInterj, kConj, kCConj, kInterr, kArt,
     kDet, kInf, kGen, kContr, kQuant, kVPart, kSubjPron, kObjPron,
+    kPalatalF, kConsonantF, kVoicedF,
     kHas_Noun, kHas_Verb, kHas_Adj, kHas_Adv, kHas_Prep, kHas_PPron,
     kHas_RelPro, kHas_DPron, kHas_IPron, kHas_Vaux, kHas_RVaux,
     kHas_Interj, kHas_Conj, kHas_CConj, kHas_Interr, kHas_Art, kHas_Det,
@@ -323,3 +331,56 @@ def resolve_pos(tokens: List) -> None:
 
         prev2_pos = prev_pos
         prev_pos = pos_choice
+
+
+def _store_s_or_z(phon_str: list) -> list:
+    """Port of `Store_S_or_Z` (`Morph.c:1236-1266`): appends the
+    phonetically-correct plural/3rd-person-singular suffix phoneme(s)
+    after `phon_str`'s last phoneme, based on its voicing:
+    - palatal/sibilant (`_s_`/`_z_`/`_SH_`/`_ZH_`/`_CH_`/`_JH_`-class) -> `_IX_ _z_` (/ɪz/, e.g. "wishes")
+    - voiceless consonant -> `_s_` (e.g. "cats")
+    - everything else (vowels, voiced consonants) -> `_z_` (e.g. "dogs")
+    """
+    from ._data import PhonFlags2
+    from ._phonemes import _IX_, _z_, _s_
+
+    last_phon = phon_str[-1]
+    flags = PhonFlags2[last_phon] if 0 <= last_phon < len(PhonFlags2) else 0
+    out = list(phon_str)
+    if (flags & kPalatalF) or last_phon == _s_ or last_phon == _z_:
+        out.append(_IX_)
+        out.append(_z_)
+    elif (flags & kConsonantF) and not (flags & kVoicedF):
+        out.append(_s_)
+    else:
+        out.append(_z_)
+    return out
+
+
+def try_s_morph(word: str):
+    """Port of `Do_S_Morph` (`Morph.c:2306-2322`), called when `word` (as
+    typed, e.g. "DOGS") has no direct dictionary entry: if `word` ends in
+    "S" and the root (word minus "S") IS a dictionary entry, returns
+    `(phon_str, entry)` -- the root's `_Word_`-prefixed phoneme string
+    with the correct `/s/`/`/z/`/`/ɪz/` suffix appended (`Store_S_or_Z`),
+    and the root's `LexEntry` (so the caller can use the ROOT's real POS
+    codes, matching `SearchAllDicts` populating `tok`'s POS fields from
+    the root when `Do_S_Morph` looks it up -- `WordToPhonemes` does NOT
+    default a morphed word's POS to `kNoun` the way it does for a true
+    `EngToP` rule-fallback, `FrontEnd.c:1628-1648`). Returns `None` if
+    there's no root hit, so the caller falls back to `_engtop.engtop()`
+    exactly as `WordToPhonemes` does when `DoMorph` itself fails.
+
+    Only this one suffix pattern is ported -- `DoMorph`'s other ~30
+    suffix functions (-ING, -ED, -LY, -ER, -EST, -MENT, -NESS, -ABLE,
+    -IZE, -ISM, -OR, ...) are not. See module docstring.
+    """
+    from ._lexicon import lookup
+
+    if len(word) < 2 or word[-1] != 'S':
+        return None
+    root = word[:-1]
+    entry = lookup(root)
+    if entry is None:
+        return None
+    return _store_s_or_z(list(entry.phon_str)), entry

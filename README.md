@@ -31,7 +31,8 @@ counterpart is checked out locally as `lintalker-c`).
 | Word-by-word POS disambiguation (context-dependent word class) | `Morph.c` (`ResolvePOS`) | Ported (`lintalker/_morph.py`), verified bit-exact via the SEP6/WH-question tests it feeds (`test/test_synthesize_text.py`) |
 | Sentence-internal phrase boundaries (content-word/function-word transitions) | `Morph.c` (`PlacePhrasing`, SEP6 rule only) | Approximated with a POS-set check (SEP1-5 not ported) (`lintalker/_assembly.py`) |
 | WH-question vs. yes/no-question intonation | `Morph.c` (`PlacePhrasing`, `YesNo_Phrase`) | Ported using real `ResolvePOS` POS tags (`lintalker/_assembly.py`) |
-| Compound-word/suffix-stripping decomposition | `Morph.c` (`DoMorph`, `Zap_POS`, `SetPOS_FromSuffix`) | Not ported |
+| Suffix-stripping decomposition (plural/3rd-person "-S") | `Morph.c` (`Do_S_Morph`, `Store_S_or_Z`) | Ported (`lintalker/_morph.py`), verified bit-exact (`test/test_synthesize_text.py::test_s_morph_frame_exact`) |
+| Remaining suffix-stripping/compound-word decomposition | `Morph.c` (`DoMorph`'s ~30 other suffix functions, `Zap_POS`, `SetPOS_FromSuffix`) | Not ported |
 
 **What this means today:** `lintalker.api.synthesize_text(voice_dict, text)`
 synthesizes English text end-to-end, verified frame-for-frame bit-exact
@@ -45,10 +46,15 @@ does, so clause-to-clause continuity is preserved, not just each clause's
 own correctness). Word-by-word part-of-speech disambiguation
 (`Morph.c`'s `ResolvePOS`) is ported, driving both phrase-boundary
 placement and question intonation from real POS tags rather than
-word lists. Remaining known gaps: no `Morph.c` compound-word/suffix-
-stripping decomposition, no number/abbreviation expansion, no embedded
-commands — see `docs/architecture.md` for specifics. You can still
-synthesize from an already-built phoneme plan directly via
+word lists. A word missing from the dictionary but ending in a plural/
+3rd-person-singular "-S" (e.g. "dogs", "cats", "wishes") whose root IS in
+the dictionary gets the root's real pronunciation plus the phonetically
+correct suffix, instead of falling through to generic letter-to-sound
+rules. Remaining known gaps: no other `Morph.c` compound-word/suffix-
+stripping decomposition (-ING, -ED, -LY, -ER, -EST, and ~25 more), no
+number/abbreviation expansion, no embedded commands — see
+`docs/architecture.md` for specifics. You can still synthesize from an
+already-built phoneme plan directly via
 `lintalker.api.synthesize_phonemes()`, and there's a lower-level
 `lintalker._engtop.engtop()` (single word) and `lintalker._frontend`
 (tokenization only) if you need to build a custom pipeline.

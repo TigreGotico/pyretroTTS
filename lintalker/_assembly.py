@@ -184,6 +184,7 @@ from ._phonemes import (
 from ._frontend import tokenize
 from ._lexicon import lookup, LexEntry
 from ._engtop import engtop
+from ._morph import try_s_morph
 
 # BackEnd.c:3971-3973 -- the POS set that marks a word a "content word"
 # (`kContent_Word`, gates primary-vs-secondary stress at 3869-3877).
@@ -265,12 +266,34 @@ def make_fe_word_token(word: str, punct: Optional[str]) -> FEWordToken:
         # collect_fe_tokens() once all of a clause's tokens are built, since
         # disambiguating one word can require looking at neighboring words'
         # own candidate POS sets.
+    elif (morphed := try_s_morph(word)) is not None:
+        # DoMorph succeeded (Do_S_Morph/Store_S_or_Z, Morph.c:2306-2322 --
+        # the only DoMorph suffix pattern ported so far, see _morph.py).
+        # WordToPhonemes does NOT default a morphed word's POS to kNoun
+        # the way it does for the true EngToP fallback below
+        # (FrontEnd.c:1628-1648): SearchAllDicts already populated the
+        # token's POS fields from the ROOT it found, so this uses the
+        # root's real pos_code1/comp_pos1, not a placeholder.
+        morphed_phon_str, root_entry = morphed
+        tok = FEWordToken(
+            word=word,
+            phon_str=morphed_phon_str,
+            from_dictionary=True,
+            pos_code1=list(root_entry.pos_code1),
+            comp_pos1=root_entry.comp_pos1,
+            is_abbrev=root_entry.is_abbrev,
+            is_compound_hint=root_entry.is_compound,
+            has_alt=False,
+            pos_code2=list(root_entry.pos_code2) if root_entry.pos_code2 is not None else None,
+            comp_pos2=root_entry.comp_pos2,
+        )
     else:
-        # No dictionary entry -> _engtop.engtop() rule-engine fallback.
-        # FrontEnd.c:1650 calls SetPOStoVal(t, kNoun) right after EngToP(),
-        # then SetPOS_FromSuffix (Morph.c:1027, not ported -- see module
-        # docstring) refines it. pos_choice = kNoun here, confirmed against
-        # a real C oracle dump (see "POS-DEFAULT-FOR-RULE-FALLBACK-WORDS").
+        # No dictionary entry, no DoMorph match -> _engtop.engtop()
+        # rule-engine fallback. FrontEnd.c:1650 calls SetPOStoVal(t, kNoun)
+        # right after EngToP(), then SetPOS_FromSuffix (Morph.c:1027, not
+        # ported -- see module docstring) refines it. pos_choice = kNoun
+        # here, confirmed against a real C oracle dump (see
+        # "POS-DEFAULT-FOR-RULE-FALLBACK-WORDS").
         tok = FEWordToken(
             word=word,
             # engtop() already prefixes its output with _Word_ -- do not
