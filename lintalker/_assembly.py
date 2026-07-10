@@ -547,8 +547,15 @@ def _place_phrasing(words: list) -> list:
     return mid_bnds
 
 
-def collect_fe_tokens(text: str) -> SentenceAssembly:
+def collect_fe_tokens(text: str, emphasis_overrides: Optional[dict] = None) -> SentenceAssembly:
     """Adapted port of `Collect_FE_Tokens` (`BackEnd.c:3712-4157`).
+
+    `emphasis_overrides`, if given, is a `{word_index: "emphasize"|
+    "deemphasize"}` dict (from `_embeddedcmd.scan_bracket_commands`'s
+    `emph` support) applied to the corresponding word's `word_emphasis`
+    field right after this clause's token list is built -- mirrors
+    `FrontEnd.c:343-344`/`369-370`/`460-461` copying `vv->NewEmphasis`
+    straight into the next-created token's `tokEmphasis` field.
 
     Walks `_frontend.tokenize(text)` word-by-word (stand-in for the real
     `e_ParseNextWord_FUNC` token source -- see module docstring), applying
@@ -643,6 +650,10 @@ def collect_fe_tokens(text: str) -> SentenceAssembly:
     # ever consumes it).
     from ._morph import resolve_pos
     _clause_tokens = [make_fe_word_token(word, punct) for word, punct in tokenize(text)]
+    if emphasis_overrides:
+        for _wi, _emph in emphasis_overrides.items():
+            if 0 <= _wi < len(_clause_tokens):
+                _clause_tokens[_wi].word_emphasis = _emph
     resolve_pos(_clause_tokens)
     for _tok in _clause_tokens:
         _tok.is_content_word = _tok.pos_choice in _CONTENT_POS

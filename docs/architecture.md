@@ -17,7 +17,7 @@
 | `BackEnd.c` (`Fill_Pitch_Buf`, `Store_F0_and_Time`) | `lintalker/_pitchbuf.py` | Turns the ctrl-bit pitch contour into `pitch_Buf_Freq`/`pitch_Buf_Time`/`pitch_Buf_Flags`, verified bit-exact against the C reference across voices/sentences (`test/test_pitchbuf.py`). |
 | `Engine.c` | `lintalker/_engine.py` | Top-level init/speak/reset/rate/pitch/volume API, built on `_backend.py`. `e_speak_buffer` (the text-in entry point) and a few fsynth-dependent setters (`e_reset_params`, `e_use_voice`, `e_reinit_voice`) raise `NotImplementedError` naming the specific unported upstream C function they need. |
 | `BackEnd.c` (`DoCtrl`, the per-phoneme `CMDQueue` dispatcher: absolute/relative pitch, volume, mod) | `lintalker/_embeddedcmd.py` | Ported (see `test/test_embeddedcmd.py`); `C_reset`/`C_voice` are unimplemented/no-op the same way upstream leaves them, pending `ResetVoice`/`NewVoice` |
-| `EmbeddedCmd.c` (the FrontEnd bracket-delimited text-command parser, e.g. `[[pbas200]]` -- `[[`/`]]` are the default delimiters, `mt4.h`'s `defaultCmdBeginDelim`/`defaultCmdEndDelim`, a distinct mechanism from `DoCtrl` above — it sets `PendingCommands` bits that `FrontEnd.c` later turns into `CMDQueue` entries via `QueueCommand`) | `lintalker/_embeddedcmd.py`'s `scan_bracket_commands` | Ported for `pbas`/`pbar`/`pmod`/`pmor`/`volm`/`volr` (applied as an immediate state change at clause start, not true per-phoneme positioning); `rate`/`rset`/`vers`/`xtnd`/`char`/`cmnt`/`dlim`/`mode`/`nmbr`/`emph`/`slnc`/`sync` not ported; cannot be verified frame-exact against `lintalker-c`'s compiled `test_harness` -- see "Known gaps" |
+| `EmbeddedCmd.c` (the FrontEnd bracket-delimited text-command parser, e.g. `[[pbas200]]` -- `[[`/`]]` are the default delimiters, `mt4.h`'s `defaultCmdBeginDelim`/`defaultCmdEndDelim`, a distinct mechanism from `DoCtrl` above — it sets `PendingCommands` bits that `FrontEnd.c` later turns into `CMDQueue` entries via `QueueCommand`, except `emph` which copies straight into the next token's field) | `lintalker/_embeddedcmd.py`'s `scan_bracket_commands` | Ported for `pbas`/`pbar`/`pmod`/`pmor`/`volm`/`volr` (applied as an immediate state change at clause start, not true per-phoneme positioning) and `emph`/`emph-` (applied to the correct word's `word_emphasis` field via `_assembly.collect_fe_tokens`); `rate`/`rset`/`vers`/`xtnd`/`char`/`cmnt`/`dlim`/`mode`/`nmbr`/`slnc`/`sync` not ported; cannot be verified frame-exact against `lintalker-c`'s compiled `test_harness` -- see "Known gaps" |
 | `Morph.c` (`ResolvePOS`, `PlacePhrasing` SEP1-6, `DoMorph`'s common suffix functions) | `lintalker/_morph.py` (suffix decomposition) + `lintalker/_assembly.py` (`resolve_pos`/`_place_phrasing`) | Word-by-word POS disambiguation, mid-clause phrase boundaries, and plural/3rd-person/`-LY`/`-EST`/`-ER`/`-ED`/`-ING`/`-MENT`/`-ABLE`/`-NESS`/`-ISM`/`-OR`/`-IZE`-family suffix decomposition all ported; true compound-noun decomposition and `PlacePhrasing`'s SEP7/parenthesized-clause handling not ported |
 | `english_lex.c`/`English.lex` | `lintalker/_lexicon.py` | Dictionary lookup (`lookup(word)`), verified bit-exact against the real engine for 249 words spanning common/rare/compound-noun/abbreviation entries (`test/test_lexicon.py`). |
 | `Sounds.c` | not ported | Embedded sound effects (bells, etc.) — raw PCM blobs, not logic |
@@ -492,10 +492,23 @@ single-sentence text is.
   documents as the default, not because either delimiter was confirmed
   against a working reference.
 
+  (Also ported: `emph`/`emph-` -- `Parse_emph_Command`,
+  `EmbeddedCmd.c:558-580` -- a plain per-token field override, not a
+  `CMDQueue` entry: `vv->NewEmphasis` is copied straight into the very
+  next token's `tokEmphasis` field when that token is created
+  (`FrontEnd.c:343-344`/`369-370`/`460-461`). `scan_bracket_commands`
+  returns this separately as an `{word_index: "emphasize"|
+  "deemphasize"}` dict, and `_assembly.collect_fe_tokens` accepts it as
+  an `emphasis_overrides` parameter, applying each override to the
+  matching word's `word_emphasis` field right after that clause's token
+  list is built and before `resolve_pos`/`_place_phrasing` run --
+  verified via `test/test_embeddedcmd.py::test_emph_override_reaches_
+  word_emphasis_field`.)
+
   NOT ported: `rate`/`ratr` (routes through `vv->lastRate`/
   `user_Rate_Buf1`, not `CMDQueue`, and `e_set_speech_rate`'s
   non-singing branch already isn't ported, see `_engine.py`),
-  `rset`/`vers`/`xtnd`/`char`/`cmnt`/`dlim`/`mode`/`nmbr`/`emph`/
+  `rset`/`vers`/`xtnd`/`char`/`cmnt`/`dlim`/`mode`/`nmbr`/
   `slnc`/`sync` (each a separate parser/side-effect not reachable via
   `CMDQueue`), and true per-phoneme positioning (see above).
 - Primary/secondary stress placement is gated on POS tagging. For

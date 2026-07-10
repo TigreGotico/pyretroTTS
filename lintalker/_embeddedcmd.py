@@ -135,11 +135,13 @@ _BRACKET_COMMANDS = {
 
 def scan_bracket_commands(text: str):
     """Port of `EmbeddedCmd.c`'s bracket-delimited text-command scanner
-    (`ProcessEmbeddedCommands` and the `pbas`/`pmod`/`volm` members of
-    its command dispatch, `EmbeddedCmd.c:990-1010`), scoped to the three
-    commands that resolve to a `CMDQueue` entry `do_ctrl` can actually
-    apply (`C_absPitch`/`C_relPitch`, `C_absMod`/`C_relMod`, `C_absVol`/
-    `C_relVol`) -- see module docstring for what's NOT covered.
+    (`ProcessEmbeddedCommands` and the `pbas`/`pmod`/`volm`/`emph`
+    members of its command dispatch, `EmbeddedCmd.c:990-1010`), scoped
+    to the three commands that resolve to a `CMDQueue` entry `do_ctrl`
+    can actually apply (`C_absPitch`/`C_relPitch`, `C_absMod`/
+    `C_relMod`, `C_absVol`/`C_relVol`) plus `emph` (a plain per-token
+    field override, no `CMDQueue` involved) -- see below for what's NOT
+    covered.
 
     Default delimiters are `[[`/`]]` (`mt4.h`'s `defaultCmdBeginDelim`/
     `defaultCmdEndDelim`; the `dlim` command that changes them at
@@ -175,20 +177,44 @@ def scan_bracket_commands(text: str):
     that command -- this port simply doesn't strip what it can't
     parse, rather than raising).
 
+    Also recognizes `emph+`/`emph-` (`Parse_emph_Command`,
+    `EmbeddedCmd.c:558-580`): overrides the word-prominence of the very
+    NEXT token (`vv->NewEmphasis` copied straight into `tok->tokEmphasis`
+    when that token is created, `FrontEnd.c:343-344`/`369-370`/`460-461`
+    -- a plain field copy, not a `CMDQueue`/`phon_Buf_1`-opcode
+    mechanism at all, unlike `pbas`/`pmod`/`volm` above). Returned
+    separately from `commands` (see below) since it isn't a `CMDQueue`
+    entry.
+
     NOT ported: `rate` (routes through `vv->lastRate`/
     `user_Rate_Buf1`, not `CMDQueue`, and `e_set_speech_rate`'s
     non-singing branch already isn't ported -- see `_engine.py`),
-    `rset`/`vers`/`xtnd`/`char`/`cmnt`/`dlim`/`mode`/`nmbr`/`emph`/
-    `slnc`/`sync` (each its own separate parser/side-effect, not
-    reachable via `CMDQueue`), and mid-clause phoneme-accurate
-    positioning (a command found after the Nth word of ONE clause is
-    applied before that clause's Nth word, but this port has no
-    opcode-in-phon_str pipeline the way the real engine's `StuffBE
-    Command`/`Parse_Embedded_Command` do -- see module docstring).
+    `rset`/`vers`/`xtnd`/`char`/`cmnt`/`dlim`/`mode`/`nmbr`/`slnc`/
+    `sync` (each its own separate parser/side-effect, not reachable via
+    `CMDQueue` or a plain token field the way `emph` is), and
+    mid-clause phoneme-accurate positioning (a command found after the
+    Nth word of ONE clause is applied before that clause's Nth word,
+    but this port has no opcode-in-phon_str pipeline the way the real
+    engine's `StuffBECommand`/`Parse_Embedded_Command` do -- see module
+    docstring).
+
+    Returns `(clean_text, commands, emphasis)`: `clean_text` is `text`
+    with every recognized bracketed command span removed; `commands` is
+    a list of `(word_index, ctrl_type, ctrl_data)` for `pbas`/`pmod`/
+    `volm`; `emphasis` is a `{word_index: "emphasize"|"deemphasize"}`
+    dict for `emph`. `word_index` is how many words (per
+    `_frontend.tokenize`) of `clean_text` PRECEDE that command, i.e. the
+    command/override applies to (or right before) that word. An
+    unrecognized keyword, or a span with no `]]` before the end of
+    `text`, is left in `clean_text` untouched (matches
+    `LogParseError`'s effect of leaving `PendingCommands` unset for
+    that command -- this port simply doesn't strip what it can't
+    parse, rather than raising).
     """
     from ._frontend import tokenize
 
     commands = []
+    emphasis = {}
     out_parts = []
     word_count = 0
     i = 0
@@ -216,6 +242,12 @@ def scan_bracket_commands(text: str):
 
         inner = text[start + len(BEGIN):end]
         keyword = inner[:4].upper()
+
+        if keyword == 'EMPH' and len(inner) > 4 and inner[4] in '+-':
+            emphasis[word_count] = 'emphasize' if inner[4] == '+' else 'deemphasize'
+            i = end + len(END)
+            continue
+
         entry = _BRACKET_COMMANDS.get(keyword)
         if entry is None:
             # Unrecognized keyword -- leave this span untouched (not
@@ -239,7 +271,7 @@ def scan_bracket_commands(text: str):
 
         i = end + len(END)
 
-    return ''.join(out_parts), commands
+    return ''.join(out_parts), commands, emphasis
 
 
 def do_ctrl(vv: VoiceVar) -> None:

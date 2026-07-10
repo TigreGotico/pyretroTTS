@@ -176,7 +176,7 @@ def test_regression_voice_set_never_queues_commands():
 def test_scan_bracket_commands_strips_and_parses_pbas():
     from lintalker._embeddedcmd import scan_bracket_commands
 
-    clean, cmds = scan_bracket_commands("[[pbas300]]hello world")
+    clean, cmds, _emph = scan_bracket_commands("[[pbas300]]hello world")
     assert clean == "hello world"
     assert cmds == [(0, C_absPitch, 300 << 16)]
 
@@ -184,7 +184,7 @@ def test_scan_bracket_commands_strips_and_parses_pbas():
 def test_scan_bracket_commands_word_index_tracks_preceding_words():
     from lintalker._embeddedcmd import scan_bracket_commands
 
-    clean, cmds = scan_bracket_commands("hello [[volm50]] world")
+    clean, cmds, _emph = scan_bracket_commands("hello [[volm50]] world")
     assert clean == "hello  world"
     assert cmds == [(1, C_absVol, 50 << 16)]
 
@@ -192,17 +192,17 @@ def test_scan_bracket_commands_word_index_tracks_preceding_words():
 def test_scan_bracket_commands_relative_sign():
     from lintalker._embeddedcmd import scan_bracket_commands
 
-    clean, cmds = scan_bracket_commands("[[pbas+50]]hello")
+    clean, cmds, _emph = scan_bracket_commands("[[pbas+50]]hello")
     assert cmds == [(0, C_relPitch, 50 << 16)]
 
-    clean, cmds = scan_bracket_commands("[[pbas-50]]hello")
+    clean, cmds, _emph = scan_bracket_commands("[[pbas-50]]hello")
     assert cmds == [(0, C_relPitch, -(50 << 16))]
 
 
 def test_scan_bracket_commands_unrecognized_keyword_left_untouched():
     from lintalker._embeddedcmd import scan_bracket_commands
 
-    clean, cmds = scan_bracket_commands("[[bogus123]]hello")
+    clean, cmds, _emph = scan_bracket_commands("[[bogus123]]hello")
     assert clean == "[[bogus123]]hello"
     assert cmds == []
 
@@ -223,6 +223,30 @@ def test_scan_bracket_commands_applied_end_to_end_via_build_phoneme_plan():
 
     assert vv_cmd.voiceNaturalPitch != vv_plain.voiceNaturalPitch
     assert len(plan_cmd[0]) == len(plan_plain[0])
+
+
+def test_scan_bracket_commands_emph():
+    """Regression test for Parse_emph_Command (EmbeddedCmd.c:558-580):
+    `[[emph+]]`/`[[emph-]]` override the word-prominence of the very
+    next word, a plain per-token field copy (not a CMDQueue entry)."""
+    from lintalker._embeddedcmd import scan_bracket_commands
+
+    clean, cmds, emph = scan_bracket_commands("[[emph+]]hello world")
+    assert clean == "hello world"
+    assert cmds == []
+    assert emph == {0: "emphasize"}
+
+    clean, cmds, emph = scan_bracket_commands("hello [[emph-]]world")
+    assert clean == "hello world"
+    assert emph == {1: "deemphasize"}
+
+
+def test_emph_override_reaches_word_emphasis_field():
+    from lintalker._assembly import collect_fe_tokens
+
+    sa = collect_fe_tokens("hello world", emphasis_overrides={1: "emphasize"})
+    assert sa.words[0].word_emphasis == "none"
+    assert sa.words[1].word_emphasis == "emphasize"
 
 
 if __name__ == "__main__":

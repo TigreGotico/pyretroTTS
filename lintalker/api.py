@@ -204,7 +204,7 @@ def build_phoneme_plan(voice_dict: dict, text: str, vv: Optional[VoiceVar] = Non
     _reset_for_clause(vv)
 
     from ._embeddedcmd import scan_bracket_commands, do_ctrl
-    text, _bracket_cmds = scan_bracket_commands(text)
+    text, _bracket_cmds, _emphasis_overrides = scan_bracket_commands(text)
     if _bracket_cmds:
         # Simplified integration (see _embeddedcmd.scan_bracket_commands'
         # docstring "NOT ported" note): the real engine positions each
@@ -221,7 +221,7 @@ def build_phoneme_plan(voice_dict: dict, text: str, vv: Optional[VoiceVar] = Non
             vv.ctrlCount += 1
         do_ctrl(vv)
 
-    sa = collect_fe_tokens(text)
+    sa = collect_fe_tokens(text, _emphasis_overrides)
     fill_phon_buf_2(vv, sa)
     vv.end_Punctuation = sa.end_punctuation
     pitch_raise_and_fall(vv)
