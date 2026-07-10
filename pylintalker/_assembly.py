@@ -544,177 +544,190 @@ class SentenceAssembly:
 _SEP_CONTENT_POS = {kNoun, kVerb, kAdj, kAdv}
 
 
-def _place_phrasing(words: list) -> list:
-    """Port of `PlacePhrasing` (`Morph.c:20-280`)'s mid-clause boundary
-    cascade (SEP1-6; SEP7/parenthesized-clause handling not ported --
-    this port has no parenthesis tracking). Returns a list the same
-    length as `words`, `mid_bnds[i]` being the resolved boundary type
-    (`kBND_None` if none) to apply just before word `i`'s own phonemes.
+@dataclass(frozen=True)
+class _PhraseContext:
+    """One word's view of its neighbours, as the SEP rules see it.
 
-    Mirrors the C reference's per-clause `tokBuffer` loop directly: this
-    port's `words` (one clause's word tokens) line up 1:1 with
-    `vv->tokBuffer[1..LastTok-1]` -- the C reference's tokBuffer holds
-    exactly one trailing punctuation token PER CLAUSE, at index
-    `LastTok` (since this port already splits input into clauses on
-    `. , ! ?` the same way one `Fill_Tok_Buffer`/`ParseSentence` pass
-    processes one such clause) -- so `next_Punct`/`next2_Punct`/
-    `next3_Punct` just mean "the word at this lookahead distance IS the
-    last word of the clause", not "some literal mid-clause punctuation
-    token", and a flat word list is exactly the right shape; no
-    architectural change was needed. `inParen` is always false (no
-    parenthesized-clause tracking, a separate, smaller gap) so the C
-    code's `!inParen` guard is always true here. Each rule is checked in
-    order and the first match wins (mirrors the C code's
-    goto-past-the-rest-of-the-checks control flow); the same-token /
-    previous-token "already has a boundary" mutual-exclusion
-    (`!prev_Tok->add_BND && !cur_Tok->add_BND`) is tracked via
-    `word_had_bnd`.
+    `next2_punct`/`next3_punct` have no counterpart: the C source assigns them
+    inside a `CurTok < LastTok-2` guard yet only under `CurTok == LastTok-2`,
+    conditions that cannot both hold, so they are always false. Conjuncts that
+    tested them are omitted here rather than written as `and True`.
+    """
+
+    wi: int                # index of this word within the clause
+    prev_pos: int
+    cur_pos: int
+    next_pos: int
+    next2_pos: int
+    next3_pos: int
+    next_punct: bool       # this word is the clause's last
+    det_flag: bool         # a determiner/article was seen recently
+    ambig1_pos: bool       # the previous word had an ambiguous part of speech
+    short_sent: bool       # the clause is 8 words or fewer
+
+
+def _is_sep2(c: _PhraseContext) -> bool:
+    """Coordinating conjunctions and pronoun-led clauses (Morph.c:165-183)."""
+    return (
+        (
+            c.prev_pos != kUndefPOS and c.cur_pos == kCConj
+            and not c.det_flag and c.wi > 3
+            and c.next2_pos != kConj
+        )
+        or (c.cur_pos == kAdv and c.wi > 4 and c.next_pos != kAdj)
+        or (c.prev_pos == kObjPron and c.wi > 2)
+        or (
+            c.cur_pos in (kSubjPron, kContr) and c.wi > 3
+            and c.prev_pos != kRelPro and c.prev_pos != kConj
+        )
+        or (c.cur_pos == kInterr and c.wi > 4)
+    )
+
+
+def _is_sep3(c: _PhraseContext) -> bool:
+    """Subject noun phrase cued by a following auxiliary verb (Morph.c:190-213)."""
+    return (
+        (
+            c.wi > 2 and c.prev_pos in (kNoun, kVerb)
+            and c.prev_pos not in (kVaux, kRVaux)
+            and c.cur_pos in (kVaux, kRVaux)
+        )
+        or (
+            c.prev_pos == kNoun
+            and c.next_pos not in (kRelPro, kVaux, kRVaux)
+            and c.next2_pos not in (kVaux, kRVaux)
+            and c.wi > 4 and c.cur_pos in (kVaux, kRVaux)
+        )
+        or (
+            c.prev_pos == kNoun and c.next_pos != kRelPro and c.ambig1_pos
+            and c.next_pos != kRVaux and c.next_pos != kConj
+            and c.next_pos != kCConj and c.wi > 3 and c.cur_pos == kVerb
+        )
+        or (
+            c.prev_pos == kNoun and c.cur_pos != kRelPro
+            and c.cur_pos != kRVaux and c.cur_pos != kInf
+            and c.cur_pos != kCConj and c.cur_pos != kConj
+            and c.wi > 2 and c.ambig1_pos
+            and (c.wi > 2 or c.short_sent) and c.cur_pos == kVerb
+        )
+    )
+
+
+def _is_sep4(c: _PhraseContext) -> bool:
+    """Before a conjunction or an infinitive (Morph.c:219-236)."""
+    return (
+        (
+            c.cur_pos == kConj and c.wi > 3 and c.cur_pos != kInf
+            and not c.next_punct and c.prev_pos != kConj
+            and c.prev_pos != kCConj
+        )
+        or (
+            c.prev_pos == kVPart and c.cur_pos != kPrep
+            and c.cur_pos != kDet and c.cur_pos != kArt and c.wi > 2
+            and (c.cur_pos == kNoun or c.cur_pos == kAdj)
+        )
+        or (c.cur_pos == kInterr and c.wi > 2 and c.cur_pos == kSubjPron)
+        or (c.cur_pos == kInf and c.wi > 3 and not c.next_punct)
+    )
+
+
+def _is_sep5(c: _PhraseContext) -> bool:
+    """Before a relative pronoun or a quantifier (Morph.c:242-256)."""
+    return (
+        (
+            c.cur_pos == kRelPro and c.wi >= 3 and c.prev_pos != kPrep
+            and c.next3_pos != kVaux and c.next3_pos != kRVaux
+            and (c.prev_pos == kNoun or c.prev_pos == kVerb)
+        )
+        or (
+            c.cur_pos == kQuant and c.wi > 5
+            and c.prev_pos != kAdj and c.prev_pos != kArt
+            and c.prev_pos != kVaux and c.prev_pos != kRVaux
+            and c.prev_pos != kDet and c.next2_pos != kCConj
+            and not c.next_punct
+        )
+    )
+
+
+def _is_sep6(c: _PhraseContext) -> bool:
+    """Content word followed by a function word (Morph.c:262-267)."""
+    return c.prev_pos in _SEP_CONTENT_POS and c.cur_pos not in _SEP_CONTENT_POS
+
+
+#: Checked in order; the first match wins, mirroring the C source's jump past
+#: the remaining checks. SEP1 is stateful and handled separately.
+_SEP_RULES = (
+    (kBND_Sep2, _is_sep2),
+    (kBND_Sep3, _is_sep3),
+    (kBND_Sep4, _is_sep4),
+    (kBND_Sep5, _is_sep5),
+    (kBND_Sep6, _is_sep6),
+)
+
+
+def _place_phrasing(words: list) -> list:
+    """Port of `PlacePhrasing` (`Morph.c:20-280`): where to break a clause
+    into tone groups.
+
+    Returns a list as long as `words`, each entry the boundary type to apply
+    just before that word (`kBND_None` for most of them).
+
+    `words` holds one clause, lining up 1:1 with the C reference's
+    `tokBuffer[1..LastTok-1]`, whose trailing punctuation token sits at
+    `LastTok`. So `next_punct` means "this word ends the clause" rather than
+    "a punctuation token follows". SEP7 and parenthesized-clause handling are
+    not ported, and `inParen` is always false, making the C source's
+    `!inParen` guard always true here.
+
+    Two boundaries never land on adjacent words, nor twice on one word
+    (the C source's `!prev_Tok->add_BND && !cur_Tok->add_BND`).
     """
     n_words = len(words)
     mid_bnds = [kBND_None] * n_words
-    short_sent = n_words <= 8  # Morph.c:60-63: vv->LastTok<=9 <=> n_words<=8
+    short_sent = n_words <= 8  # Morph.c:60-63: vv->LastTok <= 9
     prev_pos = kUndefPOS
     ambig1_pos = False
     det_flag = False
     initial_adv = False
     word_had_bnd = [False] * n_words
+
     for wi, cur_tok in enumerate(words):
         cur_pos = cur_tok.pos_choice
-        c1, c2, _ = _pos_count_and_hi_rank(cur_tok.pos_code1, cur_tok.pos_code2)
-        ambig_pos = (c1 + c2) > 1
+        count1, count2, _ = _pos_count_and_hi_rank(cur_tok.pos_code1, cur_tok.pos_code2)
+        ambig_pos = (count1 + count2) > 1
 
-        is_last = wi == n_words - 1
-        next_pos = words[wi + 1].pos_choice if wi + 1 < n_words else kUndefPOS
-        next_punct = is_last
-        # Morph.c:88-108: confirmed via direct instrumentation of the C
-        # reference (dumping word_Count/LastTok/CurTok/next2_Punct while
-        # processing a genuine SEP4 hit) that `next2_Punct`/`next3_Punct`
-        # are NEVER true in the real engine -- dead code. The C source
-        # nests the "== LastTok-2" (or -3) check INSIDE the "< LastTok-2"
-        # (or -3) guard:
-        #   if (CurTok < LastTok-2) { next2_POS = ...;
-        #       if (CurTok == LastTok-2) next2_Punct = true; }
-        # `CurTok < X` and `CurTok == X` can never both hold, so the inner
-        # assignment is unreachable and `next2_Punct`/`next3_Punct` stay
-        # false always; only `next2_POS`/`next3_POS` (gated on the outer
-        # `<` alone) are ever populated. Ported faithfully (bug-for-bug):
-        # `next2_pos`/`next3_pos` populated iff `wi < n_words-2`/`-3`;
-        # `next2_punct`/`next3_punct` always `False`.
-        next2_pos = words[wi + 2].pos_choice if wi < n_words - 2 else kUndefPOS
-        next2_punct = False
-        next3_pos = words[wi + 3].pos_choice if wi < n_words - 3 else kUndefPOS
-        next3_punct = False
+        ctx = _PhraseContext(
+            wi=wi,
+            prev_pos=prev_pos,
+            cur_pos=cur_pos,
+            next_pos=words[wi + 1].pos_choice if wi + 1 < n_words else kUndefPOS,
+            next2_pos=words[wi + 2].pos_choice if wi < n_words - 2 else kUndefPOS,
+            next3_pos=words[wi + 3].pos_choice if wi < n_words - 3 else kUndefPOS,
+            next_punct=wi == n_words - 1,
+            det_flag=det_flag,
+            ambig1_pos=ambig1_pos,
+            short_sent=short_sent,
+        )
 
         cur_bnd = kBND_None
-        if not next_punct:
-            got_bnd = False
-
-            # SEP1: sentence-initial adverb (Morph.c:148-160)
+        if not ctx.next_punct:
+            # SEP1: sentence-initial adverb (Morph.c:148-160). Stateful: the
+            # flag is armed by one word and spent by the next.
             if initial_adv:
                 cur_bnd = kBND_Sep1
                 initial_adv = False
-                got_bnd = True
             else:
                 initial_adv = (
                     prev_pos == kUndefPOS and cur_pos == kAdv
-                    and next_pos in (kArt, kDet)
+                    and ctx.next_pos in (kArt, kDet)
                 )
+                for bnd, matches in _SEP_RULES:
+                    if matches(ctx):
+                        cur_bnd = bnd
+                        break
 
-            # SEP2: coordinating conjunctions (Morph.c:165-183)
-            if not got_bnd and (
-                (
-                    prev_pos != kUndefPOS and cur_pos == kCConj
-                    and not det_flag and wi > 3
-                    and next2_pos != kConj
-                )
-                or (cur_pos == kAdv and wi > 4 and next_pos != kAdj)
-                or (prev_pos == kObjPron and wi > 2)
-                or (
-                    cur_pos in (kSubjPron, kContr) and wi > 3
-                    and prev_pos != kRelPro and prev_pos != kConj
-                )
-                or (cur_pos == kInterr and wi > 4)
-            ):
-                cur_bnd = kBND_Sep2
-                got_bnd = True
-
-            # SEP3: subject noun phrase cued by a following aux verb
-            # (Morph.c:190-213)
-            if not got_bnd and (
-                (
-                    wi > 2 and prev_pos in (kNoun, kVerb)
-                    and prev_pos not in (kVaux, kRVaux)
-                    and cur_pos in (kVaux, kRVaux)
-                )
-                or (
-                    prev_pos == kNoun
-                    and next_pos not in (kRelPro, kVaux, kRVaux)
-                    and next2_pos not in (kVaux, kRVaux)
-                    and wi > 4 and cur_pos in (kVaux, kRVaux)
-                )
-                or (
-                    prev_pos == kNoun and next_pos != kRelPro and ambig1_pos
-                    and next_pos != kRVaux and next_pos != kConj
-                    and next_pos != kCConj and wi > 3 and cur_pos == kVerb
-                )
-                or (
-                    prev_pos == kNoun and cur_pos != kRelPro
-                    and cur_pos != kRVaux and cur_pos != kInf
-                    and cur_pos != kCConj and cur_pos != kConj
-                    and wi > 2 and ambig1_pos
-                    and (wi > 2 or short_sent) and cur_pos == kVerb
-                )
-            ):
-                cur_bnd = kBND_Sep3
-                got_bnd = True
-
-            # SEP4: before a conjunction (Morph.c:219-236)
-            if not got_bnd and (
-                (
-                    cur_pos == kConj and wi > 3 and cur_pos != kInf
-                    and not next_punct and prev_pos != kConj
-                    and prev_pos != kCConj and not next2_punct
-                )
-                or (
-                    prev_pos == kVPart and cur_pos != kPrep
-                    and cur_pos != kDet and cur_pos != kArt and wi > 2
-                    and (cur_pos == kNoun or cur_pos == kAdj)
-                )
-                or (cur_pos == kInterr and wi > 2 and cur_pos == kSubjPron)
-                or (
-                    cur_pos == kInf and wi > 3 and not next_punct
-                    and not next2_punct and not next3_punct
-                )
-            ):
-                cur_bnd = kBND_Sep4
-                got_bnd = True
-
-            # SEP5: before a relative pronoun/quantifier (Morph.c:242-256)
-            if not got_bnd and (
-                (
-                    cur_pos == kRelPro and wi >= 3 and prev_pos != kPrep
-                    and next3_pos != kVaux and next3_pos != kRVaux
-                    and (prev_pos == kNoun or prev_pos == kVerb)
-                )
-                or (
-                    cur_pos == kQuant and wi > 5
-                    and prev_pos != kAdj and prev_pos != kArt
-                    and prev_pos != kVaux and prev_pos != kRVaux
-                    and prev_pos != kDet and next2_pos != kCConj
-                    and not next_punct
-                )
-            ):
-                cur_bnd = kBND_Sep5
-                got_bnd = True
-
-            # SEP6: Silverman87-style content/function tone group boundary
-            # (Morph.c:262-267)
-            if not got_bnd and (
-                prev_pos in _SEP_CONTENT_POS and cur_pos not in _SEP_CONTENT_POS
-            ):
-                cur_bnd = kBND_Sep6
-
-        if cur_bnd != kBND_None and not (wi > 0 and word_had_bnd[wi - 1]) and not word_had_bnd[wi]:
+        adjacent_bnd = wi > 0 and word_had_bnd[wi - 1]
+        if cur_bnd != kBND_None and not adjacent_bnd and not word_had_bnd[wi]:
             mid_bnds[wi] = cur_bnd
             word_had_bnd[wi] = True
 

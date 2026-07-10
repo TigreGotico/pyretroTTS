@@ -27,6 +27,8 @@ silently zero every note's intended duration.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from ._backend import (
     VoiceVar,
     e_get_phon,
@@ -98,6 +100,116 @@ def _flags(phon_flags2, phon):
     return phon_flags2[phon]
 
 
+@dataclass
+class _NoteTiming:
+    """Running state the note-driven retiming branches carry between phonemes.
+
+    Each branch waits for a syllable to end, then stretches the vowel it just
+    passed so the syllable's total duration matches the note it should occupy.
+    """
+
+    first_pass: bool = True   # nothing to retime until one syllable has passed
+    total_dur: int = 0        # frames accumulated since the last note boundary
+    vowel_index: int = 0      # the vowel to stretch or compress
+    note_dur: int = 0         # frames the current note should occupy
+    next_note_dur: int = 0    # note-length code read from the score
+
+
+def _stretch_vowel_to_note(vv: VoiceVar, timing: _NoteTiming, low_vibrato: bool) -> None:
+    """Absorb the difference between the note's length and the syllable's."""
+    vv.dur_Buf[timing.vowel_index] += timing.note_dur - timing.total_dur
+    if vv.dur_Buf[timing.vowel_index] < 4:
+        vv.dur_Buf[timing.vowel_index] = 4
+    elif low_vibrato and vv.dur_Buf[timing.vowel_index] > 100:
+        vv.phon_Ctrl_Buf_2[timing.vowel_index] |= kLowVibrato
+
+
+def _retime_to_sample_markers(
+    vv: VoiceVar, i: int, cur_ctrl: int, cur_flags: int, cur_is_vowel: bool,
+    next_phon: int, dur_hold: int, timing: _NoteTiming,
+) -> None:
+    """Retime against the sampled source's marker table (BackEnd.c:1938-1976).
+
+    Only kUseSyncSnd voices (Bells, Hysterical) take this path: their glottal
+    source is a recording whose marker times dictate where syllables may fall.
+    """
+    if (cur_ctrl & kSyllable_Start) and timing.first_pass:
+        vv.phon_Ctrl_Buf_2[i] |= kSampleMarker
+
+    if cur_is_vowel or (cur_ctrl & kTerm_Bound):
+        if not (cur_ctrl & kTerm_Bound) and not timing.first_pass:
+            if cur_flags & kSonorantF:
+                vv.phon_Ctrl_Buf_2[i] |= kSampleMarker
+            else:
+                vv.phon_Ctrl_Buf_2[i + 1] |= kSampleMarker
+
+        if not timing.first_pass:
+            markers = vv.markerBuf
+            timing.note_dur = (
+                (markers[vv.markerIndex + 1] - markers[vv.markerIndex])
+                // (kSampFrameLen >> 1)
+            )
+            # A silence needs more room than a following phoneme does.
+            lead_out = 20 if next_phon == _SIL_ else 10
+            vv.dur_Buf[timing.vowel_index] += (timing.note_dur - timing.total_dur) - lead_out
+            if vv.dur_Buf[timing.vowel_index] < 4:
+                vv.dur_Buf[timing.vowel_index] = 4
+            timing.total_dur = 0
+            vv.markerIndex += 1
+            if vv.markerIndex == vv.lastMarkerIndex:
+                vv.markerIndex = 0
+        timing.first_pass = False
+
+    if cur_is_vowel:
+        timing.vowel_index = i
+    timing.total_dur += dur_hold
+
+
+def _retime_to_note_script(
+    vv: VoiceVar, i: int, cur_ctrl: int, cur_flags: int, cur_is_vowel: bool,
+    dur_hold: int, timing: _NoteTiming,
+) -> None:
+    """Retime against the voice's embedded note score (BackEnd.c:1977-2003)."""
+    if (cur_flags & kVowelF) or (cur_ctrl & kTerm_Bound):
+        if cur_ctrl & kTerm_Bound:
+            timing.note_dur = max(timing.note_dur, vv.Note_Times[5])
+        else:
+            timing.next_note_dur = (vv.notesBuf[vv.songIndex] & kNoteDur) >> kNoteDurShift
+            vv.songIndex += 1
+        if vv.songIndex >= vv.numOfNotes:
+            vv.songIndex = 0
+
+        if not timing.first_pass:
+            _stretch_vowel_to_note(vv, timing, low_vibrato=True)
+        timing.first_pass = False
+        timing.vowel_index = i
+        timing.note_dur = vv.Note_Times[timing.next_note_dur]
+        timing.total_dur = 0
+
+    timing.total_dur += dur_hold
+    if cur_is_vowel:
+        timing.vowel_index = i
+
+
+def _retime_to_note_buffer(
+    vv: VoiceVar, i: int, cur_ctrl: int, cur_is_vowel: bool,
+    dur_hold: int, timing: _NoteTiming,
+) -> None:
+    """Retime against per-phoneme notes supplied with the text (BackEnd.c:2004-2029)."""
+    timing.next_note_dur = (vv.user_Note_Buf2[i] & kNoteDur) >> kNoteDurShift
+    if (timing.next_note_dur != 0) or (cur_ctrl & kTerm_Bound):
+        if not timing.first_pass:
+            _stretch_vowel_to_note(vv, timing, low_vibrato=True)
+        timing.first_pass = False
+        timing.vowel_index = i
+        timing.note_dur = vv.Note_Times[timing.next_note_dur]
+        timing.total_dur = 0
+
+    timing.total_dur += dur_hold
+    if cur_is_vowel:
+        timing.vowel_index = i
+
+
 def mod_duration(vv: VoiceVar) -> None:
     """Port of `Mod_Duration`. Writes `vv.dur_Buf[1:vv.phonBuf_2_In_Index]`
     (`vv.dur_Buf[0]` is always 1, matching `BackEnd.c:1397`)."""
@@ -109,11 +221,8 @@ def mod_duration(vv: VoiceVar) -> None:
     # note-driven duration adjustment on vowels, stretching/compressing the
     # naive duration formula's output to match the embedded note script's
     # intended timing.
-    first_pass = True
-    total_dur = 0
-    vowel_index = 0
-    note_dur = 0
-    next_note_dur = 0
+    emphasis_run = False
+    timing = _NoteTiming()
 
     for i in range(1, vv.phonBuf_2_In_Index):
         cur_phon = e_get_phon(vv, i)
@@ -219,18 +328,13 @@ def mod_duration(vv: VoiceVar) -> None:
                         percent_duration = (percent_duration * 70 * _PCT) >> 16
 
             # --- #8 Lengthening for emphasis ---
-            # (eFlag is sentence-local running state; ported as a plain
-            # local rather than persisted across calls, since each call
-            # processes one full sentence in one pass -- matching how
-            # `firstPass`/`total_Dur`/`vowel_Index` are also sentence-local
-            # in the C source, just declared once per Mod_Duration call.)
-            if i == 1:
-                mod_duration._eflag = False
+            # Runs from an emphatically stressed vowel until the next word-
+            # initial consonant or unemphasized vowel ends it.
             if (cur_ctrl & kWord_Initial_Consonant) or (cur_is_vowel and (cur_stress != kEmphaticStress)):
-                mod_duration._eflag = False
+                emphasis_run = False
             if cur_stress == kEmphaticStress:
-                mod_duration._eflag = True
-            if mod_duration._eflag:
+                emphasis_run = True
+            if emphasis_run:
                 if cur_is_vowel:
                     fixed_duration += 60
                 else:
@@ -350,84 +454,14 @@ def mod_duration(vv: VoiceVar) -> None:
 
         vv.dur_Buf[i] = dur_hold
 
-        # --- sync_On_Marker / singScript / singing branches (BackEnd.c:1938-2029) ---
-        # sync_On_Marker (BackEnd.c:1938-1976) adjusts duration against a
-        # sample-marker table -- only applies to kUseSyncSnd voices
-        # (Bells/Hysterical), gated on vv.sync_On_Marker (set in
-        # api.new_voice() from the extracted marker tables in _data.py).
-        if getattr(vv, "sync_On_Marker", False):
-            if (cur_ctrl & kSyllable_Start) and first_pass:
-                vv.phon_Ctrl_Buf_2[i] |= kSampleMarker
-
-            if cur_is_vowel or (cur_ctrl & kTerm_Bound):
-                if not (cur_ctrl & kTerm_Bound) and not first_pass:
-                    if (cur_flags & kSonorantF) or first_pass:
-                        vv.phon_Ctrl_Buf_2[i] |= kSampleMarker
-                    else:
-                        vv.phon_Ctrl_Buf_2[i + 1] |= kSampleMarker
-
-                if not first_pass:
-                    note_dur = (vv.markerBuf[vv.markerIndex + 1] - vv.markerBuf[vv.markerIndex]) // (kSampFrameLen >> 1)
-                    dur_adjust = note_dur - total_dur
-                    if next_phon == _SIL_:
-                        vv.dur_Buf[vowel_index] += (dur_adjust - 20)
-                    else:
-                        vv.dur_Buf[vowel_index] += (dur_adjust - 10)
-                    if vv.dur_Buf[vowel_index] < 4:
-                        vv.dur_Buf[vowel_index] = 4
-                    total_dur = 0
-                    vv.markerIndex += 1
-                    if vv.markerIndex == vv.lastMarkerIndex:
-                        vv.markerIndex = 0
-                first_pass = False
-
-            if cur_is_vowel:
-                vowel_index = i
-            total_dur += dur_hold
-
-        elif getattr(vv, "singScript", False):
-            if (cur_flags & kVowelF) or (cur_ctrl & kTerm_Bound):
-                if cur_ctrl & kTerm_Bound:
-                    if note_dur < vv.Note_Times[5]:
-                        note_dur = vv.Note_Times[5]
-                else:
-                    next_note_dur = (vv.notesBuf[vv.songIndex] & kNoteDur) >> kNoteDurShift
-                    vv.songIndex += 1
-                if vv.songIndex >= vv.numOfNotes:
-                    vv.songIndex = 0
-
-                if not first_pass:
-                    dur_adjust = note_dur - total_dur
-                    vv.dur_Buf[vowel_index] += dur_adjust
-                    if vv.dur_Buf[vowel_index] < 4:
-                        vv.dur_Buf[vowel_index] = 4
-                    elif vv.dur_Buf[vowel_index] > 100:
-                        vv.phon_Ctrl_Buf_2[vowel_index] |= kLowVibrato
-                first_pass = False
-                vowel_index = i
-                note_dur = vv.Note_Times[next_note_dur]
-                total_dur = 0
-            total_dur += dur_hold
-            if cur_is_vowel:
-                vowel_index = i
-
-        elif getattr(vv, "singing", False):
-            next_note_dur = (vv.user_Note_Buf2[i] & kNoteDur) >> kNoteDurShift
-            if (next_note_dur != 0) or (cur_ctrl & kTerm_Bound):
-                if not first_pass:
-                    dur_adjust = note_dur - total_dur
-                    vv.dur_Buf[vowel_index] += dur_adjust
-                    if vv.dur_Buf[vowel_index] < 4:
-                        vv.dur_Buf[vowel_index] = 4
-                    if vv.dur_Buf[vowel_index] > 100:
-                        vv.phon_Ctrl_Buf_2[vowel_index] |= kLowVibrato
-                first_pass = False
-                vowel_index = i
-                note_dur = vv.Note_Times[next_note_dur]
-                total_dur = 0
-            total_dur += dur_hold
-            if cur_is_vowel:
-                vowel_index = i
-
-
-mod_duration._eflag = False
+        # Note-driven voices retime the durations just computed, stretching or
+        # compressing each syllable to land on its note. Ordinary voices skip
+        # all three branches (BackEnd.c:1938-2029).
+        if vv.sync_On_Marker:
+            _retime_to_sample_markers(
+                vv, i, cur_ctrl, cur_flags, cur_is_vowel, next_phon, dur_hold, timing
+            )
+        elif vv.singScript:
+            _retime_to_note_script(vv, i, cur_ctrl, cur_flags, cur_is_vowel, dur_hold, timing)
+        elif vv.singing:
+            _retime_to_note_buffer(vv, i, cur_ctrl, cur_is_vowel, dur_hold, timing)

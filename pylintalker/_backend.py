@@ -1386,49 +1386,36 @@ def init_rate_params(vv: VoiceVar) -> None:
 # Init voice from voiceData dict
 # ---------------------------------------------------------------------------
 
-def init_voice(vv: VoiceVar, vd: Voice):
-    """Configure synthesizer from a voice data dict (from _data.py)."""
-    zz: FormantVar = vv.synthVars
+def _init_glottal_source(vv: VoiceVar, zz: FormantVar, vd: Voice) -> None:
+    """Pick the glottal source -- harmonic buzz, or a sampled waveform.
 
+    The sampled sources (`kUseSnd`, `kUseSyncSnd`) replace the voice's Hz
+    pitch with a MIDI note, keeping the difference as `VP_offsetPitch`.
+    """
     zz.Is16BitSound = vv.bit16_Sound
-
-    # Voice type (must be set early, used below)
     zz.voice_Num = vd.get('voice', kMaleTbls)
-
-    # Glottal source type (matches C Say.c InitVoice)
     zz.glotType = vd.get('waveType', kUseHarm)
     vv.sync_On_Marker = False
 
-    # Pitch / rate
     zz.vd_pitch = vd['pitch']
     vv.voiceNaturalPitch = e_hz_to_pitch(vv, vd['pitch'])
 
-    # sPitch / sGain override for waveType 1/2 (kUseSnd / kUseSyncSnd)
-    wt = vd.get('waveType', kUseHarm)
-    if wt == kUseSnd or wt == 2:  # kUseSnd (1) or kUseSyncSnd (2)
-        temp_pitch = vv.voiceNaturalPitch  # save hz-based pitch
+    wave_type = vd.get('waveType', kUseHarm)
+    if wave_type in (kUseSnd, 2):  # kUseSnd (1) or kUseSyncSnd (2)
+        hz_pitch = vv.voiceNaturalPitch
         vv.voiceNaturalPitch = e_midi_to_pitch(vd.get('sPitch', 0) << 8)
-        zz.VP_offsetPitch = temp_pitch - vv.voiceNaturalPitch
-        if wt == 2:  # kUseSyncSnd
+        zz.VP_offsetPitch = hz_pitch - vv.voiceNaturalPitch
+        if wave_type == 2:  # kUseSyncSnd
             vv.sync_On_Marker = True
             zz.glotType = kUseSnd
         else:
             vv.sync_On_Marker = False
         zz.wavesampleGain = mRatio(vd.get('sGain', 0), 100, kPrecision)
 
-        # InsertSample (Say.c:1471-1499): the embedded sample data (in
-        # _data.py, header already stripped -- see that file) drives the
-        # actual glottal-source waveform for these voices; sampleLength
-        # comes from the header itself, which extraction already parsed
-        # into the byte count of vd['sample']. Without this, zz.SampleWave
-        # stays None and say_frame's kUseSnd branch (line ~836) silently
-        # falls through to sourceC=0 (no wavesample contribution at all),
-        # which happened to leave every frame-level CONTROL value
-        # (f0/formants/amplitude) matching the C reference exactly while
-        # the actual synthesized PCM samples were completely wrong --
-        # confirmed by a genuine sample-value comparison (not just frame
-        # count), which no test in this port had performed until this bug
-        # was found.
+        # InsertSample (Say.c:1471-1499): the embedded sample data drives the
+        # glottal source for these voices. Without it say_frame's kUseSnd
+        # branch contributes no source at all, leaving every frame-level
+        # control value correct while the PCM samples are silent.
         zz.SampleWave = vd.get('sample')
         zz.sampleLength = len(zz.SampleWave) if zz.SampleWave else 0
         zz.loopPoint = vd.get('loopPoint', 0)
@@ -1441,166 +1428,126 @@ def init_voice(vv: VoiceVar, vd: Voice):
         zz.loopPoint = 0
         zz.sync_On_Vowel = 0
 
-    # C sets VP_baselinePitch in Init_Pitch_Params/Talk(), which run *after*
-    # InitVoice — so it picks up the final voiceNaturalPitch (post sPitch
-    # override for kUseSnd/kUseSyncSnd voices), not the pre-override hz value.
+    # Init_Pitch_Params/Talk() run after InitVoice in C, so the baseline picks
+    # up the post-override pitch, not the Hz value.
     vv.VP_baselinePitch = vv.voiceNaturalPitch
 
-    zz.voiceNoiseGain = 0  # will be set by setVolume
 
-    # Breath gain (matches C Say.c InitVoice)
-    temp_long = mRatio(vd['aGain'], 100, kPrecision)
-    zz.breathGain = mMul2(temp_long, kNoiseGain, kPrecision)
+def _init_source_gains(vv: VoiceVar, zz: FormantVar, vd: Voice) -> None:
+    """Breath (aspiration) noise, chorus, and the noise/stress gains."""
+    zz.voiceNoiseGain = 0  # set properly below, and again by setVolume
+
+    breath = mRatio(vd['aGain'], 100, kPrecision)
+    zz.breathGain = mMul2(breath, kNoiseGain, kPrecision)
     zz.breathCycle = vd.get('aCycle', 0)
-    aw = vd.get('AsperW', 0)
-    if aw == 0:
+    asper_wave = vd.get('AsperW', 0)
+    if asper_wave == 0:
         zz.breathWave = BandNoise
-    elif aw == 1:
+    elif asper_wave == 1:
         zz.breathWave = NoiseWave
     else:
         zz.breathWave = HPNoise
+
     zz.voiceChorus = vd.get('chorus', 0)
+
+    zz.setNoiseGain = vd.get('nGain', 0)
+    zz.voiceNoiseGain = mRatio(zz.setNoiseGain, 100, kPrecision)
+    if vv.bit16_Sound:
+        zz.voiceNoiseGain = mMul2(zz.voiceNoiseGain, 0xCCCC, 16)
+    vv.VP_stressGain = (vd.get('stressGain', 0) << 16) // 100
+
+
+def _init_formants(vv: VoiceVar, zz: FormantVar, vd: Voice) -> None:
+    """Per-voice formant offsets, the fixed F4-F6 parallel branch, and nasals."""
     zz.voiceF1Gain = vd.get('f1_Offset', 0)
     zz.voiceF2Gain = vd.get('f2_Offset', 0)
     zz.voiceF3Gain = vd.get('f3_Offset', 0)
 
     zz.voice_F4_BW = vd.get('f4_BW', 250)
     f4_freq = vd.get('f4_Freq', 780)
-    if f4_freq > 800:
-        zz.voice_F4_Freq = e_hz_to_pitch(vv, f4_freq)
-    else:
-        zz.voice_F4_Freq = f4_freq
+    zz.voice_F4_Freq = e_hz_to_pitch(vv, f4_freq) if f4_freq > 800 else f4_freq
 
-    bg1 = vd.get('bwGain1', 0)
-    zz.voiceBWgain1 = (bg1 << 16) // 100 if bg1 else 0
-    bg2 = vd.get('bwGain2', 0)
-    zz.voiceBWgain2 = (bg2 << 16) // 100 if bg2 else 0
-    bg3 = vd.get('bwGain3', 0)
-    zz.voiceBWgain3 = (bg3 << 16) // 100 if bg3 else 0
+    for key, attr in (('bwGain1', 'voiceBWgain1'),
+                      ('bwGain2', 'voiceBWgain2'),
+                      ('bwGain3', 'voiceBWgain3')):
+        gain = vd.get(key, 0)
+        setattr(zz, attr, (gain << 16) // 100 if gain else 0)
     zz.voiceMinBW = 200
 
-    # Parallel formants (always convert Hz → pitch units)
+    # Parallel formants: always Hz -> pitch units.
     zz.f4_Par = e_hz_to_pitch(vv, vd.get('f4p_Freq', 780))
     zz.bw4_Par = vd.get('f4p_BW', 250)
     zz.f5_Par = e_hz_to_pitch(vv, vd.get('f5p_Freq', 900))
     zz.bw5_Par = vd.get('f5p_BW', 250)
-    zz.f6_Par = e_hz_to_pitch(vv, 4700)  # C code hardcodes 4700 Hz!
+    zz.f6_Par = e_hz_to_pitch(vv, 4700)  # the C source hardcodes 4700 Hz
     zz.bw6_Par = vd.get('f6p_BW', 250)
 
-    # Nasal (Hz → pitch)
     zz.bNP = vd.get('nasal_BW', vd.get('bNP', 60))
     zz.nasalAmt = vd.get('nasalAmt', 0)
     zz.nasalBaseFreq = vd.get('nasal_Base', 350)
     zz.nasalTargFreq = vd.get('nasal_targ', 500)
     zz.fNP = e_hz_to_pitch(vv, zz.nasalBaseFreq)
 
-    # Gains
-    zz.setNoiseGain = vd.get('nGain', 0)
-    # Compute voiceNoiseGain from setNoiseGain (matches C Say.c init)
-    zz.voiceNoiseGain = mRatio(zz.setNoiseGain, 100, kPrecision)
-    if vv.bit16_Sound:
-        zz.voiceNoiseGain = mMul2(zz.voiceNoiseGain, 0xCCCC, 16)
-    vv.VP_stressGain = (vd.get('stressGain', 0) << 16) // 100
 
-    # Voice type
-    zz.voice_Num = vd.get('voice', kMaleTbls)
-
-    # Set up formant tables
+def _init_formant_tables(zz: FormantVar) -> None:
+    """Bind the male or female formant/bandwidth/volume tables onto the voice."""
     if zz.voice_Num == kMaleTbls:
-        zz.a_f1FreqTblM = f1FreqTblM
-        zz.a_f2FreqTblM = f2FreqTblM
-        zz.a_f3FreqTblM = f3FreqTblM
-        zz.a_b1FreqTblM = b1FreqTblM
-        zz.a_b2FreqTblM = b2FreqTblM
-        zz.a_b3FreqTblM = b3FreqTblM
-        zz.a_avVolTblM = avVolTblM
-        zz.avVolTblM = avVolTblM
-        zz.f1FreqTblM = f1FreqTblM
-        zz.f2FreqTblM = f2FreqTblM
-        zz.f3FreqTblM = f3FreqTblM
-        zz.b1FreqTblM = b1FreqTblM
-        zz.b2FreqTblM = b2FreqTblM
-        zz.b3FreqTblM = b3FreqTblM
+        tables = (f1FreqTblM, f2FreqTblM, f3FreqTblM,
+                  b1FreqTblM, b2FreqTblM, b3FreqTblM, avVolTblM)
         zz.MaleEnvelopeListTbl = MaleEnvTbl
         zz.voice_Locus_Tbl = Male_Loci_Tbl
         zz.voice_NoiseAmp_Tbl = Male_NoiseAmpTbl
-        zz.voiceMinBW = 50
     else:
-        zz.a_f1FreqTblM = f1FreqTblF
-        zz.a_f2FreqTblM = f2FreqTblF
-        zz.a_f3FreqTblM = f3FreqTblF
-        zz.a_b1FreqTblM = b1FreqTblF
-        zz.a_b2FreqTblM = b2FreqTblF
-        zz.a_b3FreqTblM = b3FreqTblF
-        zz.a_avVolTblM = avVolTblF
-        zz.avVolTblM = avVolTblF
-        zz.f1FreqTblM = f1FreqTblF
-        zz.f2FreqTblM = f2FreqTblF
-        zz.f3FreqTblM = f3FreqTblF
-        zz.b1FreqTblM = b1FreqTblF
-        zz.b2FreqTblM = b2FreqTblF
-        zz.b3FreqTblM = b3FreqTblF
+        tables = (f1FreqTblF, f2FreqTblF, f3FreqTblF,
+                  b1FreqTblF, b2FreqTblF, b3FreqTblF, avVolTblF)
         zz.MaleEnvelopeListTbl = FemaleEnvTbl
         zz.voice_Locus_Tbl = Female_Loci_Tbl
         zz.voice_NoiseAmp_Tbl = Female_NoiseAmpTbl
-        zz.voiceMinBW = 50
+    zz.voiceMinBW = 50
 
-    # Populate voice_Formants table (used by get_target)
-    customForm = vd.get('customForm', 0)
-    if customForm:
-        zz.voice_Formants[kF1] = zz.a_f1FreqTblM
-        zz.voice_Formants[kF2] = zz.a_f2FreqTblM
-        zz.voice_Formants[kF3] = zz.a_f3FreqTblM
-        zz.voice_Formants[kBW1] = zz.a_b1FreqTblM
-        zz.voice_Formants[kBW2] = zz.a_b2FreqTblM
-        zz.voice_Formants[kBW3] = zz.a_b3FreqTblM
+    f1, f2, f3, b1, b2, b3, av = tables
+    # The a_* aliases are what a customForm voice overrides; the unprefixed
+    # names are what the default path reads. Both start out identical.
+    (zz.a_f1FreqTblM, zz.a_f2FreqTblM, zz.a_f3FreqTblM,
+     zz.a_b1FreqTblM, zz.a_b2FreqTblM, zz.a_b3FreqTblM, zz.a_avVolTblM) = tables
+    (zz.f1FreqTblM, zz.f2FreqTblM, zz.f3FreqTblM,
+     zz.b1FreqTblM, zz.b2FreqTblM, zz.b3FreqTblM, zz.avVolTblM) = tables
+
+
+def _select_formant_targets(zz: FormantVar, vd: Voice) -> None:
+    """Point `voice_Formants` at the table set `get_target` should read."""
+    if vd.get('customForm', 0):
+        source = (zz.a_f1FreqTblM, zz.a_f2FreqTblM, zz.a_f3FreqTblM,
+                  zz.a_b1FreqTblM, zz.a_b2FreqTblM, zz.a_b3FreqTblM)
         zz.voice_av_Tbl = zz.a_avVolTblM
         zz.EnvelopeListTbl = zz.a_EnvelopeListTbl
-    elif zz.voice_Num == kMaleTbls:
-        zz.voice_Formants[kF1] = zz.f1FreqTblM
-        zz.voice_Formants[kF2] = zz.f2FreqTblM
-        zz.voice_Formants[kF3] = zz.f3FreqTblM
-        zz.voice_Formants[kBW1] = zz.b1FreqTblM
-        zz.voice_Formants[kBW2] = zz.b2FreqTblM
-        zz.voice_Formants[kBW3] = zz.b3FreqTblM
-        zz.voice_av_Tbl = zz.avVolTblM
-        zz.EnvelopeListTbl = zz.MaleEnvelopeListTbl
     else:
-        zz.voice_Formants[kF1] = zz.f1FreqTblM
-        zz.voice_Formants[kF2] = zz.f2FreqTblM
-        zz.voice_Formants[kF3] = zz.f3FreqTblM
-        zz.voice_Formants[kBW1] = zz.b1FreqTblM
-        zz.voice_Formants[kBW2] = zz.b2FreqTblM
-        zz.voice_Formants[kBW3] = zz.b3FreqTblM
+        source = (zz.f1FreqTblM, zz.f2FreqTblM, zz.f3FreqTblM,
+                  zz.b1FreqTblM, zz.b2FreqTblM, zz.b3FreqTblM)
         zz.voice_av_Tbl = zz.avVolTblM
-        zz.EnvelopeListTbl = zz.FemaleEnvelopeListTbl
+        zz.EnvelopeListTbl = (zz.MaleEnvelopeListTbl if zz.voice_Num == kMaleTbls
+                              else zz.FemaleEnvelopeListTbl)
 
-    # Reverb (Say.c:1450-1458): reverbDepth is a 16.16 ratio (mRatio(x,100,
-    # kPrecision)), and reverbDelay is clipped to [10,100]% before its own
-    # 16.16 conversion ((x<<16)/100) -- both were previously raw percentage
-    # copies with no scaling/clipping at all, wildly overstating the reverb
-    # echo contribution to nSamp for every voice with reverb enabled.
+    for slot, table in zip((kF1, kF2, kF3, kBW1, kBW2, kBW3), source, strict=True):
+        zz.voice_Formants[slot] = table
+
+
+def _init_reverb_and_emphasis(zz: FormantVar, vd: Voice) -> None:
+    """Reverb depth/delay and the high-frequency radiation-loss emphasis.
+
+    `reverbDepth` is a 16.16 ratio and `reverbDelay` is clipped to [10,100]%
+    before its own 16.16 conversion (Say.c:1450-1458). `hfEmph` is a per-voice
+    flag: voices with `emphVoice == 0` (Cellos, PipeOrgan, Bells, Hysterical)
+    must not get the emphasis applied in say_frame's sample computation.
+    """
     zz.reverbDepth = mRatio(vd.get('rvbDepth', 0), 100, kPrecision)
-    _reverb_delay_pct = vd.get('rvbDelay', 0)
-    if _reverb_delay_pct > 100:
-        _reverb_delay_pct = 100
-    if _reverb_delay_pct < 10:
-        _reverb_delay_pct = 10
-    zz.reverbDelay = (_reverb_delay_pct << 16) // 100
-    zz.voiceChorus = vd.get('chorus', 0)
-
-    # Emphasis (Say.c:1455-1458): a real per-voice flag, not always-on --
-    # voices with emphVoice==0 (Cellos, PipeOrgan, Bells, Hysterical, ...)
-    # must NOT get the high-frequency radiation-loss emphasis applied in
-    # say_frame's nSamp computation. This was hardcoded to 1 unconditionally
-    # before, which happened to match ordinary voices (emphVoice=1, e.g.
-    # Fred) by coincidence but silently corrupted every sample of output
-    # for every voice with emphVoice=0 -- confirmed by a genuine sample-level
-    # PCM comparison against the C reference (frame-level control values
-    # matched exactly throughout, masking this completely).
+    delay_pct = min(100, max(10, vd.get('rvbDelay', 0)))
+    zz.reverbDelay = (delay_pct << 16) // 100
     zz.hfEmph = 1 if vd.get('emphVoice', 0) > 0 else 0
 
-    # Pitch dynamics
+
+def _init_pitch_dynamics(vv: VoiceVar, vd: Voice) -> None:
+    """Intonation: how far and how fast pitch rises, falls, and settles."""
     vv.VP_riseAmt = vd.get('riseAmt', 0)
     vv.VP_fallAmt = vd.get('fallAmt', 0)
     vv.VP_riseAmt1 = vd.get('riseAmt1', 0)
@@ -1611,19 +1558,7 @@ def init_voice(vv: VoiceVar, vd: Voice):
     vv.VP_intonation = (vd.get('intonation', 0) << 16) // 100
     vv.VP_pitchRange = (vd.get('pitchRange', 0) << 16) // 100
 
-    # Custom waveform (vWave/vWave1) — synthesize buzz waveforms (C InvDFT)
-    vw = vd.get('vWave', None)
-    if vw:
-        voice_wave_gain = mRatio(vd.get('vGain', 100), 200, 16)
-        _inv_dft(zz, vw, vd.get('vWave1', None), voice_wave_gain)
-
-    # Volume
-    vv.VP_stressGain = (vd.get('stressGain', 0) << 16) // 100
-
-    # Locus offset (Say.c:1425)
-    zz.locusOffset = vd.get('locus', 0)
-
-    # Pitch baseline fall and filter gains (BackEnd.c:4337-4351)
+    # Pitch baseline fall and filter gains (BackEnd.c:4337-4351).
     vv.baselineFall_START = kHZ_7 + vv.VP_baselineFall
     vv.baselineFall_END = kHZ_7 - vv.VP_baselineFall
     vv.pFilter_Out1 = vv.baselineFall_START << kStepSizeRes
@@ -1631,48 +1566,66 @@ def init_voice(vv: VoiceVar, vd: Voice):
     vv.pFilter_In_Gain = vv.VP_quickness
     vv.pFilter_FB_Gain = k100percent - vv.pFilter_In_Gain
 
-    # Init fixed formants
-    init_fixed_formants(zz)
 
-    # Rate/speaking params (Say.c:1258, 1423 + Init_Rate_Params)
+def _init_rate_and_vibrato(vv: VoiceVar, vd: Voice) -> None:
+    """Speaking rate, vibrato depth/frequency, and the portamento step."""
     vv.speech_Rate = vd.get('rate', kNormal_Speech_Rate)
     vv.stressDurTime = vd.get('stressDurTime', 50) >> 1
     init_rate_params(vv)
 
-    # Vibrato params (Say.c:1428-1436)
-    vib_freq = vd.get('vibratoFreq', 0)
-    vv.vibratoFreq = (((vib_freq << 16) // 10) * 256) // 200
+    vibrato_freq = vd.get('vibratoFreq', 0)
+    vv.vibratoFreq = (((vibrato_freq << 16) // 10) * 256) // 200
     vv.vibratoDepth1 = (vd.get('vibratoDepth1', 0) << 16) // 1000
     vv.vibratoDepth2 = (vd.get('vibratoDepth2', 0) << 16) // 1000
 
-    # Portamento step divisor (Say.c:1465-1467)
-    vv.portamento = vd.get('portamento', 0) // kFrameTime
-    if vv.portamento == 0:
-        vv.portamento = 1
+    vv.portamento = vd.get('portamento', 0) // kFrameTime or 1
 
-    # Notes / singing (embedded note script; ResetVoice numOfNotes check)
+
+def _init_notes(vv: VoiceVar, vd: Voice) -> None:
+    """Load the embedded note script that makes a voice sing.
+
+    More than one note switches the voice into singing mode, which routes
+    Mod_Duration through the note-timed duration formula. `e_set_tempo` must
+    run afterwards to populate `Note_Times[]`; `api.new_voice` does that once
+    `vv.tempo` is set here.
+    """
     notes = vd.get('notes', None)
     if notes:
         vv.numOfNotes = notes[0]
         if vv.numOfNotes >= kMaxNotes:
-            vv.numOfNotes = 1  # too many notes, don't sing
+            vv.numOfNotes = 1  # too many notes to be a song
         for i in range(vv.numOfNotes):
             vv.notesBuf[i] = notes[i + 1]
     else:
         vv.numOfNotes = 0
+
     vv.songIndex = 0
-    if vv.numOfNotes > 1:
-        vv.singScript = True
-        vv.singing = True
-    else:
-        vv.singScript = False
-        vv.singing = False
-    # ResetVoice also calls e_SetTempo(vv, vv->tempo) when numOfNotes > 1
-    # (BackEnd.c:4364-4368) to populate Note_Times[], which Mod_Duration's
-    # singScript/singing branches need. tempo itself comes from voice data
-    # (e.g. PipeOrgan_Voice['tempo'] == 85); e_set_tempo() is called from
-    # api.new_voice() once vv.tempo is set here.
+    vv.singScript = vv.singing = vv.numOfNotes > 1
     vv.tempo = vd.get('tempo', 120)
+
+
+def init_voice(vv: VoiceVar, vd: Voice) -> None:
+    """Configure the synthesizer from a voice definition (see `_data.py`)."""
+    zz: FormantVar = vv.synthVars
+
+    _init_glottal_source(vv, zz, vd)
+    _init_source_gains(vv, zz, vd)
+    _init_formants(vv, zz, vd)
+    _init_formant_tables(zz)
+    _select_formant_targets(zz, vd)
+    _init_reverb_and_emphasis(zz, vd)
+    _init_pitch_dynamics(vv, vd)
+
+    # Custom buzz waveform, synthesized from harmonic coefficients.
+    voice_wave = vd.get('vWave', None)
+    if voice_wave:
+        gain = mRatio(vd.get('vGain', 100), 200, 16)
+        _inv_dft(zz, voice_wave, vd.get('vWave1', None), gain)
+
+    zz.locusOffset = vd.get('locus', 0)  # Say.c:1425
+    init_fixed_formants(zz)
+    _init_rate_and_vibrato(vv, vd)
+    _init_notes(vv, vd)
 
 
 def _inv_dft(zz: FormantVar, vWave: list, vWave1: list | None = None,
