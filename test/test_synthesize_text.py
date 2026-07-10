@@ -67,15 +67,16 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, os.path.dirname(__file__))
 
-from lintalker.api import build_phoneme_plan
-from lintalker._frontend import split_clauses
+import lintalker._backend as be
+from lintalker._backend import kFrame1
+from lintalker.api import synthesize_text
 from lintalker._data import (
     Fred_Voice, Kathy_Voice, Princess_Voice, Junior_Voice, Ralph_Voice,
     Whisper_Voice, Zarvox_Voice, Trinoids_Voice, Bubbles_Voice, Boing_Voice,
     Deranged_Voice, GoodNews_Voice, BadNews_Voice, PipeOrgan_Voice, Cellos_Voice,
 )
 
-from test_voices import run_c, parse_frames, setup_python_voice, run_python_backend, compare_frames
+from test_voices import run_c, parse_frames, compare_frames
 
 _VOICES = {
     "Fred": (0, Fred_Voice), "Kathy": (1, Kathy_Voice), "Princess": (2, Princess_Voice),
@@ -84,6 +85,38 @@ _VOICES = {
     "Boing": (9, Boing_Voice), "Deranged": (12, Deranged_Voice), "GoodNews": (13, GoodNews_Voice),
     "BadNews": (14, BadNews_Voice), "PipeOrgan": (15, PipeOrgan_Voice), "Cellos": (16, Cellos_Voice),
 }
+
+
+def _synthesize_text_frames(voice_dict, text):
+    """Runs the REAL public `api.synthesize_text()` (not a hand-assembled
+    stand-in) and captures its per-frame formant state via
+    `_backend.post_frame_hook`, so this file validates exactly what a
+    caller of this library gets."""
+    frames = []
+    frame_num = [0]
+
+    def on_frame(vv):
+        zz = vv.synthVars
+        fp = zz.frameBuf2 if zz.curFrameBuf == kFrame1 else zz.frameBuf1
+        phon_idx = vv.cur_PhonBuf_Index_CF
+        phon_id = vv.phon_Buf_2[phon_idx] if phon_idx < len(vv.phon_Buf_2) else 0
+        frames.append({
+            'num': frame_num[0], 'phon_idx': phon_idx, 'phon_id': phon_id,
+            'dur_done': vv.dur_Done_in_Phon_CF,
+            'f0': fp.f0, 'f1': fp.f1, 'f2': fp.f2, 'f3': fp.f3,
+            'bw1': fp.bw1, 'bw2': fp.bw2, 'bw3': fp.bw3,
+            'Av': fp.Av, 'Af': fp.Af,
+            'a2': fp.a2, 'a3': fp.a3, 'a4': fp.a4, 'a5': fp.a5, 'a6': fp.a6,
+            'AB': fp.AB, 'FNZ': fp.FNZ, 'marker': fp.marker,
+        })
+        frame_num[0] += 1
+
+    be.post_frame_hook = on_frame
+    try:
+        synthesize_text(voice_dict, text)
+    finally:
+        be.post_frame_hook = None
+    return frames
 
 
 def _check(text, voice_name):
@@ -95,17 +128,7 @@ def _check(text, voice_name):
     # both sides.
     assert c_frames, f"{voice_name} {text!r}: parse_frames(c_stdout) returned no frames -- harness invocation likely broken"
 
-    # Mirror api.synthesize_text()'s real clause-splitting (on `. , ! ?`,
-    # not just sentence-terminal punctuation -- see _frontend.split_clauses)
-    # rather than assembling the whole input as one clause, since a comma
-    # ends a Collect_FE_Tokens cycle in the real engine too.
-    py_frames = []
-    for clause in split_clauses(text):
-        phonemes, ctrls, durs, pitch_freq, pitch_time, pitch_flags, end_punctuation = build_phoneme_plan(voice_dict, clause)
-        vv = setup_python_voice(voice_dict)
-        vv.end_Punctuation = end_punctuation
-        clause_frames, vv = run_python_backend(vv, phonemes, ctrls, durs, pitch_freq, pitch_time, pitch_flags)
-        py_frames.extend(clause_frames)
+    py_frames = _synthesize_text_frames(voice_dict, text)
 
     assert len(py_frames) == len(c_frames), (
         f"{voice_name} {text!r}: frame count mismatch (c={len(c_frames)}, py={len(py_frames)})"
@@ -134,40 +157,25 @@ def test_hello_world_frame_exact_all_voices():
         _check("hello world", voice_name)
 
 
-def test_comma_clause_boundary_frame_count():
+def test_comma_clause_boundary_frame_exact():
     """Regression test for a real bug: `Collect_FE_Tokens` ends its cycle
     on a comma exactly the same way it does on `. ! ?` (confirmed by
     reading `BackEnd.c:3991-4006` -- a comma sets `gotSentence = true` and
     returns), so a comma-containing sentence is actually assembled by the
     real engine as two separate plan-assembly cycles, not one. Before
     `_frontend.split_clauses`/`api.synthesize_text` were updated to split
-    on commas too, this produced a genuine frame COUNT mismatch (not just
-    a numeric drift) -- e.g. Fred's frame count was 693 instead of the
-    real engine's 694 for this exact sentence.
+    on commas too, this produced a genuine frame COUNT mismatch -- e.g.
+    Fred's frame count was 693 instead of the real engine's 694 for this
+    exact sentence.
 
-    NOTE: this only asserts frame count, not full bit-exactness --  a
-    separate, still-open issue causes small (initially +/-1, growing to
-    +/-2 or +/-3) f0 drift over long, multi-syllable sustained pitch
-    ramps in ANY sufficiently long sentence (not specific to commas or to
-    this fix); see docs/architecture.md's "Known gaps" for the
-    reproduction and current understanding."""
-    text = "good morning everyone, welcome to the show."
-    voice_idx, voice_dict = _VOICES["Fred"]
-    c_stdout, c_stderr, wav_path = run_c(voice_idx, text)
-    c_frames = parse_frames(c_stdout)
-    assert c_frames
-
-    py_frames = []
-    for clause in split_clauses(text):
-        phonemes, ctrls, durs, pf, pt, pfl, end_punctuation = build_phoneme_plan(voice_dict, clause)
-        vv = setup_python_voice(voice_dict)
-        vv.end_Punctuation = end_punctuation
-        clause_frames, vv = run_python_backend(vv, phonemes, ctrls, durs, pf, pt, pfl)
-        py_frames.extend(clause_frames)
-
-    assert len(py_frames) == len(c_frames), (
-        f"frame count mismatch (c={len(c_frames)}, py={len(py_frames)})"
-    )
+    Now asserts full frame-exactness, not just count: a separate bug
+    (`_reset_for_clause` missing `songIndex`'s `ParseSentence`-final reset,
+    and `synthesize_text` giving each clause an independently-reset
+    `VoiceVar` instead of one shared session) used to cause small
+    per-clause pitch/formant drift; both are fixed -- see
+    `test_end_punctuation_propagation_frame_exact` and
+    `test_cross_clause_voicevar_sharing_frame_exact`."""
+    _check("good morning everyone, welcome to the show.", "Fred")
 
 
 def test_wh_question_vs_yesno_question_frame_exact():
@@ -260,6 +268,42 @@ def test_note_driven_singing_voices_frame_exact():
     _check("hello world", "GoodNews")
     _check("hello world", "BadNews")
     _check("hello world", "Deranged")
+
+
+def test_cross_clause_voicevar_sharing_frame_exact():
+    """Regression test for a real bug reported by a user: a note-driven
+    singing voice (Cellos) still sounded wrong on a comma+question
+    sentence even after the SEP6/end_Punctuation fixes above.
+    `synthesize_text` gave each clause its own independently-reset
+    `VoiceVar`, discarding formant-synthesis/frame-buffer state
+    (`init_control_blocks`, frame double-buffering) at every clause
+    boundary -- audible as a glitch for ordinary voices too, but far more
+    noticeable for singing voices, where it sounded like the melody
+    restarting. Confirmed via direct comparison: the same sentence
+    synthesized as a single clause (no comma) was already frame-exact,
+    isolating the bug to the clause-boundary handling itself.
+
+    Fixed by having ALL clauses of one `synthesize_text` call share a
+    single `VoiceVar`/frame loop (`Start_Talk` runs once; `ParseSentence`
+    -- here, `build_phoneme_plan(vv=vv)` -- simply runs again per clause,
+    `BackEnd.c:4264-4298`/`4224-4231`). This uncovered a SECOND, deeper
+    bug in the process: `Mod_Duration`'s singing branch advances
+    `vv.songIndex` as scratch bookkeeping while assigning note-driven
+    durations, but the real `ParseSentence` resets `songIndex` back to 0
+    at its very end (`vv->songIndex = vv->lastSongIndex`, `BackEnd.c:4188`)
+    before synthesis ever reads it -- a reset this port never modeled,
+    because the OLD independently-reset-`VoiceVar`-per-clause approach
+    never exposed it (each clause's synthesis `VoiceVar` was fresh and
+    had never run `Mod_Duration`, so `songIndex` was accidentally always
+    0 already). Confirmed via direct instrumentation: sharing one
+    `VoiceVar` without this reset left `songIndex` at 11 instead of 0
+    for the second clause, corrupting every note pitch for its whole
+    duration. Both fixes are in `_reset_for_clause`/`build_phoneme_plan`
+    (`api.py`)."""
+    _check("the quick brown fox jumps over the lazy dog, how are you today?", "Cellos")
+    _check("good morning everyone, welcome to the show.", "PipeOrgan")
+    _check("good morning everyone, welcome to the show.", "GoodNews")
+    _check("good morning everyone, welcome to the show.", "BadNews")
 
 
 if __name__ == "__main__":

@@ -123,17 +123,25 @@ single-sentence text is.
   cross-clause `VoiceVar`-reset gap below, the still-open "once upon a
   time..." gap below, and the `GoodNews`/`BadNews`/`PipeOrgan`/`Cellos`
   note-driven voices, not yet investigated for this specific sentence).
-- A genuinely new, still-open structural bug: `"once upon a time there
-  was a princess."` produces a phoneme/word sequence that matches the C
-  reference exactly, but `ctrl_buf` (stress/duration-affecting bits)
-  diverges starting at "upon" (index 2) on every voice, producing a
-  consistent ~7-8 frame COUNT deficit. Not yet traced to a specific line;
-  distinct from the SEP6 gap above (confirmed: the SEP6 boundary itself
-  ends up on the wrong word here too — index 5 instead of C's index 13 —
-  but that's downstream of the earlier ctrl divergence, not the root
-  cause). Worth a dedicated line-by-line audit of `Mod_Duration`/stress
-  assignment for multi-syllable dictionary words with ambiguous stress
-  patterns.
+- Root cause found (not yet fixed) for `"once upon a time there was a
+  princess."`: `ctrl_buf` diverges starting at "ONCE" (index 1), which
+  this port classifies as a content word (`kAdv`, `is_content_word=True`,
+  driven by the `pos_code1[0]` placeholder picking `pos_code1=[11(kAdv),
+  7(kConj), -1, -1]`'s first entry) while the C reference does NOT mark it
+  as content there. Confirmed via `Morph.c`'s real `ResolvePOS`
+  (`Morph.c:358-1009`): "once" at the start of the idiomatic "once upon a
+  time" functions as a subordinating conjunction (`kConj`), not a plain
+  adverb -- real disambiguation depends on context (what follows the
+  word), using `compPOS1`/`compPOS2` bitfields (`FEWordToken.comp_pos1`/
+  `comp_pos2`, already captured but unused for this) across ~650 lines of
+  rules. The SEP6 boundary also ends up on the wrong word here (index 5
+  instead of C's index 13) but that's downstream of this earlier
+  divergence, not a separate bug. Unlike the WH-word/kPrep biases already
+  applied, this ISN'T fixable with a small frequency-based heuristic:
+  "once" is a genuine adverb in other contexts ("I've been there once"),
+  so picking kConj unconditionally would just move the bug. A real fix
+  needs an actual (partial) `ResolvePOS` port using the existing
+  `comp_pos1`/`comp_pos2` data -- see task #8.
 - (Fixed) WH-question vs. yes/no-question intonation: a trailing `?` was
   unconditionally mapped to `_Quest_`/`kBND_Quest` (rising question
   intonation). Direct instrumentation of the C reference
@@ -153,39 +161,44 @@ single-sentence text is.
   `test/test_synthesize_text.py::test_wh_question_vs_yesno_question_frame_exact`.
   A full `Morph.c` port would replace this approximation with the real
   POS-driven check.
-- Multi-clause synthesis (`api.synthesize_text`, splitting on `. , ! ?`
-  via `_frontend.split_clauses` — see that function's docstring for why
-  commas are included, confirmed against `BackEnd.c:3991-4006`) uses an
-  independently-reset `VoiceVar` per clause rather than the real engine's
-  single continuous `Talk()` session (`BackEnd.c:4264-4298`: `Start_Talk`
-  runs once, `ParseSentence` is simply called again per clause inside
-  `e_Fill_Next_Frame`, `BackEnd.c:4224-4231`, without re-running
-  `Start_Talk`/`synth_Start_Talk`). Frame COUNT is verified correct for
-  comma-containing sentences on ordinary voices
-  (`test/test_synthesize_text.py::test_comma_clause_boundary_frame_count`),
-  and each clause's OWN frames are independently frame-exact against the
-  C reference (confirmed for both halves of `"good morning everyone,
-  welcome to the show."`) — the approximation only costs continuity
-  *across* the clause boundary itself, not correctness within a clause.
-  For note-driven singing voices (GoodNews/BadNews/PipeOrgan/Cellos) this
-  is audibly worse than for ordinary voices: at every comma the voice's
-  note/song position and formant-synthesis state (`init_control_blocks`,
-  frame-buffer double-buffering) restart from scratch, producing a real
-  glitch — reported by a user as Cellos "still sound[ing] like garbage"
-  on `"...dog, how are you today?"`, confirmed by resynthesizing the same
-  text as one clause (no comma), which came out frame-exact. A first
-  attempt at a real fix (share one `VoiceVar`/frame loop across all
-  clauses of a `synthesize_text` call, calling `Start_Talk` only once and
-  manually replicating `BackEnd.c:4230`'s `cur_PhonBuf_Index_CF = 0;
-  speakState = kSpeakNewPhon` transition between clauses) was tried and
-  reverted: it produced a frame-COUNT regression (1883 frames vs. the
-  real engine's 1673 for the repro sentence on Cellos) rather than a fix
-  — the real engine's per-frame state-machine transition between
-  `ParseSentence` calls happens *inside* one `e_Fill_Next_Frame` call
-  (immediately continuing to process a new frame in the same call), not
-  as a separate step between two outer-loop iterations the way this
-  port's `e_fill_next_frame`/driving loop split is structured, and getting
-  that interleaving bit-exact needs more careful work than a single pass.
+- (Fixed) Multi-clause synthesis used to give each clause of
+  `api.synthesize_text` an independently-reset `VoiceVar`, rather than the
+  real engine's single continuous `Talk()` session (`BackEnd.c:4264-4298`:
+  `Start_Talk` runs once; `ParseSentence` is simply called again per
+  clause inside `e_Fill_Next_Frame`, `BackEnd.c:4224-4231`, without
+  re-running `Start_Talk`/`synth_Start_Talk`). This was harmless for
+  ordinary voices (each clause's own frames were already independently
+  frame-exact) but produced a real, audible glitch for note-driven singing
+  voices (GoodNews/BadNews/PipeOrgan/Cellos): at every comma the formant
+  control blocks/frame-buffer state reset from scratch on top of the
+  voice's note/song position restarting — reported by a user as Cellos
+  "still sound[ing] like garbage" on `"...dog, how are you today?"`.
+  Fixed by having `synthesize_text` share ONE `VoiceVar` and one
+  `start_talk`/frame loop across all clauses, calling `build_phoneme_plan`
+  (the `ParseSentence` equivalent) again per clause exactly like the real
+  engine does, and setting `speakState = kSpeakNewPhon` directly for
+  clauses after the first rather than re-running `start_talk`
+  (`_reset_for_clause`/`build_phoneme_plan`/`synthesize_text`, `api.py`).
+
+  Sharing one `VoiceVar` surfaced a SECOND, previously-invisible bug:
+  `Mod_Duration`'s singing branch advances `vv.songIndex` as scratch
+  bookkeeping while assigning note-driven durations, but the real
+  `ParseSentence` resets `songIndex` back to 0 at its very end
+  (`vv->songIndex = vv->lastSongIndex`, `BackEnd.c:4188`) before synthesis
+  ever reads it. This port never modeled that reset, because the OLD
+  independently-reset-`VoiceVar`-per-clause approach never exposed it —
+  each clause's *synthesis* `VoiceVar` was a separate, fresh one that had
+  never run `Mod_Duration`, so `songIndex` was accidentally always 0
+  already, coincidentally correct for the wrong reason. Confirmed by
+  direct instrumentation: sharing one `VoiceVar` without this reset left
+  `songIndex` at 11 (not 0) for the second clause, corrupting every note
+  pitch `DoNote`/`DoNoteScript` read during that clause's synthesis. Fixed
+  in `_reset_for_clause`/the end of `build_phoneme_plan` (`api.py`).
+
+  A 105-combination multi-voice/multi-sentence sweep of
+  `api.synthesize_text` itself (not a hand-assembled stand-in) came back
+  105/105 exact after both fixes — see
+  `test/test_synthesize_text.py::test_cross_clause_voicevar_sharing_frame_exact`.
 - No `Morph.c` (prefix/suffix stripping, compound-word handling) — words
   are looked up in `english_lex` as-is or fall through to letter-to-sound
   rules; morphological variants of dictionary words (e.g. an inflected

@@ -2,9 +2,10 @@
 
 This exercises the full pipeline: text -> tokenize -> dictionary/rule
 lookup -> sentence assembly -> allophone selection -> pitch contour ->
-duration -> formant synthesis. See README.md/docs/architecture.md for
-known gaps (no Morph.c, no non-punctuation phrase boundaries, no embedded
-commands, single-sentence input only).
+duration -> formant synthesis, across as many clauses/sentences as the
+text contains. See README.md/docs/architecture.md for known gaps (no
+Morph.c compound-word/prefix-suffix decomposition, no embedded commands,
+no number/abbreviation expansion).
 """
 from lintalker._data import Fred_Voice
 from lintalker.api import pcm_to_wav, synthesize_text

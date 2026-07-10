@@ -28,23 +28,27 @@ counterpart is checked out locally as `lintalker-c`).
 | Per-phoneme duration assignment | `BackEnd.c` (`Mod_Duration`) | Ported (`lintalker/_moduration.py`), verified bit-exact against the C reference across voices/sentences (`test/test_assembly_pipeline.py`) |
 | Pitch buffer assembly into a synthesizable phoneme plan | `BackEnd.c` (`Fill_Pitch_Buf`, `Store_F0_and_Time`) | Ported (`lintalker/_pitchbuf.py`), verified bit-exact against the C reference across voices/sentences (`test/test_pitchbuf.py`) |
 | Pronunciation dictionary lookup | `english_lex.c`/`English.lex` | Ported (`lintalker/_lexicon.py`), verified bit-exact for 249 test words (`test/test_lexicon.py`) |
-| Morphology (prefix/suffix stripping, compounds) | `Morph.c` | Not ported |
+| Sentence-internal phrase boundaries (content-word/function-word transitions) | `Morph.c` (`PlacePhrasing`, SEP6 rule only) | Approximated with a fixed POS-set check, not full context disambiguation (`lintalker/_assembly.py`) |
+| WH-question vs. yes/no-question intonation | `Morph.c` (`PlacePhrasing`, `YesNo_Phrase`) | Approximated with a fixed WH-word set (`lintalker/_assembly.py`) |
+| Full POS disambiguation (compound words, prefix/suffix stripping, context-dependent word class) | `Morph.c` (`ResolvePOS`, `DoMorph`) | Not ported |
 
 **What this means today:** `lintalker.api.synthesize_text(voice_dict, text)`
 synthesizes English text end-to-end, verified frame-for-frame bit-exact
-against the real C engine (`test/test_synthesize_text.py`) for plain
-single-sentence text on both dictionary words and rule-fallback words,
-across multiple voices. Multi-sentence text is also handled (split on
-`. ! ?` and synthesized sentence-by-sentence), but that's a documented
-approximation, not bit-exact — see `docs/architecture.md` for exactly
-what it doesn't preserve (cross-sentence prosody continuity). Other
-known gaps: no `Morph.c` (compound words, prefix/suffix stripping), no
-non-punctuation phrase-boundary detection or number/abbreviation
-expansion, no embedded commands. You can still synthesize from an
-already-built phoneme plan directly via `lintalker.api.synthesize_phonemes()`,
-and there's a lower-level `lintalker._engtop.engtop()` (single word) and
-`lintalker._frontend` (tokenization only) if you need to build a custom
-pipeline.
+against the real C engine (`test/test_synthesize_text.py`) across
+dictionary words, rule-fallback words, and multiple voices — including
+note-driven singing voices (GoodNews/BadNews/PipeOrgan/Cellos) and
+multi-clause text (input is split on `. , ! ?`, since a comma ends a
+sentence-assembly cycle in the real engine too; all clauses of one call
+share a single synthesis session the same way the real engine's `Talk()`
+does, so clause-to-clause continuity is preserved, not just each clause's
+own correctness). Remaining known gaps: no `Morph.c` (compound-word
+decomposition, prefix/suffix stripping, full POS disambiguation for
+context-dependent words), no number/abbreviation expansion, no embedded
+commands — see `docs/architecture.md` for specifics. You can still
+synthesize from an already-built phoneme plan directly via
+`lintalker.api.synthesize_phonemes()`, and there's a lower-level
+`lintalker._engtop.engtop()` (single word) and `lintalker._frontend`
+(tokenization only) if you need to build a custom pipeline.
 
 ## Install
 

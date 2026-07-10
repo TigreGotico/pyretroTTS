@@ -21,7 +21,7 @@ from ._backend import (
     start_talk,
 )
 from ._backend import init_voice
-from ._consts import SamplingRate, kNoMarker, kSpeakLastFrame
+from ._consts import SamplingRate, kNoMarker, kSpeakLastFrame, kSpeakNewPhon
 
 
 def new_voice(voice_dict: dict) -> VoiceVar:
@@ -51,6 +51,24 @@ def new_voice(voice_dict: dict) -> VoiceVar:
     from ._engine import e_set_tempo
     e_set_tempo(vv, vv.tempo)
     return vv
+
+
+def _reset_for_clause(vv: VoiceVar) -> None:
+    """Mirrors `ParseSentence`'s resets before `Fill_Phon_Buf_2`
+    (`BackEnd.c:4167-4178`): every one of these fields is unconditionally
+    reset at the START of each clause/sentence cycle, even when reusing
+    the same `VoiceVar` across clauses (as `build_phoneme_plan`/
+    `synthesize_text` do) -- not just when a fresh `VoiceVar` is created.
+    """
+    vv.songIndex = 0
+    vv.lastSongIndex = 0
+    vv.songIndex_Save1 = 0
+    vv.songIndex_Save2 = 0
+    vv.cmdBufCount = 0
+    vv.cmdBufCount_Save1 = 0
+    vv.newSentence = True
+    vv.markerIndex = 0
+    vv.frameMarker = kNoMarker
 
 
 def synthesize_phonemes(
@@ -130,7 +148,7 @@ def pcm_to_wav(pcm: bytes, path: str, sample_rate: int = SamplingRate) -> str:
     return path
 
 
-def build_phoneme_plan(voice_dict: dict, text: str):
+def build_phoneme_plan(voice_dict: dict, text: str, vv: Optional[VoiceVar] = None):
     """Build a `(phonemes, ctrls, durs, pitch_freq, pitch_time, pitch_flags,
     end_punctuation)` plan from English text, matching `ParseSentence`'s
     real pipeline order:
@@ -142,12 +160,22 @@ def build_phoneme_plan(voice_dict: dict, text: str):
     text on dictionary and rule-fallback words alike (see
     `test/test_assembly_pipeline.py`, `test/test_pitchbuf.py`). Known gaps
     (see docs/architecture.md "Known gaps"): no `Morph.c` compound-noun/
-    dictionary-decode translation, no non-punctuation phrase-boundary
-    detection (e.g. a narrow `kBND_Sep6` gap on certain dictionary-tagged
-    words), no embedded commands. `text` is treated as ONE sentence --
-    for multi-sentence input, use `synthesize_text()`, which splits on
-    sentence-terminal punctuation and calls this once per sentence (see
-    its docstring for what that approximates and doesn't).
+    dictionary-decode translation, no embedded commands (`Morph.c`'s SEP6
+    content-word/function-word transition IS approximated, see
+    `_assembly.py`). `text` is treated as ONE clause -- for multi-clause
+    input, use `synthesize_text()`, which splits on clause-terminal
+    punctuation and calls this once per clause (see its docstring for
+    exactly how state is shared across clauses).
+
+    ``vv``, if given, is reused instead of creating a fresh one -- pass the
+    SAME `VoiceVar` across multiple clauses of one utterance (as
+    `synthesize_text` does) to preserve state the real engine's
+    `ParseSentence` keeps across calls within one `Talk()` session (e.g.
+    formant-synthesis/frame-buffer state -- NOT reset per clause the way a
+    fresh `VoiceVar` would). `_reset_for_clause` is always applied first,
+    mirroring the resets `ParseSentence` itself makes unconditionally at
+    the start of every call (`BackEnd.c:4167-4178`), whether or not `vv`
+    is fresh.
     """
     from ._assembly import collect_fe_tokens
     from ._phonbuf2 import fill_phon_buf_2, insert_closure_release
@@ -155,8 +183,11 @@ def build_phoneme_plan(voice_dict: dict, text: str):
     from ._moduration import mod_duration
     from ._pitchbuf import fill_pitch_buf
 
+    if vv is None:
+        vv = new_voice(voice_dict)
+    _reset_for_clause(vv)
+
     sa = collect_fe_tokens(text)
-    vv = new_voice(voice_dict)
     fill_phon_buf_2(vv, sa)
     vv.end_Punctuation = sa.end_punctuation
     pitch_raise_and_fall(vv)
@@ -164,6 +195,15 @@ def build_phoneme_plan(voice_dict: dict, text: str):
     insert_closure_release(vv)
     calc_ramp_steps(vv)
     fill_pitch_buf(vv)
+    # ParseSentence's final step (BackEnd.c:4188): Mod_Duration advances
+    # songIndex as scratch bookkeeping while assigning note-driven
+    # durations, but synthesis (DoNote/DoNoteScript, called per-phon
+    # during say_frame) must read notes starting from the beginning of
+    # the song again -- confirmed missing via direct comparison against
+    # the C reference: a shared VoiceVar across clauses left songIndex at
+    # its post-Mod_Duration value (e.g. 11 instead of 0), corrupting
+    # every note pitch for the rest of a singing voice's clause.
+    vv.songIndex = vv.lastSongIndex
 
     n = vv.phonBuf_2_In_Index
     pn = vv.pitchBuf_In_Index
@@ -180,33 +220,31 @@ def synthesize_text(voice_dict: dict, text: str) -> bytes:
     pipeline this composes, and its known gaps.
 
     Input is split on `. , ! ?` (`_frontend.split_clauses`) -- NOT just
-    sentence-terminal `. ! ?` -- and each clause is synthesized
-    independently (a fresh `VoiceVar`/baseline pitch per clause) via
-    `build_phoneme_plan` + `synthesize_phonemes`, then the PCM is
-    concatenated. Splitting on commas too is not an approximation: it's
-    confirmed, by reading `BackEnd.c:3991-4006`, to be what the real
-    engine's `Collect_FE_Tokens` itself does -- a comma sets
-    `gotSentence = true` and returns exactly the same way a period/`!`/`?`
-    does, so what reads as one English sentence containing a comma is
-    actually assembled by the real engine as two separate
+    sentence-terminal `. ! ?`: confirmed, by reading `BackEnd.c:3991-4006`,
+    that a comma ends a `Collect_FE_Tokens` cycle exactly the same way a
+    period/`!`/`?` does, so what reads as one English sentence containing
+    a comma is actually assembled by the real engine as two separate
     `Collect_FE_Tokens`/`ParseSentence` cycles, continuing seamlessly
-    within one audio stream. Splitting on commas here was added after a
-    frame-level comparison against the C reference found a genuine frame
-    COUNT mismatch on comma-containing sentences when the whole thing was
-    assembled as a single clause -- not merely a small numeric drift.
+    within one audio stream.
 
-    What IS still an approximation, not a bit-exact port: the C reference
-    keeps one `Talk()` session alive across ALL clause/sentence boundaries
-    within a single `_SpeakBuffer` call (baseline pitch and compound-noun
-    state persist from one clause to the next; `Collect_FE_Tokens`/
-    `ParseSentence` are simply called again, mid-playback, reusing the
-    same `VoiceVar`), whereas this function uses an independently-reset
-    `VoiceVar` per clause. This means cross-clause prosody continuity
-    (the pitch baseline carrying over, rather than resetting) is not
-    preserved -- verified via `test/test_synthesize_text.py`'s frame-level
-    comparisons, which pass for comma-containing sentences (frame count
-    and per-frame formant state now match) but were not specifically
-    checked for pitch-contour continuity across the clause boundary itself.
+    ALL clauses of one `synthesize_text` call share a SINGLE `VoiceVar`
+    and a single `start_talk`/frame loop, matching `Talk()`'s real
+    structure (`BackEnd.c:4264-4298`): `Start_Talk` runs once, and
+    `ParseSentence` is simply called again for each subsequent clause
+    (`e_Fill_Next_Frame`, `BackEnd.c:4224-4231`) -- it does NOT re-run
+    `Start_Talk`/`synth_Start_Talk`, which would reset the formant control
+    blocks and frame-buffer state (`init_control_blocks`,
+    `_backend.synth_start_talk`) mid-utterance. `build_phoneme_plan`
+    reapplies `_reset_for_clause`'s `ParseSentence`-equivalent resets
+    (including `songIndex`) for every clause, so pitch/portamento and a
+    singing voice's note position DO restart at each clause boundary --
+    matching the real engine's own behavior, since `ParseSentence`
+    unconditionally sets `vv->newSentence = true` and resets `songIndex`
+    to 0 every call too. This function is verified frame-exact against
+    the C reference across ordinary and note-driven singing voices alike
+    (`test/test_synthesize_text.py`), including comma-containing sentences
+    that previously caused an audible glitch on singing voices (see
+    docs/architecture.md's former "Known gaps" entry for that bug).
     """
     from ._frontend import split_clauses
 
@@ -214,11 +252,18 @@ def synthesize_text(voice_dict: dict, text: str) -> bytes:
     if not clauses:
         clauses = [text]
 
-    pcm_chunks = []
-    for clause in clauses:
-        phonemes, ctrls, durs, pitch_freq, pitch_time, pitch_flags, end_punctuation = build_phoneme_plan(voice_dict, clause)
-        pcm_chunks.append(synthesize_phonemes(
-            voice_dict, phonemes, ctrls, durs, pitch_freq, pitch_time, pitch_flags,
-            end_punctuation=end_punctuation,
-        ))
-    return b"".join(pcm_chunks)
+    vv = new_voice(voice_dict)
+    for i, clause in enumerate(clauses):
+        build_phoneme_plan(voice_dict, clause, vv=vv)
+        start_new_pitch_clause(vv)
+        vv.cur_PhonBuf_Index_CF = 0
+        if i == 0:
+            start_talk(vv)
+        else:
+            vv.speakState = kSpeakNewPhon  # BackEnd.c:4230 -- no Start_Talk on later clauses
+        while vv.speakState != kSpeakLastFrame:
+            say_frame(vv)
+            e_fill_next_frame(vv)
+    say_frame(vv)
+
+    return bytes(vv.sampleBuffer)
