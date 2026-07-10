@@ -366,7 +366,12 @@ def test_do_morph_suffix_frame_exact():
     TIME/TRY), `-ER`/`-IER` ("shorter"/"readers" via `-ERS`, roots
     SHORT/READ), `-ING` ("timing"/"playing", roots TIME/PLAY), plain
     `-LY` ("talked", via `-ED`, root TALK), `-ES`/`-IES` ("loves"/
-    "likes", roots LOVE/LIKE), and `-IEST` ("loveliest", root LOVE)."""
+    "likes", roots LOVE/LIKE), `-IEST` ("loveliest", root LOVE),
+    `-MENT`/`-MENTS` ("government"/"governments", root GOVERN),
+    `-ABLE` ("arguable", root ARGUE, via the `-E`-restoring decompose),
+    `-INESS`/`-INESSES` ("business"/"businesses", root BUSY, via the
+    "-Y" root recovery), `-ISM`/`-ISMS` ("heroism"/"heroisms", root
+    HERO), and `-OR`/`-ORS` ("editor"/"editors", root EDIT)."""
     _check("he timed it perfectly.", "Fred")
     _check("a good timer.", "Fred")
     _check("good timing.", "Fred")
@@ -376,6 +381,16 @@ def test_do_morph_suffix_frame_exact():
     _check("she loves and likes it.", "Fred")
     _check("the readers and offers.", "Fred")
     _check("the loveliest gift.", "Fred")
+    _check("the government announced it.", "Fred")
+    _check("many governments agreed.", "Fred")
+    _check("an arguable point.", "Fred")
+    _check("a good business.", "Fred")
+    _check("many businesses failed.", "Fred")
+    _check("pure heroism.", "Fred")
+    _check("many heroisms.", "Fred")
+    _check("a careful editor.", "Fred")
+    _check("the editors met.", "Fred")
+    _check("the management decided.", "Fred")
 
 
 if __name__ == "__main__":

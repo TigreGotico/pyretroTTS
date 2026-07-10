@@ -219,13 +219,29 @@ single-sentence text is.
   `-ING`/`-LY`/`-ES`/`-IES`/`-IEST` cases and multiple dictionary roots
   (MAGIC, TIME, SHORT, TALK, PLAY, LOVE, LIKE, READ, OFFER) — see
   `test/test_synthesize_text.py::test_do_morph_suffix_frame_exact`.
-- NOT ported: `Zap_POS`/`SetPOS_FromSuffix` and `DoMorph`'s remaining
-  suffix functions (`-MENT(S)`/`-IMENT(S)`, `-ABLE`, `-OR(S)`, `-IZE` and
-  its compounds, `-NESS`/`-INESS`, `-ISM`) and compound-noun decomposition
-  (`Morph.c:1010-2373`), and the rest of `PlacePhrasing`'s rules (SEP1-5,
-  `Morph.c:148-271`) — see task #8. These remain independently-scoped,
-  similarly-sized pieces of `Morph.c` rather than one monolithic
-  remaining task.
+- (Fixed) `try_do_morph` also covers `DoMorph`'s remaining common
+  suffixes: `-MENT`/`-MENTS`/`-IMENT`/`-IMENTS` (direct root lookup, or
+  via `Decompose_I_Common` for the `-I-` forms, appending /mənt(s)/),
+  `-ABLE` (via `Decompose_E_Common`, appending /əbl/), `-NESS`/`-NESSES`
+  (direct root lookup, appending /nəs(ɪz)/), `-INESS`/`-INESSES` (a new
+  `_decompose_ness` helper mirroring `Do_INESS_Morph`'s two-step root
+  recovery: try root+"Y" first, e.g. "business"->"busy"; else, if the
+  root ends in "L", strip it and try again, e.g. "loneliness"->"lonel"->
+  "lone", appending an extra /li/ before /nəs(ɪz)/), `-ISM`/`-ISMS`
+  (direct root lookup, appending /ɪzəm(z)/), and `-OR`/`-ORS` (a new
+  `_decompose_or` helper mirroring `Do_OR_Morph`: try root+"E" first,
+  e.g. "senator"->"senate", else the bare root, e.g. "editor"->"edit",
+  appending `_ER_(z)`). Verified frame-exact for "government"/
+  "governments" (root GOVERN), "arguable" (root ARGUE), "business"/
+  "businesses" (root BUSY), "heroism"/"heroisms" (root HERO), and
+  "editor"/"editors" (root EDIT) — see
+  `test/test_synthesize_text.py::test_do_morph_suffix_frame_exact`.
+- NOT ported: `Zap_POS`/`SetPOS_FromSuffix`, `DoMorph`'s `-IZE` suffix
+  family (`-IZE`/`-IZED`/`-IZES`/`-IZING`/`-IZINGS`/`-IZER`/`-IZERS`),
+  and true compound-noun decomposition (`Morph.c:1010-2373`), and the
+  rest of `PlacePhrasing`'s rules (SEP1-5, `Morph.c:148-271`) — see task
+  #8. These remain independently-scoped, similarly-sized pieces of
+  `Morph.c` rather than one monolithic remaining task.
 - (Fixed) Multi-clause synthesis used to give each clause of
   `api.synthesize_text` an independently-reset `VoiceVar`, rather than the
   real engine's single continuous `Talk()` session (`BackEnd.c:4264-4298`:

@@ -46,7 +46,9 @@ from ._consts import (
     kHas_Inf, kHas_Gen, kHas_Contr, kHas_Quant, kHas_VPart,
     kHas_SubjPron, kHas_ObjPron,
 )
-from ._phonemes import _l_, _IY_, _IX_, _s_, _t_, _d_, _ER_, _NG_, _z_
+from ._phonemes import (
+    _l_, _IY_, _IX_, _s_, _t_, _d_, _ER_, _NG_, _z_, _m_, _AX_, _n_, _b_, _EL_,
+)
 
 
 class _POSFlags:
@@ -441,6 +443,39 @@ def _decompose_i_common(stripped_root: str):
     return lookup(stripped_root + 'Y')
 
 
+def _decompose_ness(stripped_root: str):
+    """Port of `Do_INESS_Morph`'s root-recovery (`Morph.c:1567-1615`,
+    identically for `Do_INESSES_Morph`): the root left after stripping
+    -INESS/-INESSES ends in a bare form that was spelled with a "Y" in
+    the original word (`sexiness` -> `sexi` -> `sexy`), or, failing that,
+    a "-LY" adjective root with the "L" also stripped
+    (`loneliness` -> `lonel` -> `lone`, reconstructed as root+"ly"+"ness").
+    Returns `(entry, is_ly)` or `None`."""
+    from ._lexicon import lookup
+
+    entry = lookup(stripped_root + 'Y')
+    if entry is not None:
+        return entry, False
+    if stripped_root.endswith('L'):
+        entry = lookup(stripped_root[:-1])
+        if entry is not None:
+            return entry, True
+    return None
+
+
+def _decompose_or(stripped_root: str):
+    """Port of `Do_OR_Morph`'s root-recovery (`Morph.c:1785-1820`,
+    identically for `Do_ORS_Morph`): tries the root with a trailing "E"
+    restored first (`senator` -> `senate`), then the bare root
+    (`sailor` -> `sail`). Returns the matching `LexEntry` or `None`."""
+    from ._lexicon import lookup
+
+    entry = lookup(stripped_root + 'E')
+    if entry is not None:
+        return entry
+    return lookup(stripped_root)
+
+
 def try_do_morph(word: str):
     """Port of the rest of `DoMorph`'s dispatch (`Morph.c:2396-2373`,
     minus the `Do_S_Morph` special-case already handled by `try_s_morph`)
@@ -456,11 +491,15 @@ def try_do_morph(word: str):
     /ɪd/ by the root's final phoneme's voicing, same rule as
     `Store_S_or_Z`), -INGS/-ING (adds /ɪŋ/, optionally + /z/), -IES/-ES
     (adds the `Store_S_or_Z` suffix after a "Y"->"IE" or "E"/direct-match
-    root mutation).
+    root mutation), -MENT(S)/-IMENT(S) (adds /mənt/, optionally + /s/),
+    -ABLE (adds /əbl/), -NESS(ES)/-INESS(ES) (adds /nəs/, optionally +
+    /ɪz/, with the same "-Y"/"-LY" root recovery as -IEST), -ISM(S) (adds
+    /ɪzəm/, optionally + /z/), -OR(S) (adds /ɚ/ via an "-E"-terminated or
+    direct root match, optionally + /z/).
 
-    NOT ported: -MENT(S), -IMENT(S), -ABLE, -OR(S), -IZE and its
-    compounds (-IZED/-IZES/-IZING/-IZER and their -S forms), -NESS/
-    -INESS, -ISM -- see module docstring.
+    NOT ported: -IZE and its compounds (-IZED/-IZES/-IZING/-IZER and
+    their -S forms) and true compound-noun decomposition -- see module
+    docstring.
     """
     from ._lexicon import lookup
 
@@ -585,6 +624,74 @@ def try_do_morph(word: str):
                 entry = lookup(root)
                 if entry is not None:
                     return _store_s_or_z(list(entry.phon_str)), entry
+
+    # --- -IMENTS / -IMENT / -MENTS / -MENT (Morph.c:2086-2177, dispatch
+    # 2664-2717) ---
+    if w.endswith('IMENTS') and len(w) > 6:
+        entry = _decompose_i_common(w[:-6])
+        if entry is not None:
+            return _append(entry.phon_str, [_m_, _AX_, _n_, _t_, _s_]), entry
+    if w.endswith('IMENT') and len(w) > 5:
+        entry = _decompose_i_common(w[:-5])
+        if entry is not None:
+            return _append(entry.phon_str, [_m_, _AX_, _n_, _t_]), entry
+    if w.endswith('MENTS') and len(w) > 5:
+        entry = lookup(w[:-5])
+        if entry is not None:
+            return _append(entry.phon_str, [_m_, _AX_, _n_, _t_, _s_]), entry
+    if w.endswith('MENT') and len(w) > 4:
+        entry = lookup(w[:-4])
+        if entry is not None:
+            return _append(entry.phon_str, [_m_, _AX_, _n_, _t_]), entry
+
+    # --- -ABLE (Morph.c:2104-2112, dispatch 2790-2795) ---
+    if w.endswith('ABLE') and len(w) > 4:
+        entry = _decompose_e_common(w[:-4])
+        if entry is not None:
+            return _append(entry.phon_str, [_AX_, _b_, _EL_]), entry
+
+    # --- -INESSES / -NESSES / -INESS / -NESS (Morph.c:1567-1728, dispatch
+    # 2733-2769) ---
+    if w.endswith('INESSES') and len(w) > 7:
+        entry = _decompose_ness(w[:-7])
+        if entry is not None:
+            root_entry, is_ly = entry
+            extra = [_l_, _IY_, _n_, _IX_, _s_, _IX_, _z_] if is_ly else [_n_, _IX_, _s_, _IX_, _z_]
+            return _append(root_entry.phon_str, extra), root_entry
+    if w.endswith('NESSES') and len(w) > 6:
+        entry = lookup(w[:-6])
+        if entry is not None:
+            return _append(entry.phon_str, [_n_, _IX_, _s_, _IX_, _z_]), entry
+    if w.endswith('INESS') and len(w) > 5:
+        entry = _decompose_ness(w[:-5])
+        if entry is not None:
+            root_entry, is_ly = entry
+            extra = [_l_, _IY_, _n_, _IX_, _s_] if is_ly else [_n_, _IX_, _s_]
+            return _append(root_entry.phon_str, extra), root_entry
+    if w.endswith('NESS') and len(w) > 4:
+        entry = lookup(w[:-4])
+        if entry is not None:
+            return _append(entry.phon_str, [_n_, _IX_, _s_]), entry
+
+    # --- -ISMS / -ISM (Morph.c:1729-1783, dispatch 2779-2789) ---
+    if w.endswith('ISMS') and len(w) > 4:
+        entry = lookup(w[:-4])
+        if entry is not None:
+            return _append(entry.phon_str, [_IX_, _z_, _AX_, _m_, _z_]), entry
+    if w.endswith('ISM') and len(w) > 3:
+        entry = lookup(w[:-3])
+        if entry is not None:
+            return _append(entry.phon_str, [_IX_, _z_, _AX_, _m_]), entry
+
+    # --- -ORS / -OR (Morph.c:1785-1878, dispatch 2680-2692) ---
+    if w.endswith('ORS') and len(w) > 3:
+        entry = _decompose_or(w[:-3])
+        if entry is not None:
+            return _append(entry.phon_str, [_ER_, _z_]), entry
+    if w.endswith('OR') and len(w) > 2:
+        entry = _decompose_or(w[:-2])
+        if entry is not None:
+            return _append(entry.phon_str, [_ER_]), entry
 
     return None
 
