@@ -39,7 +39,7 @@ fixed (see `test/test_phonbuf2.py`).
 order). `Mod_Duration` is ported in `_moduration.py` (see its own module
 docstring for scope/gaps). `synth_AdjustPhons1` (a `ParseSentence` hook
 alongside `synth_AdjustPhons2`) is a true no-op in the C reference
-(confirmed by reading its empty body in `formantSynth.c`) and needs no
+(its body in `formantSynth.c` is empty) and needs no
 porting.
 `Fill_Pitch_Buf`/`StartNew_PitchClause` (`Calc_Ramp_Steps`/
 `start_new_pitch_clause` are already ported in `_backend.py`, but nothing

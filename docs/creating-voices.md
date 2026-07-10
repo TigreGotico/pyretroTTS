@@ -191,13 +191,11 @@ marker-time table — see 2.1 — not a note script.)
 If `notes` is present with `count > 1`, `init_voice()` automatically sets
 `vv.singing = vv.singScript = True`, and `api.new_voice()` calls
 `e_set_tempo(vv, vv.tempo)` to convert the note-length codes into actual
-frame counts using `tempo`. **Both of these matter**: a real bug this
-session was `api.new_voice()` forcing `singing = False` unconditionally,
-which silently broke duration timing for every note-driven voice (their
-notes were "sung" using the wrong duration formula) — if you're debugging
-a new singing voice that sounds wrong, check `vv.singing`/`vv.singScript`
-came out `True` and `vv.Note_Times` isn't all zeros before assuming your
-`notes` array is wrong.
+frame counts using `tempo`. Both matter. If a new singing voice sounds
+wrong, check that `vv.singing` and `vv.singScript` came out `True` and
+that `vv.Note_Times` isn't all zeros, before assuming the fault is in your
+`notes` array: a voice that isn't in singing mode gets the plain duration
+formula rather than the note-timed one.
 
 ## Part 3: building a new voice
 
@@ -295,18 +293,22 @@ runs without crashing and sounds like what you intended." A minimal smoke
 check:
 
 ```python
-from pylintalker.api import synthesize_text, pcm_to_wav
-from pylintalker._data import PhonFlags2  # sanity: package imports fine
+from pylintalker import synthesize_text, pcm_to_wav
 
 pcm = synthesize_text(MyRobot_Voice, "testing one two three.")
 assert len(pcm) > 0
 pcm_to_wav(pcm, "/tmp/test_new_voice.wav")
 ```
 
-then listen to the file. If synthesis raises an exception, the most
-common causes are: a missing required key (`pitch`, `aGain`, `voice` have
-no defaults in `init_voice` and will `KeyError`), or `vWave`/`vWave1` not
-being 48-element lists.
+then listen to the file. If synthesis raises, the usual causes are a
+missing required key (`pitch`, `aGain` and `voice` have no default in
+`init_voice` and raise `KeyError`), or `vWave`/`vWave1` not being
+48-element lists. An `AttributeError` naming a `VoiceVar` field means a
+typo: `VoiceVar` uses `__slots__`, so it will not silently accept one.
+
+The golden gate (`test/test_golden_pcm.py`) covers only the 17 built-in
+voices. Adding a voice does not change those digests; adding it to
+`test/golden.py`'s `VOICES` would pin your voice's output too.
 
 If you're building a **singing** voice (2.7), also sanity-check
 `vv.singing`/`vv.singScript`/`vv.Note_Times` came out as described above

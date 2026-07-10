@@ -17,7 +17,7 @@ C reference:
     phoneme bytes from the dictionary **verbatim** -- it does NOT strip the
     `kPrimeStress` flag bit and does NOT translate `kDictComp`/`kDictWord`
     bytes to `_Comp_`/`_Word_` (that translation only exists in
-    `SearchSingleDict_C`, which never runs for this dictionary). Confirmed by
+    `SearchSingleDict_C`, which never runs for this dictionary). Verified by
     the harness: e.g. `AARON` decodes with a literal `_Stress1_` opcode
     already in the stream (not a flagged byte), and `DOWNGRADE` decodes with
     a literal `_pRise_` opcode standing in for the compound-word marker

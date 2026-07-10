@@ -8,13 +8,11 @@ Unlike `_numbers.py`'s `HUNDRED`/`THOUSAND`/etc. (substituted from
 ordinary dictionary words because the `Symbols` dictionary's `"\\p100"`-
 style NUMERIC keys are confirmed corrupted in this specific compiled
 build) or `_rawphon.py`'s `MAGIC_MAP` (a literal compile-time table, no
-runtime lookup at all), the 26 letter-name pronunciations here ARE
-extracted directly from the compiled `lintalker-c` `test_harness`'s real
-`Symbols`-dictionary lookup and are bit-exact -- the corruption
-previously found only affects the `"100"`/`"1000"`-class SCALE-WORD
-numeric keys, not plain single-character keys (confirmed: digit lookups
-0-9 already work correctly the same way, see `_numbers.py`'s module
-docstring).
+runtime lookup at all), the 26 letter-name pronunciations here are
+extracted from the reference's own `Symbols`-dictionary lookup and are
+bit-exact. That dictionary's corrupted entries are confined to the
+`"100"`/`"1000"`-class scale-word keys (see `_numbers.py`); plain
+single-character keys, digits included, resolve correctly.
 
 EXTRACTION METHOD: a single-letter token surrounded by tokens of length
 1 forces `WordToPhonemes`'s real `kAlphaTok` branch into
@@ -25,8 +23,8 @@ target letter as the FIRST word of a two-letter utterance (e.g. `"b z."`
 to extract `"B"`) reaches the exact same `LiteralCharToPhonemes` path
 `char LTRL` mode would use for any letter, without needing the
 (unverifiable, see `_embeddedcmd.py`'s module docstring) bracket-command
-parser to work at all. Placing the target letter in the SENTENCE-INITIAL
-position specifically avoids a real, confirmed coarticulation artifact:
+parser to work at all. Placing the target letter in the sentence-initial
+position avoids a coarticulation artifact:
 a vowel-initial letter name (e.g. "E" -> /iː/) preceded by another
 vowel-final sound gets a spurious glottal-stop phoneme (`_QX_`) inserted
 before it (a general vowel-hiatus juncture rule, not part of the letter
@@ -114,7 +112,7 @@ def spell_word(word: str) -> list:
     VERIFICATION CAVEAT: each INDIVIDUAL letter's phonemes in
     `LETTER_PHONEMES` are bit-exact (see module docstring). Plain
     concatenation for a MULTI-letter word is NOT independently verified
-    end-to-end: confirmed via direct comparison (`"c a b."` spoken as
+    end-to-end (`"c a b."` spoken as
     three separate letter tokens) that the real engine inserts an extra
     glottal-stop phoneme (`_QX_`) between two ADJACENT letters where the
     first ends in a vowel and the second starts with one (e.g. between

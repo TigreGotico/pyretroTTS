@@ -1,36 +1,31 @@
-"""Port of `PartialNumberToPhonemes`'s cardinal-number reading
-(`FrontEnd.c:1765-1888`), scoped to plain digit-string input (no
-year/clock/dollar/cent special modes -- `kYearSpecial`/`kClockSpecial`/
-`kAddDollar`/`kAddCent`, `FrontEnd.c:1783-1824`/`1893-1902`, not ported).
+"""Reading numbers aloud: cardinals, years, currency, decimals, clock times.
 
-VERIFICATION STATUS (see docs/architecture.md "Known gaps" for the full
-history): the individual number WORDS below (`ZERO`-`NINETEEN`,
+Port of `PartialNumberToPhonemes` (`FrontEnd.c:1765-1888`) and the special
+modes around it -- `kYearSpecial`, `kClockSpecial`, `kAddDollar`, `kAddCent`
+(`FrontEnd.c:1783-1824`, `1893-1902`).
+
+How far this is verified: the individual number WORDS below (`ZERO`-`NINETEEN`,
 `TWENTY`-`NINETY`, `AND`) are extracted directly from the compiled
 `lintalker-c` `test_harness` (mid-utterance, avoiding the word-final
 pronunciation artifact documented in `docs/architecture.md`) and are
-bit-exact. `HUNDRED`/`THOUSAND`/`MILLION`/`BILLION` are ALSO extracted
-this way, but from the MAIN dictionary word lookup path (typing
-"hundred two." as text), NOT from the `Symbols` dictionary's numeric-key
-lookup (`SearchAllDicts(vv, "\\p100", ...)`) `PartialNumberToPhonemes`
-itself uses -- confirmed via direct instrumentation that THIS specific
-compiled `Symbols` dictionary's "100"/"1000"-class numeric keys are
-corrupted (resolve to the same phonemes as the digit "1", not "hundred"
--- see docs/architecture.md), so there is no way to extract a *verified*
-value for these words from the reference at all. Using the ordinary
-dictionary word's pronunciation instead is a well-justified substitute
-(there's no reason "hundred" would be pronounced differently as a scale
-word than as an ordinary word), but it is NOT independently confirmed
-against a working reference. The GROUPING algorithm itself (which words
-combine for which digit patterns, including the "AND" insertion rule)
-is a faithful transcription of `PartialNumberToPhonemes`/
-`AppendTwoDigitPhonemes`/`AppendThreeDigitPhonemes`, but --- because the
-compiled reference's own bare-digit-string path is corrupted the same
-way (confirmed: typing "123" produces "one ONE and twenty three", not
-"one hundred and twenty three") --- there is no working reference to
-verify the ASSEMBLED multi-digit output against either. In short: every
-individual building block is verified bit-exact; the algorithm that
-combines them is a careful, faithful port of the documented C logic,
-but the combination itself is unverified end-to-end.
+bit-exact. `HUNDRED`/`THOUSAND`/`MILLION`/`BILLION` are also extracted
+this way, but from the main dictionary word-lookup path (typing
+"hundred two." as text) rather than the `Symbols` dictionary's numeric-key
+lookup that `PartialNumberToPhonemes` itself uses. That dictionary's
+"100"/"1000"-class keys are corrupt in the reference build -- they resolve
+to the phonemes of the digit "1", not "hundred" -- so no verified value can
+be extracted for them. The ordinary dictionary word's pronunciation stands
+in: there is no reason "hundred" would be said differently as a scale word
+than as a plain word, though that cannot be confirmed against the reference.
+
+The grouping algorithm -- which words combine for which digit patterns,
+including the "AND" insertion rule -- is a faithful transcription of
+`PartialNumberToPhonemes`/`AppendTwoDigitPhonemes`/
+`AppendThreeDigitPhonemes`. The reference's own bare-digit path is corrupt
+in the same way ("123" comes out as "one ONE and twenty three"), so the
+assembled multi-digit output has no working reference to check against
+either. Every building block is verified bit-exact; the algorithm combining
+them is a faithful port of the C logic, unverified end-to-end.
 """
 from __future__ import annotations
 

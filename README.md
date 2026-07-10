@@ -8,7 +8,7 @@ vocal tract, driven by a few hundred kilobytes of tables and rules, the
 same way it worked in 1984.
 
 ```python
-from pylintalker.api import synthesize_text, pcm_to_wav
+from pylintalker import synthesize_text, pcm_to_wav
 from pylintalker._data import Fred_Voice
 
 pcm = synthesize_text(Fred_Voice, "hello, this is a test.")
@@ -65,7 +65,7 @@ uv pip install pylintalker
 ## Usage
 
 ```python
-from pylintalker.api import synthesize_text, pcm_to_wav
+from pylintalker import synthesize_text, pcm_to_wav
 from pylintalker._data import Fred_Voice
 
 pcm = synthesize_text(Fred_Voice, "hello, this is a test.")
@@ -75,7 +75,7 @@ pcm_to_wav(pcm, "out.wav")
 Numbers, dates, currency, and embedded commands all work out of the box:
 
 ```python
-from pylintalker.api import synthesize_text, pcm_to_wav
+from pylintalker import synthesize_text, pcm_to_wav
 from pylintalker._data import Fred_Voice
 
 text = (
@@ -90,7 +90,7 @@ Or work directly with a phoneme plan, bypassing the text frontend
 entirely:
 
 ```python
-from pylintalker.api import synthesize_phonemes, pcm_to_wav
+from pylintalker import synthesize_phonemes, pcm_to_wav
 from pylintalker._data import Fred_Voice
 
 # a phoneme plan for "hi" (see pylintalker/_phonemes.py for phoneme ids)
@@ -142,9 +142,8 @@ Beyond plain word-by-word synthesis, the text frontend supports:
   mnemonic input — see `docs/architecture.md` for the full command
   reference and exact positioning semantics.
 
-`docs/architecture.md` documents this feature-by-feature against the
-original C source, including the handful of narrow, deliberately
-unported corners (see its "Known gaps" section).
+`docs/architecture.md` maps each feature onto the original C source, and
+lists the handful of narrow corners this port leaves out.
 
 ## Testing
 
@@ -153,12 +152,15 @@ uv pip install -e .[test]
 pytest test/
 ```
 
-The test suite compares this port's output against a compiled build of
-the original C reference frame-by-frame and sample-by-sample — not just
-"does it sound plausible," but bit-exact numeric agreement with the
-original engine's internal state, across all 17 voices and a wide range
-of text. See `docs/architecture.md` for how to build the C reference
-locally if you want to run that comparison yourself.
+Synthesis is deterministic, so the suite pins it exactly: it hashes the
+PCM of all 17 voices across every text feature and fails on a single
+differing byte. Those hashes were captured from output checked
+sample-for-sample against a compiled build of the original C engine, so
+they hold the port to the reference without needing it installed.
+
+To re-run that comparison yourself — frame by frame and sample by sample
+against the real engine — build the C reference as a sibling directory
+and run `python3 test/test_voices.py --all`. See `docs/architecture.md`.
 
 ## License
 

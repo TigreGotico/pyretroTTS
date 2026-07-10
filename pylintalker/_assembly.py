@@ -1,168 +1,34 @@
-"""Port of `Collect_FE_Tokens` (`BackEnd.c:3712-4157`), the sentence-level
-token-collection driver in the BackEnd.c assembly stage.
+"""Sentence assembly: words in, a flagged phoneme-opcode buffer out.
 
-SCOPE (read before extending): this module ports `Collect_FE_Tokens` itself,
-verified against a real C oracle (see "VALIDATION STATUS" below). It does
-NOT port `Fill_Phon_Buf_2` (`BackEnd.c:2469-2846`), `Flag_PhonBuf_1`
-(`BackEnd.c:3481-3519`, including `MarkSyllable`/`MarkSyllableStart`,
-`BackEnd.c:3191`/`3379`), `Mod_Duration` (`BackEnd.c:1362`), or
-`Pitch_RaiseAndFall` (`BackEnd.c:2127`/`2303`) -- see `docs/architecture.md`
-"Known gaps" and the handoff notes at the bottom of this docstring.
-(`Place_Stress_In_Consonant`, `BackEnd.c:3300`, does not need porting: its
-only call site is commented out in the C reference itself, `BackEnd.c:3510`.)
+Port of `Collect_FE_Tokens` (`BackEnd.c:3712-4157`), which walks a clause word
+by word, appends each word's phoneme opcodes to `phon_Buf_1`, and flags them
+with the stress, syllable, word-boundary and phrase-boundary bits the rest of
+the pipeline reads. `_phonbuf2.fill_phon_buf_2` consumes what this produces.
 
-WHY THIS IS AN ADAPTATION, NOT A LITERAL PORT
-----------------------------------------------
-The real `Collect_FE_Tokens` pulls tokens one at a time from
-`vv->funcList->e_ParseNextWord_FUNC` (`BackEnd.c:3790`), which returns an
-`OpTokRec` (`mt4.h`) populated by the real `FrontEnd.c` tokenizer + `Morph.c`
-+ `english_lex` pipeline: `hasAlt`/`altChoice`, `phonHold`/`phonStr`,
-`tokType` (kEOFTok/kECommandTok/kLiteralTok/kRawPhonemeTok/...), `add_BND`,
-`phrasingBND`, `tokEmphasis` (kEmphasizeWord/kDeemphasizeWord), `POSchoice`
-(set only by `Morph.c`'s `Set_POS`, `Morph.c:830-991`, itself fed by
-`POScode1`/`POScode2`/`compPOS1`/`compPOS2` from the dictionary decode).
+The real `Collect_FE_Tokens` pulls `OpTokRec` tokens from FrontEnd.c's
+tokenizer. Here they come from `_frontend.scan_tokens` and `_lexicon.lookup`,
+with `_engtop.engtop`'s letter-to-sound rules for words the dictionary misses,
+and are carried in `FEWordToken`:
 
-None of `Morph.c`, the embedded-command parser (`EmbeddedCmd.c`), or the real
-`FrontEnd.c` token stream are ported in this repo (see
-`docs/architecture.md`). Per this phase's task, `Collect_FE_Tokens` is
-therefore adapted to consume:
-  - `pylintalker/_frontend.py:tokenize()` for the word/punctuation stream
-    (stand-in for the `e_ParseNextWord_FUNC` token source), and
-  - `pylintalker/_lexicon.py:lookup()` for real dictionary fields
-    (`pos_code1`/`pos_code2`/`comp_pos1`/`comp_pos2`/`is_compound`/
-    `phon_str`/`phon_hold`/`is_abbrev`/`has_alt`) when the word is in
-    `english_lex`, falling back to `_engtop.engtop()` for words the
-    dictionary doesn't cover -- the same `None`-means-fall-back contract
-    `FrontEnd.c:2039` uses.
+    C (OpTokRec / dictionary decode)   Python (`FEWordToken`)
+    --------------------------------   --------------------------------------
+    tok->phonStr                       phon_str      (from LexEntry)
+    tok->phonHold                      phon_hold     (alternate pronunciation)
+    tok->hasAlt / altChoice            has_alt / alt_choice
+    tok->POScode1 / POScode2           pos_code1 / pos_code2
+    tok->compPOS1 / compPOS2           comp_pos1 / comp_pos2
+    tok->isAbbriv                      is_abbrev
+    tok->POSchoice (Set_POS)           pos_choice    (_morph.resolve_pos)
+    tok->tokEmphasis                   word_emphasis (`emph` bracket command)
+    tok->add_BND / phrasingBND         phrase_bnd    (punctuation + SEP1-6)
+    tok->tokType == kEOFTok            end of the token list
 
-FIELD-BY-FIELD MAPPING (C -> Python)
--------------------------------------
-`Collect_FE_Tokens` builds *sentence-level* running state (stress indices,
-compound-noun flag, content-word flag, word count, buffer indices into
-`phon_Buf_1`) while walking tokens one phoneme-opcode at a time. That
-buffer-index bookkeeping (`vv->phonBuf_1_In_Index`, `Store_Phon_In_PhonBuf_1`,
-the yellow/red-zone overflow handling at `BackEnd.c:3777-3789`/`3844-3856`)
-is driven by a live `voiceVarPtr` and the real opcode stream; this port
-keeps that as `collect_fe_tokens()`'s *inner* per-opcode walk (see below),
-but its *outer* per-word data source is the adapted token defined here:
-`FEWordToken`, one per `_frontend.tokenize()` word, replacing `OpTokRec`.
+A word the dictionary misses is read by the letter-to-sound rules and defaults
+to `kNoun`, as `FrontEnd.c:1650` does with `SetPOStoVal(t, kNoun)` straight
+after `EngToP()`. `_morph.apply_pos_from_suffix` then refines it.
 
-    C field (OpTokRec / dict decode)         Python (`FEWordToken`)
-    ---------------------------------------  ------------------------------
-    tok->phonStr (dict hit)                  phon_str        (from LexEntry)
-    tok->phonHold (dict hit, alt pron.)      phon_hold       (from LexEntry)
-    tok->hasAlt / altChoice==1               has_alt         (LexEntry.has_alt;
-                                              altChoice selection itself is
-                                              not modeled -- no consumer of
-                                              alt-pronunciation choice exists
-                                              yet in this port)
-    tok->POScode1 / POScode2                 pos_code1 / pos_code2
-    tok->compPOS1 / compPOS2                 comp_pos1 / comp_pos2
-    tok->isAbbriv                            is_abbrev
-    tok->POSchoice (Set_POS, Morph.c,         pos_choice -- NOT a port of
-      NOT ported)                            Set_POS. Documented stand-in:
-                                              pos_code1[0] if the word hit
-                                              the dictionary, else kNoun
-                                              (confirmed real default for
-                                              rule-fallback words -- see
-                                              "POS-default" note below).
-    tok->tokEmphasis                         word_emphasis -- always
-                                              "none" (no emphasis-markup
-                                              source is ported; see
-                                              docs/architecture.md).
-    tok->add_BND / phrasingBND                phrase_bnd -- derived only
-                                              from _frontend.py's trailing
-                                              `. , ! ?` punctuation
-                                              (kBND_Decl/kBND_Pause/
-                                              kBND_Quest/kBND_Emph); no
-                                              other boundary source (verb
-                                              phrase, paren, conjunction,
-                                              etc.) is detected.
-    tok->tokType == kEOFTok                  end of the `_frontend.tokenize()`
-                                              list (no kECommandTok/
-                                              kLiteralTok distinction --
-                                              EmbeddedCmd.c is not ported)
-    (dictionary miss -> engtop() fallback)    phon_str = [_Word_] + engtop(word);
-                                              pos_code1 = [kUndefPOS]*4;
-                                              is_compound = False
-
-POS-DEFAULT-FOR-RULE-FALLBACK-WORDS
-------------------------------------
-For words `_lexicon.lookup()` misses (falls back to `_engtop.engtop()`),
-`FrontEnd.c:1650` calls `SetPOStoVal(t, kNoun)` immediately after the
-`EngToP()` call, then refines via `SetPOS_FromSuffix` (`Morph.c:1027`,
-NOT ported here -- a suffix-based heuristic, e.g. "-LY" -> adverb). This
-was confirmed by diffing this module's output against a real C oracle
-(a throwaway instrumented `Talk()` dumping `phon_Buf_1`/`phon_Ctrl_Buf_1`
-right after `Collect_FE_Tokens` returns): a rule-fallback word ("TESTING",
-not in the dictionary) came back from the real engine with `kContent_Word`
-set, which is only possible if its POS is one of the content-word set
-(`BackEnd.c:3971-3980`) -- confirming `kNoun`, not `kUndefPOS`, is the real
-default. `pos_choice = kNoun` for rule-fallback words here reflects that;
-`SetPOS_FromSuffix`'s refinement is not applied, so suffix-driven
-reclassification (e.g. an adverb ending in "-LY") is not yet modeled.
-
-For dictionary HITS, `pos_choice` is set to `pos_code1[0]` (if not
-`kUndefPOS`) as a documented placeholder for the real `Set_POS`
-(`Morph.c:830-991`, which considers surrounding words' POS codes and
-disambiguates via `compPOS1`/`compPOS2` bitmasks) -- it is NOT that
-algorithm. A `Morph.c` port must replace this placeholder before
-POS-gated stress placement can be considered fully validated for
-dictionary words.
-
-VALIDATION STATUS
------------------
-The standard `test_harness.c` only dumps `vv->phon_Buf_2`/`vv->phon_Ctrl_Buf_2`
--- state *after* `Fill_Phon_Buf_2` has run -- not `phon_Buf_1`/
-`phon_Ctrl_Buf_1` (what `Collect_FE_Tokens` itself produces), so there's no
-standing oracle for this stage in the committed test tooling. `test/test_assembly.py`'s
-`test_oracle_hello`/`test_oracle_testing_one_two_three` close that gap: they
-pin `phon_Buf_1`/`phon_Ctrl_Buf_1` values captured from a throwaway
-instrumented build of `Talk()` (a temporary `fprintf` dump inserted right
-after the `Collect_FE_Tokens` loop, reverted afterward -- `lintalker-c` is
-not modified by this repo; see `docs/architecture.md` for how to
-re-capture). That oracle run found and fixed two real bugs:
-  - `make_fe_word_token()` was double-prepending `_Word_` for rule-fallback
-    words (`engtop()` already includes it in its own output) -- this
-    silently shifted every subsequent phoneme by one position for any word
-    that missed the dictionary.
-  - Rule-fallback words were defaulted to `pos_choice = kUndefPOS`; the
-    real engine defaults them to `kNoun` (`FrontEnd.c:1650`,
-    `SetPOStoVal(t, kNoun)` right after `EngToP()`). The `kUndefPOS`
-    assumption came from an earlier reading of `FrontEnd.c` that missed
-    this call site -- confirmed wrong once a rule-fallback word came back
-    from the real engine with `kContent_Word` set, which is only possible
-    with a content-word POS.
-
-After both fixes, `collect_fe_tokens()`'s `phon_buf`/`ctrl_buf` match the C
-oracle exactly except for: (a) `kSyllable_Start`/`kSyllableOrderField`/
-`kSyllableTypeField` bits, set by the unported `Flag_PhonBuf_1` (called
-from *inside* `Collect_FE_Tokens`, `BackEnd.c:4154` -- not a separate later
-stage, correcting an earlier assumption that placed it in a later phase),
-and (b) one narrow phrase-boundary gap (a `kBND_Sep6` marker on certain
-dictionary-tagged words like "ONE" that `_frontend.py`'s
-punctuation-only boundary detection doesn't produce). Both are documented,
-narrow, and don't affect phoneme identity -- see `test_oracle_*`'s masks
-and `docs/architecture.md`.
-
-HANDOFF -- what `Fill_Phon_Buf_2` must consume next
-----------------------------------------------------
-  1. Per-word fields this module produces: `phon_str` (opcode list,
-     `_Word_`-prefixed), `phon_hold` (alt pronunciation, if any),
-     `pos_choice` (a documented placeholder for the real `Set_POS`
-     disambiguation algorithm for dictionary hits -- see "POS-DEFAULT"
-     above), `is_compound` (raw dictionary hint, NOT `is_Compound_Noun` --
-     still needs a scan for the literal `_Comp_`/`kDictComp` opcode per
-     `BackEnd.c:4029-4032`), `phrase_bnd`, `is_abbrev`, `has_alt`.
-  2. Sentence-level running state: `SentenceAssembly.phon_buf`/`ctrl_buf`
-     (the `phon_Buf_1`/`phon_Ctrl_Buf_1` stand-in, already syllable-bit-free
-     until `Flag_PhonBuf_1` is ported), `word_count`, `stress_counter`,
-     `end_punctuation`, `last_word_index`, `last_stress_1/2_index`,
-     `last_vowel_index`.
-  3. `Flag_PhonBuf_1`/`MarkSyllable`/`MarkSyllableStart` should be ported
-     before or alongside `Fill_Phon_Buf_2`, since the latter's R-coloring,
-     glottal, and t-flap rules branch on syllable-boundary bits
-     (`BackEnd.c:2650`, `2685`, `2757`).
+`Place_Stress_In_Consonant` (`BackEnd.c:3300`) is not ported: its only call
+site is commented out in the C source (`BackEnd.c:3510`).
 """
 from __future__ import annotations
 
@@ -487,19 +353,12 @@ def make_fe_word_token(
         if alt_choice is not None:
             tok.alt_choice = alt_choice
     else:
-        # No dictionary entry, no DoMorph match -> _engtop.engtop()
-        # rule-engine fallback. FrontEnd.c:1650 calls SetPOStoVal(t, kNoun)
-        # right after EngToP(), then SetPOS_FromSuffix (Morph.c:1027, not
-        # ported -- see module docstring) refines it. pos_choice = kNoun
-        # here, confirmed against a real C oracle dump (see
-        # "POS-DEFAULT-FOR-RULE-FALLBACK-WORDS").
+        # No dictionary entry and no morphology match: read the word with the
+        # letter-to-sound rules. FrontEnd.c:1650 defaults such a word to kNoun
+        # (SetPOStoVal, right after EngToP).
         tok = FEWordToken(
             word=word,
-            # engtop() already prefixes its output with _Word_ -- do not
-            # prepend it again here (that was a genuine bug: it produced
-            # phon_str=[_Word_, _Word_, ...], corrupting every rule-fallback
-            # word's opcode stream by one and shifting all subsequent
-            # phonemes, confirmed against a real C oracle dump).
+            # engtop() already prefixes its output with _Word_.
             phon_str=list(engtop(word)),
             from_dictionary=False,
             pos_code1=[kNoun, kUndefPOS, kUndefPOS, kUndefPOS],
@@ -1094,12 +953,8 @@ def collect_fe_tokens(
             # engine tracks this via YesNo_Phrase (true by default, set
             # false when the clause-first word is kInterr -- a WH-word --
             # or when the first word is kPrep/kConj and the SECOND is
-            # kInterr/kRelPro, e.g. "in what way..."). Confirmed by direct
-            # instrumentation of the C reference: "how are you today?"
-            # produces 3 pitch-buffer entries in the real engine, not 5 --
-            # a straight _Quest_ mapping's count. Uses resolve_pos()'s real
-            # POS resolution (kInterr comes from the dictionary, e.g. "how"/
-            # "what"), not a fixed word list.
+            # kInterr/kRelPro, e.g. "in what way..."). kInterr comes from
+            # resolve_pos() via the dictionary, not a fixed word list.
             yes_no_phrase = True
             if sa.words:
                 if sa.words[0].pos_choice == kInterr:

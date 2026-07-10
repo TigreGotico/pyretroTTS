@@ -1,41 +1,17 @@
-"""
-Port of the per-frame embedded-control-command dispatcher: DoCtrl (BackEnd.c).
+"""DECtalk's inline `[[...]]` commands: the scanner and the dispatcher.
 
-DoCtrl is *not* the FrontEnd.c/EmbeddedCmd.c bracket-delimited text-escape
-parser (that parser -- ProcessEmbeddedCommands and friends in
-EmbeddedCmd.c -- lives one level up, turning `[[pbas200]]`-style text
-escapes -- `[[`/`]]` are the real engine's default command delimiters,
-`mt4.h`'s `defaultCmdBeginDelim`/`defaultCmdEndDelim`, changeable at
-runtime via the `dlim` command itself -- into vv->PendingCommands bits;
-none of FrontEnd.c is ported here). DoCtrl is the *consumer* at the
-bottom of the pipeline: once a phoneme plan is built, some phonemes may carry
-a count in `user_Cmd_Buf2[phonIndex]` of queued (type, data) control words
-sitting in the `CMDQueue` ring buffer, and `say_frame` (BackEnd.c Talk())
-calls DoCtrl once per frame to drain and apply that phoneme's share of them.
+`scan_bracket_commands` is the text-level scanner (EmbeddedCmd.c's
+ProcessEmbeddedCommands): it strips the bracketed commands out of a clause and
+records what each one asks for.
 
-This is invoked from ``_backend.py``'s ``start_new_phon`` (the ported
-Talk()/start-new-phon frame-boundary block) exactly where BackEnd.c calls
-``DoCtrl (vv)``.
+`do_ctrl` is the frame-level dispatcher (BackEnd.c's DoCtrl) at the other end
+of the pipeline: once a phoneme plan is built, some phonemes carry a count of
+queued control words in `user_Cmd_Buf2`, and `say_frame` calls `do_ctrl` once
+per frame to apply that phoneme's share of them.
 
-What's real here (faithfully ported, same shape as DoCtrl):
-    C_absMod, C_absPitch, C_relPitch, C_absVol, C_relVol -- all pure
-    arithmetic over already-ported state (VP_pitchRange, voiceNaturalPitch,
-    VP_baselinePitch, user_Volume via _backend.set_volume/e_midi_to_pitch).
-
-What's stubbed (raises NotImplementedError if actually hit), and why:
-    * C_reset -- real DoCtrl calls e_ResetFE_FUNC (FrontEnd.c, not ported)
-      then ResetVoice (fsynth.c, not ported in _backend.py under any name --
-      see _engine.py's e_reinit_voice/e_reset_params for the same gap).
-    * C_voice -- real DoCtrl's case is itself commented out in BackEnd.c
-      (`//NewVoice (vv, &vv->zz->IntervalVoices[ctrlData-1]);`) and NewVoice
-      is not ported either; this mirrors upstream's own no-op plus a marker
-      so a caller that actually relies on voice-switching notices instead of
-      silently doing nothing.
-
-No currently-shipped voice/text data in this port emits queued embedded
-commands (ctrlCount stays 0 for every test case in test/test_voices.py), so
-do_ctrl's body never runs during the existing regression suite -- exercising
-it requires hand-populating vv.CMDQueue/vv.user_Cmd_Buf2.
+`C_reset` and `C_voice` raise NotImplementedError. `C_reset` needs ResetVoice
+(fsynth.c), which is not ported; `C_voice`'s case is commented out in the C
+source, and raising is louder than repeating a silent no-op.
 """
 from __future__ import annotations
 
@@ -252,202 +228,38 @@ class BracketCommands:
 
 
 def scan_bracket_commands(text: str, initial_rate: int = kNormal_Speech_Rate) -> BracketCommands:
-    """Port of `EmbeddedCmd.c`'s bracket-delimited text-command scanner
-    (`ProcessEmbeddedCommands` and the `pbas`/`pmod`/`volm`/`emph`
-    members of its command dispatch, `EmbeddedCmd.c:990-1010`), scoped
-    to the three commands that resolve to a `CMDQueue` entry `do_ctrl`
-    can actually apply (`C_absPitch`/`C_relPitch`, `C_absMod`/
-    `C_relMod`, `C_absVol`/`C_relVol`) plus `emph` (a plain per-token
-    field override, no `CMDQueue` involved) -- see below for what's NOT
-    covered.
+    """Strip DECtalk's `[[...]]` commands out of `text` and record what they ask for.
 
-    Default delimiters are `[[`/`]]` (`mt4.h`'s `defaultCmdBeginDelim`/
-    `defaultCmdEndDelim`; the `dlim` command that changes them at
-    runtime is not ported). CAUTION for whoever next touches this:
-    an earlier pass of this same investigation tried `` `pbas60`hello ``
-    (single backtick) against the compiled `lintalker-c` `test_harness`
-    and initially misread a genuine `f0` shift as confirmation that
-    backtick was the real delimiter -- direct phoneme decoding proved
-    otherwise: "PBAS" isn't a dictionary word, so the text between the
-    backticks was being SPOKEN LITERALLY (spelled letter-by-letter, then
-    "60" read as separate digits "SIX"/"ZERO"), not silently consumed as
-    a command. `[[pbas60]]hello`/`[pbas60]hello` produced no such
-    literal-reading artifact but ALSO no detectable pitch change on
-    "hello" itself -- the compiled `test_harness` binary shows no
-    evidence of recognizing EITHER delimiter as a real embedded command,
-    for either given only a `-v <voice> <text>` CLI text argument. This
-    is the same class of blocker as the `Symbols` dictionary
-    investigation: this port cannot verify a bracket-command
-    implementation frame-exact against THIS specific compiled reference
-    (see docs/architecture.md), so `[[`/`]]` is used here because it's
-    what the C SOURCE documents as the default, not because it was
-    empirically confirmed to work. Returns `(clean_text, commands)`:
-    `clean_text` is `text` with every recognized bracketed command
-    span removed, and `commands` is a list of `(word_index, ctrl_type,
-    ctrl_data)` -- `word_index` is how many words (per
-    `_frontend.tokenize`) of `clean_text` PRECEDE that command, i.e. the
-    command should be applied before that word's own phonemes are
-    spoken, matching where `ProcessPendingCommands` embeds its `BE_ECmd`
-    opcode in the real token stream (right before the next real word
-    token). An unrecognized keyword, or a span with no `]]` before the
-    end of `text`, is left in `clean_text` untouched (matches
-    `LogParseError`'s effect of leaving `PendingCommands` unset for
-    that command -- this port simply doesn't strip what it can't
-    parse, rather than raising).
+    Delimiters default to `[[` and `]]` (`mt4.h`'s defaultCmdBeginDelim /
+    defaultCmdEndDelim). Commands recognized, and where each one lands in the
+    returned `BracketCommands`:
 
-    Also recognizes `emph+`/`emph-` (`Parse_emph_Command`,
-    `EmbeddedCmd.c:558-580`): overrides the word-prominence of the very
-    NEXT token (`vv->NewEmphasis` copied straight into `tok->tokEmphasis`
-    when that token is created, `FrontEnd.c:343-344`/`369-370`/`460-461`
-    -- a plain field copy, not a `CMDQueue`/`phon_Buf_1`-opcode
-    mechanism at all, unlike `pbas`/`pmod`/`volm` above). Returned
-    separately from `commands` (see below) since it isn't a `CMDQueue`
-    entry.
+        pbas, pmod, volm   pitch base, pitch modulation, volume  -> queued
+        rset, sync         reset, sync marker                    -> queued
+        emph               emphasize / deemphasize a word        -> emphasis
+        slnc               insert a silence                      -> silences
+        xtnd wpos          override a word's part of speech      -> pos
+        rate, ratr         speaking rate, absolute or relative   -> rates
+        nmbr               read digits one at a time             -> digit_by_digit
+        mode PHON / TEXT   literal phoneme input                 -> raw_phonemes
+        char LTRL / NORM   spell words out letter by letter      -> spelled
+        dlim               change the delimiters from here on
+        cmnt, vers         no-ops, stripped
 
-    Also recognizes `cmnt` (`Parse_cmnt_Command`, `EmbeddedCmd.c:521-525`
-    -- a genuine no-op even in the real engine, it just skips the rest
-    of the command) and `vers` (`Parse_vers_Command`, `EmbeddedCmd.c:768
-    -778` -- validates the version argument is `1.0`/`0.0` and otherwise
-    logs a parse error; has no state-changing effect either way) as
-    silently-stripped no-ops, and `dlim` (`Parse_dlim_Command`,
-    `EmbeddedCmd.c:527-556`): changes the begin/end delimiters used for
-    subsequent commands later in the SAME `text` (matches
-    `ChangeDelimiters`'s real scope -- it only affects commands parsed
-    afterward, mid-utterance). Its two arguments are each a decimal
-    character CODE (e.g. `91` for `[`), matching `Get32BitValue`'s
-    `newBegin >> 16`/`newEnd >> 16` extraction (a plain integer part,
-    no fractional digits expected in practice).
+    `nmbr`, `mode` and `char` latch: they stay in force until switched back.
+    The others apply once, at the word they precede.
 
-    Also recognizes `slnc` (`Parse_slnc_Command`, `EmbeddedCmd.c:741-751`):
-    inserts a real `_SIL_` phoneme at the given position (the ONE command
-    ported here that DOES have a per-phoneme pipeline equivalent -- see
-    `_assembly.collect_fe_tokens`'s `silence_overrides` parameter and
-    `sa.note_buf`, consumed by `_moduration.mod_duration`'s existing
-    `kSilenceDuration` branch). Its argument is a plain Fixed value;
-    `embedData >> 16` (`BackEnd.c`'s `Parse_Embedded_Command` `EC_slnc`
-    case) recovers the millisecond count the user typed.
+    `pbas`, `pmod` and `volm` take a Fixed-point value that may be relative
+    (`+50`, `-50`); `sync` takes a plain integer; `slnc` takes milliseconds;
+    `dlim` takes two decimal character codes (e.g. `91 93` for `[` and `]`).
 
-    Also recognizes `rset` (`Parse_rset_Command`, `EmbeddedCmd.c:724
-    -739` -- only argument `0` is valid, resolving to `C_reset`; `do_ctrl`
-    already stubs that with `NotImplementedError`) and `sync`
-    (`Parse_sync_Command`, `EmbeddedCmd.c:753-765` -- a plain LONG
-    argument, not Fixed-point, resolving to `C_sync`; `do_ctrl` has no
-    case for `C_sync` at all, matching the real `DoCtrl` switch's own
-    `default: break;` for it -- a genuine no-op in the reference too).
+    An unrecognized keyword, or a span with no closing delimiter, is left in
+    the text as written rather than raising -- matching `LogParseError`, which
+    simply leaves that command's PendingCommands bit unset.
 
-    Also recognizes `xtnd`'s `wpos` (word part-of-speech) selector
-    (`Parse_xtnd_Command`, `EmbeddedCmd.c:895-921` -- the only selector
-    the real dispatch implements; any other selector, or a creator code
-    other than `kMacInTalkCreator`/`mtk3`, is silently ignored): sets the
-    next word's part-of-speech directly, matching `SetPOStoVal`
-    (`FrontEnd.c:138-145`) -- returned separately as `pos_overrides`,
-    applied by `_assembly.collect_fe_tokens` to the token's
-    `pos_code1`/`comp_pos1` fields right before `resolve_pos` runs, the
-    same insertion point as `emphasis_overrides`.
-
-    Also recognizes `rate`/`ratr` (`Parse_rate_Command`/`ChangeRate`,
-    `EmbeddedCmd.c:691-720`): sets the speaking rate at an exact word
-    position, matching `Parse_Embedded_Command`'s `EC_rate`/`EC_ratr`
-    cases (`BackEnd.c:1900-1915`) -- unlike `pbas`/`pmod`/`volm`, these
-    write DIRECTLY to `user_Rate_Buf1`/`vv->lastRate`, not `CMDQueue`, so
-    this is returned separately as `rates`, and (like `emph`/`xtnd wpos`)
-    positioned at the real word index rather than applied at clause
-    start. `initial_rate` seeds the relative-change accumulator
-    (`vv->lastRate`'s value before any `rate`/`ratr` command in `text` --
-    pass the voice's current `vv.speech_Rate` for correct behavior
-    across a multi-clause utterance where an earlier clause already
-    changed the rate); the LAST resolved rate (or `None` if `text` has
-    no `rate`/`ratr` command at all) is returned as `final_rate`, for the
-    caller to persist onto `vv.speech_Rate` for subsequent clauses.
-
-    Also recognizes `nmbr` (`Parse_nmbr_Command`/`ChangeNumberMode`,
-    `EmbeddedCmd.c:604-620`): its argument is `NORM`/`LTRL` (matching
-    `modeNormal`/`modeLiteral`, `SpeechEqu.h`), toggling `kDigitByDigit`
-    mode (`FrontEnd.c:2057-2062`'s `SpeakTokenCharByChar` branch for
-    numeric tokens -- each digit read on its own, e.g. "123" -> "one two
-    three", instead of grouped into a cardinal number). Unlike `emph`/
-    `xtnd wpos`/`rate` (single-word overrides) this is a LATCHED mode
-    that stays in effect for every following numeric token until changed
-    again, matching `vv->Mode`'s persistent bit -- so it's returned
-    separately as `nmbr_overrides`, a `{word_index: is_digit_by_digit}`
-    dict applied by `_assembly.collect_fe_tokens` as a running flag
-    rather than a one-shot lookup.
-
-    Also recognizes `mode` (`Parse_mode_Command`/`ChangeInputMode`,
-    search `EmbeddedCmd.c` for `Parse_mode_Command`): its argument is a
-    bare `TEXT`/`PHON` selector (same shape as `nmbr`'s `NORM`/`LTRL`),
-    toggling whether SUBSEQUENT text is parsed as raw phoneme mnemonics
-    (`kRawPhonemes`, `GetNextPhonemeOpcode`/`CollectPhonemeToken`,
-    `FrontEnd.c:247-345`) instead of English words -- e.g. `[[mode
-    PHON]]_1AAt[[mode TEXT]]` speaks the literal phonemes `_Word_
-    _Stress1_ _AA_ _t_` instead of trying to read "_1AAt" as an English
-    word. `_rawphon.MAGIC_MAP` (`Data.c:3307`'s `MAGIC_CHAR_MAP[]`/
-    `Data.c:3394`'s `MAGIC_OPCODE_MAP[]`) is a direct, bit-exact
-    transcription of a literal compile-time C source table, not a
-    runtime dictionary lookup, so -- unlike `char`'s letter-name
-    spelling below -- it carries no `Symbols`-dictionary corruption
-    caveat. Like `nmbr`, this is a LATCHED mode (stays in effect until
-    the next `mode` command or end of text), applied here in
-    `scan_bracket_commands` itself (not deferred to `_assembly.
-    collect_fe_tokens` the way `nmbr` is): while `PHON` mode is active,
-    `_emit_segment` routes the text between commands through
-    `_rawphon.parse_raw_phonemes`/`split_into_word_groups` instead of
-    treating it as literal English text, synthesizing one placeholder
-    word (`"RAWPHONn"`) per resulting opcode group and recording that
-    group's raw phonemes in `raw_phon_overrides: {word_index:
-    phon_str}` -- `_assembly.collect_fe_tokens` builds that word's
-    `FEWordToken` directly from the recorded phonemes instead of
-    running `make_fe_word_token`'s normal dictionary/`EngToP` lookup on
-    the meaningless placeholder string.
-
-    Also recognizes `char` (`Parse_char_Command`/`ChangeCharMode`,
-    search `EmbeddedCmd.c` for `Parse_char_Command`): the same bare
-    `NORM`/`LTRL` selector shape as `nmbr`, toggling `kCharByChar`
-    letter-by-letter spelling (`_letters.spell_word`, e.g. "cab" ->
-    "see ay bee") for every following alphabetic word until changed
-    again -- also a LATCHED mode, returned as `char_overrides:
-    {word_index: is_spelled}`, applied by `_assembly.collect_fe_tokens`
-    as a running flag exactly like `nmbr_overrides`. `_letters.
-    LETTER_PHONEMES` is extracted bit-exact from the compiled
-    `lintalker-c` reference's real `Symbols`-dictionary letter lookup
-    (a genuine RUNTIME lookup, unlike `mode`'s literal `MAGIC_MAP` --
-    but confirmed NOT corrupted for plain single-character keys, unlike
-    the `"100"`/`"1000"`-class SCALE-WORD numeric keys documented
-    elsewhere); see that module's docstring for the extraction method
-    and a documented multi-letter vowel-hiatus caveat.
-
-    NOT ported: mid-clause
-    phoneme-accurate positioning for `pbas`/`pmod`/`volm`
-    (a command found after the Nth word of ONE clause is applied before
-    that clause's Nth word for `emph`/`slnc`/`xtnd`/`rate`/`nmbr`/`mode`/
-    `char`, but `pbas`/`pmod`/`volm` are applied as an immediate
-    `do_ctrl` state change at the whole clause's start instead -- see
-    `api.build_phoneme_plan`).
-
-    Returns `(clean_text, commands, emphasis, silences, pos_overrides,
-    rates, final_rate, nmbr_overrides, raw_phon_overrides,
-    char_overrides)`: `clean_text`
-    is `text` with every recognized bracketed command span removed
-    (raw-phoneme spans replaced with `"RAWPHONn"` placeholder words, one
-    per opcode group); `commands` is a
-    list of `(word_index, ctrl_type, ctrl_data)` for `pbas`/`pmod`/
-    `volm`/`rset`/`sync`; `emphasis` is a `{word_index: "emphasize"|
-    "deemphasize"}` dict for `emph`; `silences` is a `{word_index:
-    duration_ms}` dict for `slnc`; `pos_overrides` is a `{word_index:
-    pos_value}` dict for `xtnd wpos`; `rates` is a `{word_index: wpm}`
-    dict for `rate`/`ratr`; `final_rate` is described above;
-    `nmbr_overrides` is a `{word_index: is_digit_by_digit}` dict for
-    `nmbr`; `raw_phon_overrides` is a `{word_index: phon_str}` dict for
-    `mode PHON`; `char_overrides` is a `{word_index: is_spelled}` dict
-    for `char`. `word_index`
-    is how many words (per
-    `_frontend.tokenize`) of `clean_text` PRECEDE that command, i.e. the
-    command/override applies to (or right before) that word. An
-    unrecognized keyword, or a span with no closing delimiter before
-    the end of `text`, is left in `clean_text` untouched (matches
-    `LogParseError`'s effect of leaving `PendingCommands` unset for
-    that command -- this port simply doesn't strip what it can't
-    parse, rather than raising).
+    Only `pbas`/`pmod`/`volm`/`rset`/`sync` become CMDQueue entries that
+    `do_ctrl` applies. The rest are per-word overrides that
+    `_assembly.collect_fe_tokens` consumes directly.
     """
 
     commands = []

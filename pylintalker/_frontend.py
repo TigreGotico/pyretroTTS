@@ -14,8 +14,7 @@ stress/word/punctuation/syllable bookkeeping, adapted from
 `_phonbuf2.fill_phon_buf_2`/`_pitchcontour.pitch_raise_and_fall`/
 `_moduration.mod_duration`/`_pitchbuf.fill_pitch_buf` -- the full chain
 `api.synthesize_text()` composes. See docs/architecture.md for the module
-map and "Known gaps" for what's not covered (Morph.c, number/abbreviation
-expansion, non-punctuation phrase boundaries, embedded commands).
+map and the limitations that remain.
 
 What IS real and tested here (see test/test_frontend.py):
     * `tokenize(text)` -- splits text into (WORD, trailing_punct) pairs,
@@ -36,7 +35,7 @@ What IS real and tested here (see test/test_frontend.py):
       `Talk()` session, so cross-sentence prosody continuity (baseline
       pitch drift, compound-noun state) isn't preserved. `Collect_FE_Tokens`
       returning per-sentence and `ParseSentence` resetting `phon_Buf_2`/
-      `pitchBuf_In_Index` each call (confirmed by inspection: feeding
+      `pitchBuf_In_Index` each call (feeding
       multi-sentence text to the real `test_harness` CLI only ever dumps
       one sentence's worth of `phon_Buf_2` at a time) means the real engine
       also processes one sentence's plan at a time, just within one
@@ -105,11 +104,7 @@ def scan_tokens(text: str) -> TokenStream:
     to this function's `(word, punct)` return shape, matching how
     `_embeddedcmd.scan_bracket_commands`'s per-word override dicts are
     threaded through `_assembly.collect_fe_tokens` without altering
-    `tokenize()`'s own contract. Before this was ported, a leading `$`
-    made the whole token get silently DROPPED (`isdigit()` fails on
-    `"$5"`, and the fallback `isalpha()`-only filter strips digits too,
-    leaving an empty string) -- a real bug, not just a missing feature;
-    fixing the drop and adding dollar-amount reading landed together.
+    `tokenize()`'s own contract.
 
     `decimal_frac` gets the output-token INDEX of
     the FRACTIONAL half of every `N.M`-shaped token (e.g. `"3.14"` splits
@@ -124,10 +119,6 @@ def scan_tokens(text: str) -> TokenStream:
     kDecimalTok` at `FrontEnd.c:2058`) -- e.g. "3.14" -> "three point one
     four", not "three point fourteen". Not applied to a `$`-prefixed
     token: that combination is `cent`'s job instead (see below).
-    Like a plain `.` before this port, `N.M` was previously silently
-    DROPPED entirely (`isdigit()` fails on `"3.14"`, and the
-    `isalpha()`-only fallback filter strips both the digits and the
-    `.`) -- fixed here.
 
     `cent` gets the output-token INDEX of the
     CENTS half of every `$N.M`-shaped token (e.g. `"$5.25"` splits into
@@ -303,9 +294,8 @@ def split_clauses(text: str) -> list[str]:
     assembly pipeline call, which is why a comma-containing sentence like
     "good morning everyone, welcome to the show." synthesizes correctly
     (confirmed frame-exact against the C reference,
-    `test/test_synthesize_text.py`) while naively assembling the whole
-    thing as one clause does not (a real, confirmed divergence found via
-    frame-count mismatches before this function existed).
+    `test/test_synthesize_text.py`), which assembling the whole input as one
+    clause does not.
     """
     return _split_on(text, r'[.,!?]')
 
