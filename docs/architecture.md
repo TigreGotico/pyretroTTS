@@ -18,7 +18,7 @@
 | `Engine.c` | `lintalker/_engine.py` | Top-level init/speak/reset/rate/pitch/volume API, built on `_backend.py`. `e_speak_buffer` (the text-in entry point) and a few fsynth-dependent setters (`e_reset_params`, `e_use_voice`, `e_reinit_voice`) raise `NotImplementedError` naming the specific unported upstream C function they need. |
 | `BackEnd.c` (`DoCtrl`, the per-phoneme `CMDQueue` dispatcher: absolute/relative pitch, volume, mod) | `lintalker/_embeddedcmd.py` | Ported (see `test/test_embeddedcmd.py`); `C_reset`/`C_voice` are unimplemented/no-op the same way upstream leaves them, pending `ResetVoice`/`NewVoice` |
 | `EmbeddedCmd.c` (the FrontEnd bracket-delimited text-command parser, e.g. `[[pbas200]]` -- `[[`/`]]` are the default delimiters, `mt4.h`'s `defaultCmdBeginDelim`/`defaultCmdEndDelim`, a distinct mechanism from `DoCtrl` above — it sets `PendingCommands` bits that `FrontEnd.c` later turns into `CMDQueue` entries via `QueueCommand`, except `emph` which copies straight into the next token's field) | `lintalker/_embeddedcmd.py`'s `scan_bracket_commands` | Ported for `pbas`/`pbar`/`pmod`/`pmor`/`volm`/`volr` (applied as an immediate state change at clause start, not true per-phoneme positioning), `emph`/`emph-` (applied to the correct word's `word_emphasis` field via `_assembly.collect_fe_tokens`), `cmnt`/`vers` (no-ops, stripped), and `dlim` (changes the begin/end delimiter used for later commands in the same text); `rate`/`rset`/`xtnd`/`char`/`mode`/`nmbr`/`slnc`/`sync` not ported; cannot be verified frame-exact against `lintalker-c`'s compiled `test_harness` -- see "Known gaps" |
-| `Morph.c` (`ResolvePOS`, `PlacePhrasing` SEP1-6, `SetPOS_FromSuffix`, `DoMorph`'s suffix functions) | `lintalker/_morph.py` (suffix decomposition) + `lintalker/_assembly.py` (`resolve_pos`/`_place_phrasing`) | Every top-level function is ported except `Zap_POS` (unreachable -- see "Known gaps") and `PlacePhrasing`'s SEP7/parenthesized-clause handling (no parenthesis tracking); `Search_Suffix`'s real `SuffixTab` trie data is approximated with an ordered `endswith()` cascade instead of extracted |
+| `Morph.c` (`ResolvePOS`, `PlacePhrasing`, `SetPOS_FromSuffix`, `DoMorph`'s suffix functions) | `lintalker/_morph.py` (suffix decomposition) + `lintalker/_assembly.py` (`resolve_pos`/`_place_phrasing`) | Every top-level function is ported except `Zap_POS` (unreachable -- see "Known gaps"; `PlacePhrasing`'s `inParen`/SEP7 aren't real gaps -- neither is ever exercised by the C reference itself, see "Known gaps"); `Search_Suffix`'s real `SuffixTab` trie data is approximated with an ordered `endswith()` cascade instead of extracted |
 | `english_lex.c`/`English.lex` | `lintalker/_lexicon.py` | Dictionary lookup (`lookup(word)`), verified bit-exact against the real engine for 249 words spanning common/rare/compound-noun/abbreviation entries (`test/test_lexicon.py`). |
 | `Sounds.c` | not ported | Embedded sound effects (bells, etc.) — raw PCM blobs, not logic |
 
@@ -324,13 +324,23 @@ single-sentence text is.
   the `_Comp_` opcode from the DICTIONARY's own `is_compound` hint
   (`LexEntry.is_compound`, already ported in `_lexicon.py` and consumed
   in `_assembly.py`/`_phonbuf2.py`), not from any runtime word-splitting
-  algorithm. With this corrected, `Morph.c`'s only two remaining,
-  deliberately-scoped gaps are:
+  algorithm. ALSO CORRECTED: `PlacePhrasing`'s SEP7/parenthesized-clause
+  handling was likewise listed as a remaining gap -- checking the C
+  source directly shows neither exists as real behavior to port either.
+  `inParen` (`Morph.c:24`) is declared, initialized `false`, and read
+  exactly once (`Morph.c:132`'s `!inParen` guard) -- but grepping the
+  ENTIRE C source (not just `Morph.c`) turns up no assignment to
+  `inParen` anywhere at all; it is unconditionally `false` for the
+  full life of every `PlacePhrasing` call in the real reference too,
+  which is exactly what this port's `_place_phrasing` already does (not
+  an approximation -- bit-exact). `kBND_Sep7` (`mt4.h:106`, "boundary
+  strength 7 (quotative tag)") is defined but never referenced by any
+  `.c` file in the reference -- dead/reserved, never emitted by the
+  real engine either. With both corrected, `Morph.c`'s only remaining,
+  deliberately-scoped gap is:
   - `Zap_POS` (only reachable via `SetPOS_FromSuffix`'s `hasAlt`-true
     branch, itself not ported since `has_alt` is always `False` for
     morphed words in this port -- see above).
-  - `PlacePhrasing`'s SEP7 / parenthesized-clause handling (this port
-    has no parenthesis tracking).
   Every other top-level `Morph.c` function (`ResolvePOS`,
   `PlacePhrasing` SEP1-6, `SetPOS_FromSuffix`, `Store_S_or_Z`,
   `Consonant_Doubling_Adjust`, `Decompose_E_Common`/`Decompose_I_

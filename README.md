@@ -33,7 +33,7 @@ counterpart is checked out locally as `lintalker-c`).
 | WH-question vs. yes/no-question intonation | `Morph.c` (`PlacePhrasing`, `YesNo_Phrase`) | Ported using real `ResolvePOS` POS tags (`lintalker/_assembly.py`) |
 | Suffix-stripping decomposition (plural/3rd-person "-S", `-LY`, `-EST`/`-IEST`, `-ER`/`-IER`/`-ERS`/`-IERS`, `-ED`/`-IED`, `-ING`/`-INGS`, `-ES`/`-IES`, `-CALLY`/`-BLY`, `-MENT(S)`/`-IMENT(S)`, `-ABLE`, `-NESS(ES)`/`-INESS(ES)`, `-ISM(S)`, `-OR(S)`, `-IZE`/`-IZED`/`-IZES`/`-IZING(S)`/`-IZER(S)`) | `Morph.c` (`Do_S_Morph`, `Store_S_or_Z`, and the rest of `DoMorph`'s suffix dispatch) | Ported (`lintalker/_morph.py`), verified bit-exact (`test/test_synthesize_text.py::test_s_morph_frame_exact`, `::test_do_morph_suffix_frame_exact`) |
 | Suffix-derived POS override (a morphed word's part of speech from its suffix, not its root's own dictionary POS) | `Morph.c` (`SetPOS_FromSuffix`) | Ported (`lintalker/_morph.py`'s `pos_select_for_suffix`), verified (`test/test_synthesize_text.py::test_do_morph_pos_from_suffix`) |
-| Remaining `Morph.c` gaps | `Zap_POS` (unreachable -- only used by an alternate-pronunciation branch this port doesn't take) and `PlacePhrasing`'s SEP7/parenthesized-clause handling | Not ported (every other top-level `Morph.c` function is ported — see `docs/architecture.md`) |
+| Remaining `Morph.c` gap | `Zap_POS` (unreachable -- only used by an alternate-pronunciation branch this port doesn't take) | Not ported (every other top-level `Morph.c` function is ported — `PlacePhrasing`'s `inParen`/SEP7 aren't real gaps, neither is ever exercised by the C reference itself — see `docs/architecture.md`) |
 
 **What this means today:** `lintalker.api.synthesize_text(voice_dict, text)`
 synthesizes English text end-to-end, verified frame-for-frame bit-exact
@@ -65,8 +65,7 @@ themselves (`[[dlim...]]`) — applied at the start of the clause they
 appear in, not the exact phoneme position; see `docs/architecture.md`.
 Remaining known gaps: no number/abbreviation expansion, no
 `rate`/`rset`/`xtnd`/`char`/`mode`/`nmbr`/`slnc`/`sync` embedded
-commands, `Zap_POS` (unreachable) and `PlacePhrasing`'s SEP7/
-parenthesized-clause handling — see `docs/architecture.md` for
+commands, and `Zap_POS` (unreachable) — see `docs/architecture.md` for
 specifics. You can still synthesize from an
 already-built phoneme plan directly via
 `lintalker.api.synthesize_phonemes()`, and there's a lower-level
