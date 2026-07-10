@@ -43,13 +43,17 @@ copied.
 `github.com/dectalk/dectalk`, whose own licence terms must be read and recorded
 here before any of it lands.
 
-## SAM (Software Automatic Mouth) — planned, not yet present
+## SAM (Software Automatic Mouth) — `pyretrotts/sam/`
 
-Don't Ask Software, 1982. The intended source is `github.com/vidarh/SAM`, a C
+Don't Ask Software, 1982. The source is `github.com/vidarh/SAM`, a C
 reimplementation produced by translating the original 6502 assembler
-opcode-by-opcode.
+opcode-by-opcode. The Python port under `pyretrotts/sam/` is a bit-exact
+translation of that C, including its tables and its bug-for-bug quirks; a
+translation of a derivative work is itself a derivative work. Every file in that
+subpackage carries a header saying so.
 
-**Status: encumbered, and knowingly so.** That repository ships no LICENSE file.
+**Status: present, encumbered, and knowingly so.** That repository ships no
+LICENSE file.
 Its README states that the copyright holder is **SoftVoice, Inc.**, and that its
 author "cannot put my code under any specific open source software license."
 Being a translation of a disassembly makes it a derivative work of SoftVoice's
@@ -59,9 +63,10 @@ The age of the work and the state of the company do not change this. Copyright
 does not lapse on abandonment, and it does not lapse when a company dissolves —
 it is an asset that transfers, and it runs for decades yet.
 
-Any SAM port here is therefore:
+The SAM port here is therefore:
 
-- kept in its own subpackage, not mixed into the MIT-licensed core;
+- kept in its own subpackage (`pyretrotts/sam/`), not mixed into the
+  MIT-licensed core;
 - **not** covered by this project's MIT licence;
 - not published to PyPI or any other distribution channel without an explicit,
   separate decision to do so.
@@ -81,5 +86,5 @@ deliberately not included.
 | MacinTalk engine | Apple Computer | copyright retained, no grant |
 | DECtalk markup | DEC | interface only, nothing vendored |
 | DECtalk engine | Fonix/Force | not yet ported; terms unread |
-| SAM | SoftVoice, Inc. | not free; explicitly not MIT |
+| SAM engine (`pyretrotts/sam/`) | SoftVoice, Inc. | present; not free; explicitly not MIT |
 | Song scores | traditional | public domain |
