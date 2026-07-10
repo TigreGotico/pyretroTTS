@@ -32,8 +32,9 @@ build `phdraw`'s input) is not ported, so there is still no text-to-speech;
 | Phoneme frame drawer (`phdraw`) | `ph.py` | bit-exact vs C (10 voices) |
 | Target ROM tables (`p_us_rom_dectalk_1996m_43f.c`) | `targets.py` | read verbatim from `libtts_us.so` |
 | Target lookup (`us_gettar`, `p_us_st0.c`) | `settar.py` | bit-exact vs C (10 voices) |
-| Locus/burst/inherent-dur ROM | `targets_transitions.py` | read verbatim from `libtts_us.so` |
-| `phsettar` transition setup (`ph_setar.c`, `p_us_st0.c`, `ph_sttr2.c`) | `phsettar.py` | 99.58% of transition fields match C (10 voices); see below |
+| Locus/burst/inherent-dur ROM, `lineartilt`, `divtab` | `targets_transitions.py` | read verbatim from `libtts_us.so` |
+| `phsettar` transition setup (`ph_setar.c`, `p_us_st0.c`, `ph_sttr2.c`) | `phsettar.py` | bit-exact vs C (10 voices) |
+| `phdraw` per-frame state advance + `send_pars` | `ph.py` (`advance_frame`, `finalize_av`, `send_pars`) | bit-exact vs C (10 voices) |
 | `ph/` allophone selection / duration / F0 | — | **not ported** (Phase 5+) |
 | `cmd/` markup, `lts/` letter-to-sound | — | **not ported** (Phase 5+) |
 
@@ -347,36 +348,68 @@ earlier phases captured their inputs.
   `phsettar` against the instrumented C, for all ten voices over four utterances.
   The instrumented `ph_setar.c` dumps, per phone, the full sixteen-parameter
   `PARAMETER` state it writes; the port is replayed over the identical captured
-  stream, carrying state across phones. Result: **99.58% of the audio-relevant
-  transition fields match the C** (134945 / 135520 fields, 10 voices; every
-  `tarcur`/`durlin`/`deldip`/`tbacktr`/`tspesh`/`pspesh` and almost all
-  `ftran`/`dftran`). It is **not yet fully bit-exact** -- see the residual below.
-  Skipped when the instrumented binary is absent.
+  stream, carrying state across phones. Result: **every audio-relevant transition
+  field matches the C** (135520 / 135520 fields, 10 voices). Skipped when the
+  instrumented binary is absent.
 
-The instrumentation dumps `PARAMETER.ndip[0]`/`ndip[1]` as a raw pointer peek; the
-C leaves that pointer advanced past `durlin`/`deldip`, so on non-diphthong phones
-it reads whatever now sits at that offset in the shared `dipspec[]` buffer. Those
-two fields are not audio-relevant (the frame drawer consumes them only after a
-diphthong segment ends, where `durlin < durfon`) and are excluded from the 99.58%.
+The instrumentation dumps `PARAMETER.ndip[0]`/`ndip[1]` as a raw pointer peek. On
+the phone where a parameter is diphthongized they match the C exactly; on a later
+non-diphthong phone the C's pointer has been advanced further by `advance_frame`
+during the intervening frames, which the phone-by-phone replay does not run, so
+those peeks are excluded here and validated instead by the end-to-end frame loop.
+
+Four fidelity gaps were root-caused against the oracle to reach bit-exactness:
+rule 6's `tarnex` coarticulation used GERMAN-only branches (the US path is
+`arg2 = N10PRCNT; tarnex += mlsh1(tarend - tarnex, arg2)`); `getbegtar` gates
+`us_special_coartic` on `nfone & PFONT` where `nfone` is a phone index, so the
+call is dead there (and in `make_dip` for the non-first diphthong values),
+whereas `getendtar` applies it; and the backward AP boundary `PAP.tarend - 6` is
+nested inside `if (np == PAV)`, unreachable dead code.
+
+## What the phdraw frame loop and `send_pars` are
+
+`draw_frame` (Phase 2) is a pure per-frame function of the interpolation state.
+The C `phdraw` also **mutates** that state each frame, and two more stages sit
+between it and the vocal tract model. `ph.py` ports all three:
+
+- **`advance_frame`** (`ph_draw.c:345-731`) applies the per-frame state changes:
+  the diphthong-line step (`durlin`/`deldip`/`tarcur`/`dipcum` and the `ndip`
+  pointer into the shared `dipspec[]` buffer), `ftran -= dftran`,
+  `btran += dbtran`, the F2 vowel-vowel decays, and the breathy `breathyah`/
+  `breathytilt` ramps -- so many frames can be driven from one `phsettar` output.
+- **`finalize_av`** (`ph_draw.c:4344`, run before the compiled build's return at
+  4355, i.e. after the point the Phase-2 X-dump captures) raises the voicing
+  amplitude to `AV + max(0, (TILT >> 2) - 4)` for `AV > 3`.
+- **`send_pars`** (`ph_claus.c:694`) assembles the vocal-tract-model frame: it
+  delays every parameter except AV, TILT, and T0 by one frame, remaps TILT
+  through `LINEARTILT`, and primes on the first frame without emitting (so N drawn
+  frames yield N-1 synthesized frames).
+
+### Verification: the allophone -> PCM chain composes
+
+- **`test/test_dectalk_endtoend.py`** -- drives `phsettar -> advance_frame /
+  draw_frame -> finalize_av -> send_pars` over a captured allophone stream and
+  diffs the result against the exact frame the C ships to its vocal tract model
+  (`parambuff[1..20]`, dumped in `vtmiont.c`), for all ten voices over four
+  utterances. Result: **the ported front end reproduces the synthesizer input
+  bit-for-bit, 12310 / 12310 frames, 40/40 cases**. Only the F0 contour and phone
+  durations (Phase 5) are borrowed from the oracle. Running those frames through
+  `vtm.py` reproduces the oracle WAV sample-for-sample for the voices where the
+  vocal tract model itself is exact (see the vtm limitation below).
 
 ## Limitations
 
-- **`phsettar` is not yet fully bit-exact.** 0.42% of the audio-relevant
-  transition fields differ (575 / 135520). The residual is isolated to the
-  **backward-transition boundary value `bouval` on obstruents** (425 of the 575
-  are `dbtran`, i.e. the backward increment `mlsh1((bouval - tarend) << 3,
-  divtab[durtran])`), plus a few F3 coarticulation targets. Backward `durtran`
-  and `tbacktr` already match, so the gap is in `setloc`'s locus-based `bouval`
-  (the Python magnitudes run a few Hz short of the C); this is not yet root-caused.
-- **End-to-end `phsettar -> draw_frame -> vtm -> PCM` does not yet compose.** Two
-  gaps remain. First, `phsettar` is not fully bit-exact (above). Second, the
-  per-frame **state advance** the C `phdraw` performs (`ftran -= dftran`,
-  `btran += dbtran`, `dipcum`, `breathyah`/`breathytilt` ramps, the `tcum` clock)
-  is **not ported**: `ph.py`'s `draw_frame` is a pure per-frame function that
-  Phase 2 validated against re-captured frame state, so driving many frames from a
-  single `phsettar` output needs that advance loop. The allophone->PCM chain is
-  therefore not yet proven sample-for-sample; that proof is the first task once
-  the `bouval` residual and the frame-advance loop are closed.
+- **`vtm.py` (Phase 1) diverges on some speaker configs.** With a frame-exact
+  vocal-tract-model input (proven above for all ten voices), `synthesize_frames`
+  reproduces the oracle WAV sample-for-sample for Perfect Paul, Beautiful Betty,
+  Huge Harry, Doctor Dennis, and Rough Rita on some utterances, but diverges for
+  others (e.g. Frail Frank, Kit the Kid, Uppity Ursula, Whispering Wendy, Variable
+  Val). The divergence is localized (it appears mid-utterance and recovers) and
+  depends on the `SpeakerState`, so it is a `vtm.py` code path the Phase-1
+  utterances did not exercise -- an in-frame parameter handling the C
+  `speech_waveform_generator` applies that the port does not. This is the sole
+  remaining blocker to a fully sample-exact allophone->PCM chain; it is in the
+  synthesizer, not the ported front end.
 - **`divtab` out-of-range.** `phsettar` indexes `divtab` (50 entries) by
   transition duration; the forward/backward rules clamp that duration to
   `NF130MS` (20 frames), so the index stays in range. For any phone that reached a
