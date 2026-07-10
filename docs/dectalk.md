@@ -20,9 +20,12 @@ Phase 1 (the vocal tract model, `vtm/`) is **ported and bit-exact**. The whole
 (`phclause.py`) runs `phsort -> phalloph -> us_phtiming -> phinton -> per-frame
 loop -> vtm` entirely in Python and reproduces the oracle WAV **sample for sample
 for all ten voices** from a phoneme+stress+sentence-structure `symbols[]` stream
-(the `lts/`/`cmd/` output). What remains for full text-to-speech is that front
-layer -- the `lts/` letter-to-sound rule engine, numbers, homographs, and the
-other languages -- which turns text into that `symbols[]` stream.
+(the `lts/`/`cmd/` output). The `lts/` letter-to-sound rule engine that pronounces
+out-of-dictionary words is now ported too (`lts_rules.py`); a lone dictionary or
+rule-driven word composes text -> phonemes -> PCM sample-exact vs the oracle.
+What remains for full text-to-speech is multi-word/clause sentence framing plus
+numbers, abbreviations, homographs, the vowelless-word speller, and the other
+languages.
 
 | Piece | Module | State |
 |---|---|---|
@@ -44,7 +47,10 @@ other languages -- which turns text into that `symbols[]` stream.
 | US main-dictionary load + lookup (`ls_dict.c`) | `dictionary.py` | payload bit-exact for unique-grapheme words |
 | `[: ]` command tokenizer (voice/rate/mode) | `cmd.py` | tokenization + control state |
 | `ph/` clause orchestrator (`phclause`) | `phclause.py` | **phoneme -> PCM sample-exact vs C (10 voices)** |
-| `lts/` rules, numbers, abbreviations, homograph POS | — | **not ported** |
+| `lts/` letter-to-sound rules (`ls_rule*`, `ls_adju*`, `l_us_ad1`) | `lts_rules.py` | **pre-`ph/` stream exact vs oracle for out-of-dictionary alphabetic words (188/189 rule-eligible)** |
+| `lts/` rule/prefix/feature tables (`acna_lswtab`, `acna_lsbtab`, `feats`, `pfeat`, `preftab`, `ls_fold`) | `lts_rules_data.py` | read verbatim from `libtts_us.so` |
+| text -> phonemes -> PCM wiring (lone word) | `text_us.py` | **sample-exact vs oracle WAV (dict + rule, 10 voices)** |
+| numbers, abbreviations, homograph POS, word speller | — | **not ported** |
 
 ## The oracle
 
@@ -498,8 +504,6 @@ capture per input suffices.
 
 ### What is stubbed (US)
 
-- **Letter-to-sound rules.** Out-of-dictionary words (`ls_rule*.c`, `l_us_*`)
-  are a dictionary miss here; no phonemes are produced for them.
 - **Number and abbreviation expansion.** `123 -> "one hundred twenty three"`,
   `Dr. -> "doctor"` etc. (`lts/`) are not ported; the oracle captures show the
   expected expansions for the future work.
@@ -510,16 +514,71 @@ capture per input suffices.
   voice/rate/mode but does not decode phonetic input or resolve these.
 - **Other languages** (uk/fr/gr/sp/la). US only.
 
-### Full text-to-PCM
+## The letter-to-sound rule engine (`lts_rules.py`)
 
-The whole `ph/` chain from a phoneme+stress+sentstruc `symbols[]` stream down to
-PCM is now composed and sample-exact (`phclause.py`; see *The phoneme -> PCM
-chain composes*, below). What remains above it is this text front layer -- the
-`lts/` letter-to-sound rule engine, number/abbreviation expansion, and homograph
-disambiguation -- which turns text into that `symbols[]` stream. The dictionary
-payload is proven against the oracle phoneme stream; the LTS rules, numbers, and
-homographs are unported, so text -> `symbols[]` for out-of-dictionary words,
-numbers, and homographs still awaits Phase 6.
+When a word misses the main dictionary, the compiled US front end pronounces it
+with the letter-to-sound rules -- the ~117k-LOC bulk of `lts/`, almost all of it
+rule **data**. `lts_rules.py` ports the interpreter and post-processing for the
+compiled ACNA `ENGLISH_US` path:
+
+- **`ls_rule_rule_match` / `ls_rule_env_match`** (`ls_rule.c`, `l_us_ru1.c`): the
+  grapheme alphabet build (`ls_rule_add_graph`, the `gu`/`qu` merge, the `y`/sib/
+  gem/syllable feature rules), the right-to-left largest-left-block rule match
+  over the compiled rule dictionary, and the recursive environment matcher
+  (`GRANGE`, `GDISJ`, `GFEAT`, morpheme/word boundaries). Rule entries carry an
+  ACNA language tag; ordinary words run tag 0 (the default English rules), so the
+  name-language identifier (`lsa_us.c`) is not needed.
+- **`ls_adju_allo1` / `ls_adju_sylables` / geminate deletion / `ls_adju_stress`
+  / `ls_adju_allo2`** (`ls_adju.c`, `l_us_ad1.c`): plural/`-ed` allophony,
+  syllabification, geminate-pair deletion, the suffix/prefix/best-default stress
+  placement (`preftab` stress-refusing prefixes, the Nessly and camera rules),
+  and the final allophonic sweep (vowel reduction, `l`/`r` velarization,
+  palatalization).
+- **`ls_rule_lts_out`**: assembles the phoneme+stress+boundary send stream.
+
+The rule tables (`acna_lswtab`, `acna_lsbtab`, the grapheme feature set `feats`,
+the phoneme feature set `pfeat`, the prefix table `preftab`, the case-fold
+`ls_fold`) are read verbatim from the compiled `libtts_us.so` symbols by
+`tools/dump_dectalk_lts_tables.py` into `lts_rules_data.py` -- guaranteed
+identical to the reference, not retyped.
+
+### Verification
+
+The engine's output is captured at the **pre-`ph/` boundary** -- the raw `ph`
+argument to `ls_util_send_phone`, instrumented in the oracle -- because the
+public `LOG_PHONEMES` output folds in downstream `ph/` reductions (function-word
+reduction, allophone substitution) that pollute the rule engine's own emission.
+`test/dectalk_lts_rules_golden.json` is the committed real capture over 194
+confirmed dictionary-miss words (nonsense words, names, technical terms), one
+oracle process per word.
+
+`test/test_dectalk_lts_rules.py` diffs `pronounce()` against that capture (runs
+in CI without the oracle): **188 / 194 exact**. Five of the six differences are
+vowelless or non-ASCII words (`cwm`, `cwtch`, `jwt`, `tsktsk`, ...) that the
+oracle routes to its **speller** (letter-name code 111) -- a decision made in the
+word-reading front end (`ls_task`), not the rule engine. Excluding those,
+**188 / 189 rule-eligible words are exact**; the sole residual is `memoize`,
+where the oracle splits `oi` as `o.ize` while the interpreter takes the `OY`
+diphthong rule (correct for `void`, `boid`, ...).
+
+### Full text-to-PCM (lone word)
+
+`text_us.word_to_pcm` composes the whole US text-to-speech path for a single word
+spoken with no markup: dictionary lookup or, on a miss, the rule engine, then the
+`cmd/phsort` sentence framing for a lone statement word
+(`[7680, 111, <font-shifted phonemes / raw prosody>, 116]`), then
+`phclause.speak_phonemes` -> `vtm`. Diffed against the oracle WAV this is
+**sample-exact** for both dictionary and out-of-dictionary words across all ten
+voices (`test/test_dectalk_lts_rules.py`, oracle-gated:
+10/10 OOD words at voice 0, 111 612/111 612 samples; verified dict+rule across
+voices).
+
+What remains for arbitrary running text is the **multi-word / multi-clause
+framing** -- the inter-word markers, comma/question clause splitting, and the
+word-reading front end (which also owns the vowelless-word speller, numbers,
+abbreviations, and homograph part-of-speech) -- none of which is ported. Lone
+alphabetic words (dictionary or rule) are full text-to-speech today; sentences
+are not.
 
 ## The phoneme -> PCM chain composes (sample-exact, 10 voices)
 
