@@ -19,16 +19,44 @@ the C reference's own compiled behavior (they never execute there either).
 """
 from __future__ import annotations
 
-from ._consts import (
-    kSilenceTypeField, kSilenceTypeShift, kStressField, kSyllableTypeField,
-    kVowelF, kPitchRise, kPitchFall, kPitchRise1, kPitchFall1,
-    kPrimOrEmphStress, kEmphaticStress, kTerm_End, kVerb_End,
-    kPitchStress_Flg, kPitchRiseFall_Flg, kPitchBoundry_Flg,
-    kPhraseReset, kPitchRiseFall1_Flg, kFrameTime, kPhonBuf_Red_Zone,
-    kHZ_4, kHZ_6, kHZ_7, kHZ_9, kHZ_10, kHZ_12, kHZ_14, kHZ_18, kHZ_20,
-    kHZ_25, kHZ_28,
+from ._backend import (
+    e_get_phon,
+    e_get_phon_ctrl,
 )
-from ._phonemes import _Comma_, _Period_, _Quest_, _Exclam_
+from ._consts import (
+    kEmphaticStress,
+    kFrameTime,
+    kHZ_4,
+    kHZ_6,
+    kHZ_7,
+    kHZ_9,
+    kHZ_10,
+    kHZ_12,
+    kHZ_14,
+    kHZ_18,
+    kHZ_20,
+    kHZ_25,
+    kHZ_28,
+    kPhonBuf_Red_Zone,
+    kPhraseReset,
+    kPitchBoundry_Flg,
+    kPitchFall,
+    kPitchFall1,
+    kPitchRise,
+    kPitchRise1,
+    kPitchRiseFall1_Flg,
+    kPitchRiseFall_Flg,
+    kPitchStress_Flg,
+    kPrimOrEmphStress,
+    kSilenceTypeField,
+    kSilenceTypeShift,
+    kStressField,
+    kSyllableTypeField,
+    kTerm_End,
+    kVerb_End,
+    kVowelF,
+)
+from ._phonemes import _Comma_, _Exclam_, _Period_, _Quest_
 
 
 def store_f0_and_time(vv, pitch: int, time: int, flags: int) -> None:
@@ -48,7 +76,6 @@ def store_f0_and_time(vv, pitch: int, time: int, flags: int) -> None:
 
 def fill_pitch_buf(vv) -> None:
     """Port of `Fill_Pitch_Buf` (`BackEnd.c:365-671`)."""
-    from ._backend import e_get_phon, e_get_phon_ctrl
 
     pitch_is_fallen = True
     vv.pitchBuf_In_Index = 0

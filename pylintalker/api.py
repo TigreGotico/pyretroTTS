@@ -8,20 +8,27 @@ phrase-boundary detection, no embedded commands).
 """
 from __future__ import annotations
 
-import struct
 import wave
-from typing import Iterable, Optional
+from collections.abc import Iterable
 
+from ._assembly import collect_fe_tokens
 from ._backend import (
     VoiceVar,
     calc_ramp_steps,
     e_fill_next_frame,
+    init_voice,
     say_frame,
     start_new_pitch_clause,
     start_talk,
 )
-from ._backend import init_voice
 from ._consts import SamplingRate, kNoMarker, kSpeakLastFrame, kSpeakNewPhon
+from ._embeddedcmd import do_ctrl, scan_bracket_commands
+from ._engine import e_set_tempo
+from ._frontend import split_clauses
+from ._moduration import mod_duration
+from ._phonbuf2 import fill_phon_buf_2, insert_closure_release
+from ._pitchbuf import fill_pitch_buf
+from ._pitchcontour import pitch_raise_and_fall
 
 
 def new_voice(voice_dict: dict) -> VoiceVar:
@@ -48,7 +55,6 @@ def new_voice(voice_dict: dict) -> VoiceVar:
     # (BackEnd.c:4364-4368) to populate Note_Times[], which Mod_Duration's
     # singScript/singing branches need for note-driven voices (PipeOrgan,
     # Cellos, GoodNews, BadNews). Harmless no-op for non-singing voices.
-    from ._engine import e_set_tempo
     e_set_tempo(vv, vv.tempo)
 
     # InsertSample (Say.c:1471-1499): for kUseSyncSnd voices (Bells/
@@ -95,7 +101,7 @@ def synthesize_phonemes(
     pitch_freq: Iterable[int] = (),
     pitch_time: Iterable[int] = (),
     pitch_flags: Iterable[int] = (),
-    vv: Optional[VoiceVar] = None,
+    vv: VoiceVar | None = None,
     end_punctuation: int = 0,
 ) -> bytes:
     """Synthesize a phoneme plan into raw 16-bit PCM audio (little-endian, mono).
@@ -130,13 +136,13 @@ def synthesize_phonemes(
         vv = new_voice(voice_dict)
     vv.end_Punctuation = end_punctuation
 
-    for i, (p, c, d) in enumerate(zip(phonemes, ctrls, durs)):
+    for i, (p, c, d) in enumerate(zip(phonemes, ctrls, durs, strict=True)):
         vv.phon_Buf_2[i] = p
         vv.phon_Ctrl_Buf_2[i] = c
         vv.dur_Buf[i] = d
     vv.phonBuf_2_In_Index = len(phonemes)
 
-    for i, (f, t, fl) in enumerate(zip(pitch_freq, pitch_time, pitch_flags)):
+    for i, (f, t, fl) in enumerate(zip(pitch_freq, pitch_time, pitch_flags, strict=True)):
         vv.pitch_Buf_Freq[i] = f
         vv.pitch_Buf_Time[i] = t
         vv.pitch_Buf_Flags[i] = fl
@@ -164,7 +170,7 @@ def pcm_to_wav(pcm: bytes, path: str, sample_rate: int = SamplingRate) -> str:
     return path
 
 
-def build_phoneme_plan(voice_dict: dict, text: str, vv: Optional[VoiceVar] = None):
+def build_phoneme_plan(voice_dict: dict, text: str, vv: VoiceVar | None = None):
     """Build a `(phonemes, ctrls, durs, pitch_freq, pitch_time, pitch_flags,
     end_punctuation)` plan from English text, matching `ParseSentence`'s
     real pipeline order:
@@ -193,17 +199,10 @@ def build_phoneme_plan(voice_dict: dict, text: str, vv: Optional[VoiceVar] = Non
     the start of every call (`BackEnd.c:4167-4178`), whether or not `vv`
     is fresh.
     """
-    from ._assembly import collect_fe_tokens
-    from ._phonbuf2 import fill_phon_buf_2, insert_closure_release
-    from ._pitchcontour import pitch_raise_and_fall
-    from ._moduration import mod_duration
-    from ._pitchbuf import fill_pitch_buf
-
     if vv is None:
         vv = new_voice(voice_dict)
     _reset_for_clause(vv)
 
-    from ._embeddedcmd import scan_bracket_commands, do_ctrl
     (
         text, _bracket_cmds, _emphasis_overrides, _silence_overrides,
         _pos_overrides, _rate_overrides, _final_rate, _nmbr_overrides,
@@ -302,8 +301,6 @@ def synthesize_text(voice_dict: dict, text: str) -> bytes:
     that previously caused an audible glitch on singing voices (see
     docs/architecture.md's former "Known gaps" entry for that bug).
     """
-    from ._frontend import split_clauses
-
     clauses = split_clauses(text)
     if not clauses:
         clauses = [text]

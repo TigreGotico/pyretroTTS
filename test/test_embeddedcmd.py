@@ -38,15 +38,25 @@ Also verifies (regression guard) that test_voices.py's existing 68 cases
 never hit this path: vv.ctrlCount stays 0 for all of them, since no shipped
 voice/text data queues any embedded commands.
 """
-import sys, os
+import os
+import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from pylintalker._backend import VoiceVar
-from pylintalker._embeddedcmd import do_ctrl
 from pylintalker._consts import (
-    C_absMod, C_absPitch, C_relPitch, C_absVol, C_relVol, C_reset, C_voice,
-    kMIDI_50HZ, kOneTwelfth, kPointFive,
+    C_absMod,
+    C_absPitch,
+    C_absVol,
+    C_relPitch,
+    C_relVol,
+    C_reset,
+    C_voice,
+    kMIDI_50HZ,
+    kOneTwelfth,
+    kPointFive,
 )
+from pylintalker._embeddedcmd import do_ctrl
 
 
 def _midi_to_pitch(midi_note):
@@ -151,7 +161,7 @@ def test_reset_raises_not_implemented():
     _queue(vv, (C_reset, 0))
     try:
         do_ctrl(vv)
-        assert False, "expected NotImplementedError"
+        raise AssertionError("expected NotImplementedError")
     except NotImplementedError:
         pass
 
@@ -238,8 +248,8 @@ def test_scan_bracket_commands_applied_end_to_end_via_build_phoneme_plan():
     bracketed pbas command actually changes vv.voiceNaturalPitch, and
     the resulting phoneme plan is the same length as the equivalent
     plain text (the command itself contributes no phonemes)."""
-    from pylintalker.api import build_phoneme_plan, new_voice
     from pylintalker._data import Fred_Voice
+    from pylintalker.api import build_phoneme_plan, new_voice
 
     vv_plain = new_voice(Fred_Voice)
     plan_plain = build_phoneme_plan(Fred_Voice, "hello", vv_plain)
@@ -301,7 +311,7 @@ def test_silence_override_inserts_real_sil_with_duration():
     assert len(sa_slnc.phon_buf) == len(sa_plain.phon_buf) + 1
 
     sil_indices = [
-        i for i, (p, c) in enumerate(zip(sa_slnc.phon_buf, sa_slnc.ctrl_buf))
+        i for i, (p, c) in enumerate(zip(sa_slnc.phon_buf, sa_slnc.ctrl_buf, strict=True))
         if p == _SIL_ and (c & kSilenceDuration)
     ]
     assert len(sil_indices) == 1
@@ -312,17 +322,17 @@ def test_slnc_applied_end_to_end_via_build_phoneme_plan():
     """Regression test for the full pipeline: EC_slnc's duration
     (frame count = ms // kFrameTime) ends up in the final dur_Buf at
     the inserted _SIL_'s position."""
-    from pylintalker.api import build_phoneme_plan, new_voice
+    from pylintalker._consts import kFrameTime, kSilenceDuration
     from pylintalker._data import Fred_Voice
-    from pylintalker._consts import kSilenceDuration, kFrameTime
     from pylintalker._phonemes import _SIL_
+    from pylintalker.api import build_phoneme_plan, new_voice
 
     vv = new_voice(Fred_Voice)
     phon, ctrl, dur, pf, pt, pfl, endp = build_phoneme_plan(
         Fred_Voice, "hello [[slnc500]]world", vv
     )
     hits = [
-        i for i, (p, c) in enumerate(zip(phon, ctrl))
+        i for i, (p, c) in enumerate(zip(phon, ctrl, strict=True))
         if p == _SIL_ and (c & kSilenceDuration)
     ]
     assert len(hits) == 1
@@ -352,15 +362,15 @@ def test_scan_bracket_commands_sync():
     has no case for C_sync at all (matching the real DoCtrl switch's
     own default:break for it -- a genuine no-op in the reference too),
     so applying it must not raise or change any state."""
-    from pylintalker._embeddedcmd import scan_bracket_commands
     from pylintalker._consts import C_sync
+    from pylintalker._embeddedcmd import scan_bracket_commands
 
     clean, cmds, emph, silences, _pos, _rates, _final_rate, _nmbr, _rawphon, _char = scan_bracket_commands("[[sync12345]]hello")
     assert clean == "hello"
     assert cmds == [(0, C_sync, 12345)]
 
-    from pylintalker.api import build_phoneme_plan, new_voice
     from pylintalker._data import Fred_Voice
+    from pylintalker.api import build_phoneme_plan, new_voice
 
     vv = new_voice(Fred_Voice)
     build_phoneme_plan(Fred_Voice, "[[sync12345]]hello", vv)  # must not raise
@@ -370,8 +380,8 @@ def test_scan_bracket_commands_xtnd_wpos():
     """Regression test for Parse_xtnd_Command's wpos selector
     (EmbeddedCmd.c:895-921): the only selector the real dispatch
     implements, setting the next word's POS directly (SetPOStoVal)."""
-    from pylintalker._embeddedcmd import scan_bracket_commands
     from pylintalker._consts import kVerb
+    from pylintalker._embeddedcmd import scan_bracket_commands
 
     clean, cmds, emph, silences, pos, _rates, _final_rate, _nmbr, _rawphon, _char = scan_bracket_commands(
         "[[xtnd mtk3 wpos 1]]record it"
@@ -409,7 +419,7 @@ def test_init_rate_params_is_fully_portable():
     dependency (a previous pass of several docstrings incorrectly
     claimed it needed something unported)."""
     from pylintalker._backend import VoiceVar, init_rate_params
-    from pylintalker._consts import kNormal_Speech_Rate, kMinRate
+    from pylintalker._consts import kMinRate, kNormal_Speech_Rate
 
     vv = VoiceVar()
     vv.speech_Rate = kNormal_Speech_Rate
@@ -427,9 +437,9 @@ def test_e_set_speech_rate_no_longer_raises():
     raise NotImplementedError, based on the same incorrect assumption
     about Init_Rate_Params -- it now actually changes vv.speech_Rate/
     vv.rate_Ratio."""
-    from pylintalker.api import new_voice
-    from pylintalker._engine import e_set_speech_rate
     from pylintalker._data import Fred_Voice
+    from pylintalker._engine import e_set_speech_rate
+    from pylintalker.api import new_voice
 
     vv = new_voice(Fred_Voice)
     before = vv.rate_Ratio
@@ -443,8 +453,8 @@ def test_scan_bracket_commands_rate():
     (EmbeddedCmd.c:691-720): absolute and relative rate changes,
     positioned at the exact word index (unlike pbas/pmod/volm, which
     apply at clause start)."""
+    from pylintalker._consts import kMinRate, kNormal_Speech_Rate
     from pylintalker._embeddedcmd import scan_bracket_commands
-    from pylintalker._consts import kNormal_Speech_Rate, kMinRate
 
     clean, cmds, emph, silences, pos, rates, final_rate, _nmbr, _rawphon, _char = scan_bracket_commands(
         "hello [[rate240]]world"
@@ -475,8 +485,8 @@ def test_rate_override_applied_end_to_end_via_build_phoneme_plan():
     """Regression test for the full pipeline: EC_rate's speaking-rate
     change actually produces shorter durations for a faster rate, and
     persists onto vv.speech_Rate for subsequent clauses."""
-    from pylintalker.api import build_phoneme_plan, new_voice
     from pylintalker._data import Fred_Voice
+    from pylintalker.api import build_phoneme_plan, new_voice
 
     vv_plain = new_voice(Fred_Voice)
     plan_plain = build_phoneme_plan(Fred_Voice, "hello world", vv_plain)
@@ -541,8 +551,8 @@ def test_mode_phon_reaches_word_token_end_to_end():
 
 
 def test_mode_phon_applied_end_to_end_via_build_phoneme_plan_does_not_crash():
-    from pylintalker.api import build_phoneme_plan, new_voice
     from pylintalker._data import Fred_Voice
+    from pylintalker.api import build_phoneme_plan, new_voice
 
     vv = new_voice(Fred_Voice)
     plan = build_phoneme_plan(Fred_Voice, "hello [[mode PHON]]_1AAt[[mode TEXT]] world", vv)
@@ -571,8 +581,8 @@ def test_char_spelling_reaches_word_token_end_to_end():
 
 
 def test_char_mode_latches_until_switched_back():
-    from pylintalker._embeddedcmd import scan_bracket_commands
     from pylintalker._assembly import collect_fe_tokens
+    from pylintalker._embeddedcmd import scan_bracket_commands
     from pylintalker._letters import spell_word
 
     clean, _cmds, _emph, _sil, _pos, _rates, _final_rate, _nmbr, _rawphon, char = scan_bracket_commands(
@@ -585,8 +595,8 @@ def test_char_mode_latches_until_switched_back():
 
 
 def test_char_mode_applied_end_to_end_via_build_phoneme_plan_does_not_crash():
-    from pylintalker.api import build_phoneme_plan, new_voice
     from pylintalker._data import Fred_Voice
+    from pylintalker.api import build_phoneme_plan, new_voice
 
     vv = new_voice(Fred_Voice)
     plan = build_phoneme_plan(Fred_Voice, "[[char LTRL]]cab[[char NORM]] home", vv)

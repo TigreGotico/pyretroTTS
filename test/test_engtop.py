@@ -18,7 +18,9 @@ tokenizer here, so multi-word input, punctuation-bearing tokens, numbers,
 and english_lex dictionary words are all out of scope (Morph.c/FrontEnd.c
 are not ported).
 """
-import sys, os
+import os
+import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from pylintalker._engtop import engtop

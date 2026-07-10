@@ -5,10 +5,205 @@ Bit-exact port of Say.c + formantSynth.c synthesis pipeline.
 Fixed-point arithmetic (kPrecision=13, kOnePtOh=0x2000).
 """
 from __future__ import annotations
-from typing import Optional
-from ._consts import *
-from ._phonemes import *
-from ._data import *
+
+from ._consts import (
+    C_V_type,
+    V_C_type,
+    k1pct,
+    k100percent,
+    kAB,
+    kAF,
+    kAffricateF,
+    kAlveolarF,
+    kAmpStepRes,
+    kAp2,
+    kAp3,
+    kAp4,
+    kAp5,
+    kAp6,
+    kAV,
+    kBackR,
+    kBuf1,
+    kBW1,
+    kBW2,
+    kBW3,
+    kBWType,
+    kConsonantR,
+    kCQsize,
+    kDentalF,
+    kF1,
+    kF2,
+    kF3,
+    kFNZ,
+    kFNZType,
+    kFormantSynth,
+    kFrame1,
+    kFrame2,
+    kFrameTime,
+    kFreqType,
+    kFrontF,
+    kFrontR,
+    kGStopF,
+    kHZ_7,
+    kHZ_12,
+    kIsStressed,
+    kLiqGlide2F,
+    kLiqGlideF,
+    kLowVibrato,
+    kMaleTbls,
+    kMaxBandWidth,
+    kMaxMarkers,
+    kMaxNotes,
+    kMaxRamps,
+    kMaxTap,
+    kMid_Syllable_In_Word,
+    kMiddleR,
+    kMIDI_50HZ,
+    kMinRate,
+    kNasalF,
+    kNeverHappens,
+    kNoiseGain,
+    kNoiseLen,
+    kNoMarker,
+    kNormal_Speech_Rate,
+    kNoValue,
+    kNumOfBlocks,
+    kNumOfTaps,
+    kOneHalf,
+    kOnePtOh,
+    kOneTwelfth,
+    kPalatalF,
+    kPhonBufSize,
+    kPhraseReset,
+    kPitchRiseFall1_Flg,
+    kPitchRiseFall_Flg,
+    kPitchStress_Flg,
+    kPlosFricF,
+    kPlosive_Release,
+    kPlosiveF,
+    kPointFive,
+    kPrecision,
+    kPrep_End,
+    kPrimOrEmphStress,
+    kResetDecline,
+    kResonAmpType,
+    kRoundR,
+    kSampBufGroup,
+    kSampFrameLen,
+    kSampleMarker,
+    kSilenceDuration,
+    kSilenceTypeField,
+    kSizeOf1xTbl,
+    kSonorant1F,
+    kSonorantF,
+    kSourceAmpType,
+    kSpeakDone,
+    kSpeakLastFrame,
+    kSpeakNewPhon,
+    kSpeakPhon,
+    kStepSizeRes,
+    kStopF,
+    kStressField,
+    kSyllable_Start,
+    kSyllableTypeField,
+    kTap4,
+    kTap5,
+    kTap6,
+    kTap8,
+    kTerm_End,
+    kUseHarm,
+    kUseSnd,
+    kVoicedF,
+    kVowel1F,
+    kVowelF,
+    kWord_End,
+    kWord_Start,
+    kYGlideEndF,
+    kYGlideStartF,
+    pct,
+)
+from ._data import (
+    Back_Loci_Tbl,
+    BandNoise,
+    BcoeffTbl,
+    BoundryDur,
+    BurstDurTbl,
+    CcoeffTbl,
+    CosTbl,
+    CtrlBlockTypeTbl,
+    DefaultTargTbl,
+    ExpOf2Tbl,
+    Female_Loci_Tbl,
+    Female_NoiseAmpTbl,
+    FemaleEnvTbl,
+    Front_Loci_Tbl,
+    HPNoise,
+    LogToLin,
+    Male_Loci_Tbl,
+    Male_NoiseAmpTbl,
+    MaleEnvTbl,
+    MaxDurTbl,
+    Mid_Loci_Tbl,
+    MinDurTbl,
+    NoiseIndexTbl,
+    NoiseWave,
+    OctFreqTbl,
+    One_Over_X_Tbl,
+    PhonFlags2,
+    Rank_BKWD_Tbl,
+    Rank_FWD_Tbl,
+    SineWave,
+    SineWave15,
+    TopOctave,
+    avVolTblF,
+    avVolTblM,
+    b1FreqTblF,
+    b1FreqTblM,
+    b2FreqTblF,
+    b2FreqTblM,
+    b3FreqTblF,
+    b3FreqTblM,
+    f1FreqTblF,
+    f1FreqTblM,
+    f2FreqTblF,
+    f2FreqTblM,
+    f3FreqTblF,
+    f3FreqTblM,
+    logOf2Tbl,
+    phonPitchTbl,
+)
+from ._phonemes import (
+    _AY_,
+    _DD_,
+    _DH_,
+    _DX_,
+    _EN_,
+    _ER_,
+    _JH_,
+    _LX_,
+    _OY_,
+    _QX_,
+    _SH_,
+    _SIL_,
+    _TH_,
+    _TX_,
+    _UW_,
+    _YU_,
+    _ZH_,
+    _Comma_,
+    _f_,
+    _h_,
+    _l_,
+    _m_,
+    _n_,
+    _p_,
+    _Quest_,
+    _r_,
+    _s_,
+    _v_,
+    _w_,
+    _z_,
+)
 
 # ---------------------------------------------------------------------------
 # Fixed-point math helpers (mirrors C macros)
@@ -55,9 +250,7 @@ def rshort(x: int) -> int:
 
 
 def clip14(x: int) -> int:
-    if x > 8191: return 8191
-    if x < -8191: return -8191
-    return x
+    return max(-8191, min(8191, x))
 
 # ---------------------------------------------------------------------------
 # Frame — per-frame synthesis parameters
@@ -639,7 +832,6 @@ def init_say(vv: VoiceVar):
     zz.lastRevbSample = 0
 
     # Init reverb
-    scale = zz.reverbDelay
     zz.tapBuffer[0] = (kTap4 * zz.reverbDelay) >> 16
     zz.tapBuffer[1] = (kTap5 * zz.reverbDelay) >> 16
     zz.tapBuffer[2] = (kTap6 * zz.reverbDelay) >> 16
@@ -664,7 +856,6 @@ def say_frame(vv: VoiceVar) -> int:
     zz: FormantVar = vv.synthVars
 
     # Local copies (mirrors C for speed + bit-exactness)
-    local_bit16 = vv.bit16_Sound
     local_sync_marker = vv.sync_On_Marker
     local_VP_pitchRange = vv.VP_pitchRange
     local_VP_baselinePitch = vv.VP_baselinePitch
@@ -1384,7 +1575,7 @@ def init_voice(vv: VoiceVar, vd: dict):
     vv.tempo = vd.get('tempo', 120)
 
 
-def _inv_dft(zz: FormantVar, vWave: list, vWave1: Optional[list] = None,
+def _inv_dft(zz: FormantVar, vWave: list, vWave1: list | None = None,
              voice_wave_gain: int = 0x8000):
     """Synthesize voice waveform from harmonic coefficients (C InvDFT port)."""
     SINE = zz.SineWave15Ptr
@@ -1638,14 +1829,12 @@ def adjust_colored_target(vv: VoiceVar, index: int, entryCount: int) -> int:
 
 def get_target(vv: VoiceVar, index: int) -> int:
     zz: FormantVar = vv.synthVars
-    cb = zz.controlBlockArray[zz.cur_ControlBlk_Index]
     cur_ControlBlk_Type = zz.CtrlBlockTypeTbl[zz.cur_ControlBlk_Index]
 
     cur_phon = e_get_phon(vv, index)
     cur_Flags = vv.phonFlags2[cur_phon]
     cur_PhonCtrl = vv.phon_Ctrl_Buf_2[index]
     next_phon = e_get_phon(vv, index + 1)
-    next_Flags = vv.phonFlags2[next_phon]
     prev_phon = e_get_phon(vv, index - 1)
     prev_Flags = vv.phonFlags2[prev_phon]
 
@@ -2536,7 +2725,6 @@ def interpolate_pitch(vv: VoiceVar):
             vv.phon_Dur_Delay = 0
 
             cur_Phon = e_get_phon(vv, vv.phon_Index_Targ)
-            cur_Ctrl = e_get_phon_ctrl(vv, vv.phon_Index_Targ)
             cur_Flags = vv.phonFlags2[cur_Phon]
             next_Phon = e_get_phon(vv, vv.phon_Index_Targ + 1)
             next_Flags = vv.phonFlags2[next_Phon]
@@ -2715,14 +2903,10 @@ def save_frame(vv: VoiceVar):
 
     frameBuf.FNZ = e_hz_to_pitch(vv, zz.controlData[kFNZ])
 
-    if zz.controlData[kAp2] < 0: zz.controlData[kAp2] = 0
-    if zz.controlData[kAp3] < 0: zz.controlData[kAp3] = 0
-    if zz.controlData[kAp4] < 0: zz.controlData[kAp4] = 0
-    if zz.controlData[kAp5] < 0: zz.controlData[kAp5] = 0
-    if zz.controlData[kAp6] < 0: zz.controlData[kAp6] = 0
-    if zz.controlData[kAB] < 0: zz.controlData[kAB] = 0
-    if zz.controlData[kAV] < 0: zz.controlData[kAV] = 0
-    if zz.controlData[kAF] < 0: zz.controlData[kAF] = 0
+    # Amplitude controls are never negative going into the filter bank.
+    for amp in (kAp2, kAp3, kAp4, kAp5, kAp6, kAB, kAV, kAF):
+        if zz.controlData[amp] < 0:
+            zz.controlData[amp] = 0
 
     frameBuf.Av = e_log_to_lin(vv, zz.controlData[kAV])
     frameBuf.Af = e_log_to_lin(vv, zz.controlData[kAF])
@@ -2853,8 +3037,10 @@ def start_new_phon(vv: VoiceVar):
     vv.ctrlCount = vv.user_Cmd_Buf2[vv.cur_PhonBuf_Index_CF]
 
     if vv.ctrlCount:
-        from ._embeddedcmd import do_ctrl  # local import: avoids a module
-        # cycle since _embeddedcmd.py imports helpers from this module
+        # Deferred: _embeddedcmd imports set_volume/e_midi_to_pitch from this
+        # module, so importing it at top level would be circular. This is the
+        # only import cycle in the package.
+        from ._embeddedcmd import do_ctrl
         do_ctrl(vv)
 
     if vv.sync_On_Marker:

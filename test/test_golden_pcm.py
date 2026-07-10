@@ -5,7 +5,6 @@ frontend feature. Unlike `test_voices.py` this needs no compiled C reference,
 so it runs in CI -- see `golden.py` for how the digests relate to the C engine.
 """
 import pytest
-
 from golden import TEXTS, VOICES, digest, load
 
 GOLDENS = load()

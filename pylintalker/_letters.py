@@ -38,9 +38,33 @@ during this investigation.
 from __future__ import annotations
 
 from ._phonemes import (
-    _EY_, _b_, _IY_, _s_, _d_, _EH_, _f_, _JH_, _CH_, _AY_, _k_,
-    _LX_, _m_, _n_, _OW_, _p_, _YU_, _AR_, _t_, _v_, _AH_, _EL_, _y_,
-    _UW_, _w_, _z_,
+    _AH_,
+    _AR_,
+    _AY_,
+    _CH_,
+    _EH_,
+    _EL_,
+    _EY_,
+    _IY_,
+    _JH_,
+    _LX_,
+    _OW_,
+    _UW_,
+    _YU_,
+    _b_,
+    _d_,
+    _f_,
+    _k_,
+    _m_,
+    _n_,
+    _p_,
+    _s_,
+    _t_,
+    _v_,
+    _w_,
+    _Word_,
+    _y_,
+    _z_,
 )
 
 # Extracted mid-utterance (see module docstring). Raw phoneme lists,
@@ -101,7 +125,6 @@ def spell_word(word: str) -> list:
     same underlying reason: the individual pieces are confirmed, their
     assembly isn't).
     """
-    from ._phonemes import _Word_
 
     out: list = []
     for ch in word:

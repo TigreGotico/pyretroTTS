@@ -167,28 +167,126 @@ HANDOFF -- what `Fill_Phon_Buf_2` must consume next
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
 
 from ._consts import (
-    kUndefPOS, kNoun, kVerb, kAdj, kAdv, kInterr, kInterj, kVPart, kQuant,
-    kIPron, kRPron, kPrep, kConj, kRelPro,
-    kArt, kDet, kCConj, kObjPron, kSubjPron, kContr, kInf, kVaux, kRVaux,
-    kPrimaryStress, kSecondaryStress, kEmphaticStress, kStressField,
-    kContent_Word, kWord_Start, kWord_Initial_Consonant, kCompoundNoun,
-    kTerm_Bound, kPrep_Start, kVerb_Start, kSilenceTypeShift, kSilenceTypeField,
-    kBND_Pause, kBND_Decl, kBND_Quest, kBND_Emph, kBND_None,
-    kBND_Sep1, kBND_Sep2, kBND_Sep3, kBND_Sep4, kBND_Sep5, kBND_Sep6,
-    kSilenceDuration, kHas_Adj, kHas_Noun,
+    kAdj,
+    kAdv,
+    kArt,
+    kBND_Decl,
+    kBND_Emph,
+    kBND_None,
+    kBND_Pause,
+    kBND_Quest,
+    kBND_Sep1,
+    kBND_Sep2,
+    kBND_Sep3,
+    kBND_Sep4,
+    kBND_Sep5,
+    kBND_Sep6,
+    kBoundryTypeField,
+    kCConj,
+    kCompoundNoun,
+    kConj,
+    kContent_Word,
+    kContr,
+    kDet,
+    kEmphaticStress,
+    kFirst_Syllable_In_Word,
+    kHas_Adj,
+    kHas_Noun,
+    kInf,
+    kInterj,
+    kInterr,
+    kIPron,
+    kLast_Syllable_In_Word,
+    kMid_Syllable_In_Word,
+    kNoun,
+    kObjPron,
+    kOneOrNo_Syllable_InWord,
+    kPrep,
+    kPrep_End,
+    kPrep_Start,
+    kPrimaryStress,
+    kQuant,
+    kRelPro,
+    kRPron,
+    kRVaux,
+    kSecondaryStress,
+    kSilenceDuration,
+    kSilenceTypeShift,
+    kStressField,
+    kSubjPron,
+    kSyllable_Start,
+    kSyllableOrderField,
+    kSyllableTypeField,
+    kTerm_Bound,
+    kTerm_End,
+    kUndefPOS,
+    kVaux,
+    kVerb,
+    kVerb_End,
+    kVerb_Start,
+    kVowelF,
+    kVPart,
+    kWord_End,
+    kWord_Initial_Consonant,
+    kWord_Start,
 )
-from ._morph import _pos_count_and_hi_rank
-from ._phonemes import (
-    _SIL_, _Word_, _Period_, _Comma_, _Quest_, _Exclam_, _Comp_, _Prep_,
-    _Verb_,
+from ._data import (
+    PhonFlags2,
 )
-from ._frontend import tokenize
-from ._lexicon import lookup, LexEntry
 from ._engtop import engtop
-from ._morph import try_s_morph, try_do_morph, apply_pos_from_suffix
+from ._frontend import tokenize
+from ._letters import (
+    spell_word,
+)
+from ._lexicon import LexEntry, lookup
+from ._morph import (
+    _pos_count_and_hi_rank,
+    apply_pos_from_suffix,
+    resolve_pos,
+    try_do_morph,
+    try_s_morph,
+)
+from ._numbers import (
+    cent_phonemes,
+    clock_phonemes,
+    digit_by_digit_phonemes,
+    dollar_phonemes,
+    is_year_number,
+    number_to_phonemes,
+    year_to_phonemes,
+)
+from ._phonemes import (
+    _SH_,
+    _SIL_,
+    _TH_,
+    _b_,
+    _Comma_,
+    _Comp_,
+    _d_,
+    _EmphStress_,
+    _Exclam_,
+    _f_,
+    _g_,
+    _k_,
+    _l_,
+    _m_,
+    _n_,
+    _p_,
+    _Period_,
+    _Prep_,
+    _Quest_,
+    _r_,
+    _s_,
+    _Stress1_,
+    _Stress2_,
+    _t_,
+    _v_,
+    _Verb_,
+    _w_,
+    _Word_,
+)
 
 # BackEnd.c:3971-3973 -- the POS set that marks a word a "content word"
 # (`kContent_Word`, gates primary-vs-secondary stress at 3869-3877).
@@ -231,19 +329,19 @@ class FEWordToken:
     is_abbrev: bool = False
     is_compound_hint: bool = False     # LexEntry.is_compound raw hint -- NOT is_Compound_Noun (see docstring)
     has_alt: bool = False
-    phon_hold: Optional[list] = None
-    pos_code2: Optional[list] = None
+    phon_hold: list | None = None
+    pos_code2: list | None = None
     comp_pos2: int = 0
     pos_choice: int = kUndefPOS        # resolved by _morph.resolve_pos() (Morph.c's ResolvePOS)
     alt_choice: int = kUndefPOS        # tok->altChoice -- see _morph.py; unused downstream so far
     is_content_word: bool = False      # BackEnd.c:3971-3980
     word_emphasis: str = "none"        # documented default: no emphasis-markup source ported
-    trailing_punct: Optional[str] = None   # one of '.', ',', '!', '?', or None
+    trailing_punct: str | None = None   # one of '.', ',', '!', '?', or None
     phrase_bnd: int = kBND_None        # kBND_Decl/Pause/Quest/Emph from trailing_punct, else kBND_None
 
 
 def make_fe_word_token(
-    word: str, punct: Optional[str], digit_by_digit: bool = False,
+    word: str, punct: str | None, digit_by_digit: bool = False,
     is_dollar: bool = False, is_cent: bool = False, is_clock: bool = False,
 ) -> FEWordToken:
     """Build one `FEWordToken` for `word` (already uppercased by
@@ -284,10 +382,6 @@ def make_fe_word_token(
     "o'clock" insertion rules.
     """
     if word.isdigit():
-        from ._numbers import (
-            number_to_phonemes, digit_by_digit_phonemes, is_year_number,
-            year_to_phonemes, dollar_phonemes, cent_phonemes, clock_phonemes,
-        )
 
         if digit_by_digit:
             _digits_phon_str = digit_by_digit_phonemes(word)
@@ -316,7 +410,7 @@ def make_fe_word_token(
             phrase_bnd=_PUNCT_TO_BND.get(punct, kBND_None) if punct else kBND_None,
         )
 
-    entry: Optional[LexEntry] = lookup(word)
+    entry: LexEntry | None = lookup(word)
 
     if entry is not None:
         tok = FEWordToken(
@@ -438,9 +532,9 @@ class SentenceAssembly:
     stress_counter: int = 0
     end_punctuation: int = 0
     last_word_index: int = 0
-    last_stress_1_index: Optional[int] = None
-    last_stress_2_index: Optional[int] = None
-    last_vowel_index: Optional[int] = None
+    last_stress_1_index: int | None = None
+    last_stress_2_index: int | None = None
+    last_vowel_index: int | None = None
     is_compound_noun: bool = False
     words: list = field(default_factory=list)   # list[FEWordToken], in order
 
@@ -634,13 +728,13 @@ def _place_phrasing(words: list) -> list:
 
 def collect_fe_tokens(
     text: str,
-    emphasis_overrides: Optional[dict] = None,
-    silence_overrides: Optional[dict] = None,
-    pos_overrides: Optional[dict] = None,
-    rate_overrides: Optional[dict] = None,
-    nmbr_overrides: Optional[dict] = None,
-    raw_phon_overrides: Optional[dict] = None,
-    char_overrides: Optional[dict] = None,
+    emphasis_overrides: dict | None = None,
+    silence_overrides: dict | None = None,
+    pos_overrides: dict | None = None,
+    rate_overrides: dict | None = None,
+    nmbr_overrides: dict | None = None,
+    raw_phon_overrides: dict | None = None,
+    char_overrides: dict | None = None,
 ) -> SentenceAssembly:
     """Adapted port of `Collect_FE_Tokens` (`BackEnd.c:3712-4157`).
 
@@ -747,8 +841,6 @@ def collect_fe_tokens(
     `WordCB` callback, and `Flag_PhonBuf_1` (called at `BackEnd.c:4154`,
     itself a separate unported function, `BackEnd.c:3481-3519`).
     """
-    from ._data import PhonFlags2
-    from ._consts import kVowelF
 
     sa = SentenceAssembly()
     in_index = [1]  # mutable box so nested helpers can advance it; mirrors phonBuf_1_In_Index
@@ -775,9 +867,9 @@ def collect_fe_tokens(
         return written
 
     word_initial = True
-    word_stress_1_index: Optional[int] = None
-    word_stress_2_index: Optional[int] = None
-    word_vowel_index: Optional[int] = None
+    word_stress_1_index: int | None = None
+    word_stress_2_index: int | None = None
+    word_vowel_index: int | None = None
     word_was_emph = False
     word_start_indices: list = []  # sa.words[i] starts at phon_buf index word_start_indices[i]
 
@@ -802,7 +894,6 @@ def collect_fe_tokens(
     # disambiguate the current word, mirroring Morph.c's ResolvePOS being a
     # separate pass over the whole token buffer before Collect_FE_Tokens
     # ever consumes it).
-    from ._morph import resolve_pos
     _clause_tokens = []
     _digit_mode = False
     _char_mode = False
@@ -834,7 +925,6 @@ def collect_fe_tokens(
             ))
             continue
         if _char_mode and word.isalpha():
-            from ._letters import spell_word
 
             _clause_tokens.append(FEWordToken(
                 word=word,
@@ -1068,17 +1158,14 @@ def collect_fe_tokens(
 
 
 def _is_stress1(phon: int) -> bool:
-    from ._phonemes import _Stress1_
     return phon == _Stress1_
 
 
 def _is_stress2(phon: int) -> bool:
-    from ._phonemes import _Stress2_
     return phon == _Stress2_
 
 
 def _is_emph_stress(phon: int) -> bool:
-    from ._phonemes import _EmphStress_
     return phon == _EmphStress_
 
 
@@ -1103,7 +1190,7 @@ def _is_emph_stress(phon: int) -> bool:
 # `BackEnd.c:3510`), so it never runs in the compiled engine either.
 # ---------------------------------------------------------------------------
 
-def _phon_flags(phon: Optional[int]) -> int:
+def _phon_flags(phon: int | None) -> int:
     """Bounds-safe PhonFlags2 lookup. phon_buf can (today) contain raw,
     not-yet-decoded placeholder opcodes from LexEntry.phon_str (e.g.
     literal _pRise_/_pFall_ standing in for compound/word markers -- see
@@ -1111,7 +1198,6 @@ def _phon_flags(phon: Optional[int]) -> int:
     those the same way the existing ordinary-phoneme branch in
     collect_fe_tokens does (BackEnd.c:472's guard: `0 <= cur_phon <
     len(PhonFlags2)`)."""
-    from ._data import PhonFlags2
     if phon is None or not (0 <= phon < len(PhonFlags2)):
         return 0
     return PhonFlags2[phon]
@@ -1134,10 +1220,6 @@ _CONSONANT_CLUSTERS = {
 
 
 def _consonant_cluster_ids():
-    from ._phonemes import (
-        _f_, _v_, _TH_, _s_, _SH_, _p_, _b_, _t_, _d_, _k_, _g_, _r_, _l_, _w_,
-        _m_, _n_,
-    )
     name_to_id = {
         'f': _f_, 'v': _v_, 'TH': _TH_, 's': _s_, 'SH': _SH_, 'p': _p_,
         'b': _b_, 't': _t_, 'd': _d_, 'k': _k_, 'g': _g_, 'r': _r_, 'l': _l_,
@@ -1158,9 +1240,8 @@ def if_consonant_cluster(consonant_1st: int, consonant_2nd: int) -> bool:
     return (consonant_1st, consonant_2nd) in _CONSONANT_CLUSTER_IDS
 
 
-def find_next_word_bound(sa: "SentenceAssembly", index: int) -> int:
+def find_next_word_bound(sa: SentenceAssembly, index: int) -> int:
     """BackEnd.c:3177-3186."""
-    from ._consts import kBoundryTypeField, kWord_Start
     i = index + 1
     while i < len(sa.ctrl_buf):
         if sa.ctrl_buf[i] & (kBoundryTypeField | kWord_Start):
@@ -1169,16 +1250,10 @@ def find_next_word_bound(sa: "SentenceAssembly", index: int) -> int:
     return i
 
 
-def mark_boundry(sa: "SentenceAssembly", scan_index: int) -> None:
+def mark_boundry(sa: SentenceAssembly, scan_index: int) -> None:
     """BackEnd.c:3448-3480 -- back-propagate word/prep/verb/term "-End"
     flags from the next boundary-flagged phoneme onto the consonants
     preceding it, stopping at the first vowel."""
-    from ._consts import (
-        kBoundryTypeField, kTerm_Bound, kTerm_End, kWord_End, kPrep_Start,
-        kPrep_End, kVerb_Start, kVerb_End, kWord_Start,
-    )
-    from ._data import PhonFlags2
-    from ._consts import kVowelF
 
     for index in range(scan_index + 1, len(sa.phon_buf)):
         cur_phon = sa.phon_buf[index]
@@ -1200,17 +1275,10 @@ def mark_boundry(sa: "SentenceAssembly", scan_index: int) -> None:
             break
 
 
-def mark_syllable(sa: "SentenceAssembly", scan_index: int) -> None:
+def mark_syllable(sa: SentenceAssembly, scan_index: int) -> None:
     """BackEnd.c:3381-3448 -- compute this vowel's syllable order
     (first/mid/last/one-or-no syllable in its word) by scanning backward
     and forward to the nearest word boundary for other vowels."""
-    from ._consts import (
-        kSyllableTypeField, kWord_End, kLast_Syllable_In_Word,
-        kBoundryTypeField, kMid_Syllable_In_Word, kFirst_Syllable_In_Word,
-        kOneOrNo_Syllable_InWord,
-    )
-    from ._data import PhonFlags2
-    from ._consts import kVowelF
 
     order = 0
     index = scan_index - 1
@@ -1241,17 +1309,10 @@ def mark_syllable(sa: "SentenceAssembly", scan_index: int) -> None:
         index += 1
 
 
-def mark_syllable_start(sa: "SentenceAssembly") -> None:
+def mark_syllable_start(sa: SentenceAssembly) -> None:
     """BackEnd.c:3193-3379 -- final pass marking each syllable's first
     phoneme with kSyllable_Start, using the syllable-order bits mark_syllable
     already set on each vowel."""
-    from ._consts import (
-        kSyllable_Start, kSyllableOrderField, kOneOrNo_Syllable_InWord,
-        kLast_Syllable_In_Word,
-    )
-    from ._data import PhonFlags2
-    from ._consts import kVowelF
-    from ._phonemes import _SIL_
 
     n = len(sa.phon_buf)
     syllable_index = 0
@@ -1294,7 +1355,6 @@ def mark_syllable_start(sa: "SentenceAssembly") -> None:
                         index -= 1
                     syllable_index = index
                 elif dist == 3:
-                    from ._phonemes import _s_
                     phon_2nd = sa.phon_buf[index - 1]
                     phon_1st = sa.phon_buf[index - 2]
                     if if_consonant_cluster(phon_1st, phon_2nd):
@@ -1317,25 +1377,15 @@ def mark_syllable_start(sa: "SentenceAssembly") -> None:
             index += 1
 
 
-def flag_phon_buf_1(sa: "SentenceAssembly") -> None:
+def flag_phon_buf_1(sa: SentenceAssembly) -> None:
     """BackEnd.c:3481-3519 -- final annotation pass over the whole sentence
     buffer: tracks is_Compound_Noun while scanning, calls mark_syllable per
     vowel (Place_Stress_In_Consonant, the consonant branch, is dead code in
     the C reference -- see module docstring), calls mark_boundry per
     phoneme, then mark_syllable_start once at the end."""
-    from ._data import PhonFlags2
-    from ._consts import kVowelF, kCompoundNoun, kBoundryTypeField
 
-    is_compound_noun = False
     for scan_index in range(len(sa.phon_buf)):
-        cur_phon = sa.phon_buf[scan_index]
-        cur_flags = _phon_flags(cur_phon)
-        cur_ctrl = sa.ctrl_buf[scan_index]
-
-        if cur_ctrl & kCompoundNoun:
-            is_compound_noun = True
-        elif cur_ctrl & kBoundryTypeField:
-            is_compound_noun = False
+        cur_flags = _phon_flags(sa.phon_buf[scan_index])
 
         if cur_flags & kVowelF:
             mark_syllable(sa, scan_index)

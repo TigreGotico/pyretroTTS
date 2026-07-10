@@ -72,17 +72,30 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, os.path.dirname(__file__))
 
+from test_voices import compare_frames, parse_frames, run_c
+
 import pylintalker._backend as be
 from pylintalker._backend import kFrame1
-from pylintalker.api import synthesize_text
 from pylintalker._data import (
-    Fred_Voice, Kathy_Voice, Princess_Voice, Junior_Voice, Ralph_Voice,
-    Whisper_Voice, Zarvox_Voice, Trinoids_Voice, Bubbles_Voice, Boing_Voice,
-    Bells_Voice, Hysterical_Voice,
-    Deranged_Voice, GoodNews_Voice, BadNews_Voice, PipeOrgan_Voice, Cellos_Voice,
+    BadNews_Voice,
+    Bells_Voice,
+    Boing_Voice,
+    Bubbles_Voice,
+    Cellos_Voice,
+    Deranged_Voice,
+    Fred_Voice,
+    GoodNews_Voice,
+    Hysterical_Voice,
+    Junior_Voice,
+    Kathy_Voice,
+    PipeOrgan_Voice,
+    Princess_Voice,
+    Ralph_Voice,
+    Trinoids_Voice,
+    Whisper_Voice,
+    Zarvox_Voice,
 )
-
-from test_voices import run_c, parse_frames, compare_frames
+from pylintalker.api import synthesize_text
 
 _VOICES = {
     "Fred": (0, Fred_Voice), "Kathy": (1, Kathy_Voice), "Princess": (2, Princess_Voice),
@@ -447,7 +460,7 @@ def test_do_morph_pos_from_suffix():
     kUndefPOS, kUndefPOS, kUndefPOS]`, not the root "TIME"'s own
     (ambiguous) candidate list."""
     from pylintalker._assembly import make_fe_word_token
-    from pylintalker._consts import kVerb, kUndefPOS
+    from pylintalker._consts import kUndefPOS, kVerb
 
     tok = make_fe_word_token("TIMED", None)
     assert tok.pos_code1 == [kVerb, kUndefPOS, kUndefPOS, kUndefPOS], tok.pos_code1
@@ -491,7 +504,6 @@ def test_do_morph_pos_from_suffix_hasalt_zap_pos():
 
 
 if __name__ == "__main__":
-    import inspect
     mod = sys.modules[__name__]
     tests = [obj for name, obj in vars(mod).items() if name.startswith("test_") and callable(obj)]
     failures = []

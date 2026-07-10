@@ -50,18 +50,74 @@ constants).
 """
 from __future__ import annotations
 
+from ._backend import (
+    e_get_phon,
+)
 from ._consts import (
-    kFrontF, kHasReleaseF, kNasalF, kPlosFricF, kPrimOrEmphStress,
-    kPrimaryStress, kSonorConsonF, kSonorantF, kSyllableTypeField,
-    kVowel1F, kVowelF, kWord_End, kWord_Initial_Consonant, kWord_Start,
-    kStressField, kDur_One,
+    kDur_One,
+    kFrameTime,
+    kFrontF,
+    kHasReleaseF,
+    kNasalF,
+    kPhonBuf_Red_Zone,
+    kPlosFricF,
+    kPlosive_Release,
+    kPrimaryStress,
+    kPrimOrEmphStress,
+    kSonorantF,
+    kSonorConsonF,
+    kStressField,
+    kSyllableTypeField,
+    kVowel1F,
+    kVowelF,
+    kWord_End,
+    kWord_Initial_Consonant,
+    kWord_Start,
+)
+from ._data import (
+    PhonFlags2,
 )
 from ._phonemes import (
-    _SIL_, _AA_, _AE_, _AH_, _AO_, _AR_, _AX_, _AY_,
-    _b_, _CH_, _d_, _DD_, _DH_, _DX_, _EH_, _EL_, _EN_, _ER_, _EY_,
-    _f_, _g_, _h_, _IH_, _IR_, _IX_, _IY_, _JH_,
-    _k_, _l_, _n_, _OR_, _OW_, _p_, _QX_, _r_, _RX_, _s_, _t_,
-    _TX_, _TH_, _UH_, _UR_, _UW_, _v_, _XR_, _y_, _YU_, _z_,
+    _AA_,
+    _AE_,
+    _AH_,
+    _AO_,
+    _AR_,
+    _AX_,
+    _DD_,
+    _DH_,
+    _DX_,
+    _EH_,
+    _EL_,
+    _EN_,
+    _ER_,
+    _EY_,
+    _IH_,
+    _IR_,
+    _IX_,
+    _IY_,
+    _JH_,
+    _LX_,
+    _OR_,
+    _OW_,
+    _QX_,
+    _RX_,
+    _SIL_,
+    _TX_,
+    _UH_,
+    _UR_,
+    _UW_,
+    _XR_,
+    _YU_,
+    _b_,
+    _d_,
+    _g_,
+    _h_,
+    _l_,
+    _n_,
+    _r_,
+    _t_,
+    _y_,
 )
 
 
@@ -76,7 +132,6 @@ def fill_phon_buf_2(vv, sa) -> None:
     (`phon_Buf_1`/`phon_Ctrl_Buf_1`), writes `vv.phon_Buf_2`/
     `vv.phon_Ctrl_Buf_2`/`vv.user_*_Buf2`, sets `vv.phonBuf_2_In_Index`.
     """
-    from ._data import PhonFlags2
 
     phon_buf_1 = sa.phon_buf
     ctrl_buf_1 = sa.ctrl_buf
@@ -94,7 +149,6 @@ def fill_phon_buf_2(vv, sa) -> None:
     for out_index in range(n):
         cur_phon, cur_ctrl = phon_buf_1[out_index], ctrl_buf_1[out_index]
         cur_flags = _flags(PhonFlags2, cur_phon)
-        cur_syll = cur_ctrl & 0x0300  # kSyllableOrderField
 
         next_phon, next_ctrl = get(out_index + 1)
         next_flags = _flags(PhonFlags2, next_phon)
@@ -121,7 +175,6 @@ def fill_phon_buf_2(vv, sa) -> None:
         # reference's own "no override" value; NOT 0, which would zero
         # every duration once Set_The_Dur divides by it), user_cmd/
         # user_pitch stay 0.
-        from ._consts import kDur_One
         user_cmd = user_pitch = 0
         user_note = sa.note_buf[out_index] if out_index < len(sa.note_buf) else 0
         user_rate = sa.rate_buf[out_index] if out_index < len(sa.rate_buf) else 0
@@ -151,10 +204,8 @@ def fill_phon_buf_2(vv, sa) -> None:
             if not (cur_ctrl & (kPrimOrEmphStress | kWord_Initial_Consonant)) and (prev_flags & kVowel1F):
                 if cur_phon == _l_:
                     target_phon = None  # _LX_, set below (avoid None import clutter)
-                    from ._phonemes import _LX_
                     target_phon = _LX_
                 elif cur_phon == _r_:
-                    from ._phonemes import _RX_
                     target_phon = _RX_
                     if prev_phon in (_UW_, _UH_):
                         vv.phon_Buf_2[vv.phonBuf_2_In_Index - 1] = _UR_
@@ -303,7 +354,6 @@ def fill_phon_buf_2(vv, sa) -> None:
             vv.user_Note_Buf2[idx] = user_note
             vv.user_Rate_Buf2[idx] = user_rate
 
-            from ._consts import kPhonBuf_Red_Zone
             if vv.phonBuf_2_In_Index < kPhonBuf_Red_Zone:
                 vv.phonBuf_2_In_Index += 1
 
@@ -341,9 +391,6 @@ def insert_closure_release(vv) -> None:
     Operates on `vv.phon_Buf_2`/`vv.phon_Ctrl_Buf_2`/`vv.dur_Buf`/
     `vv.user_*_Buf2` in place, mirroring the C convention.
     """
-    from ._consts import kFrameTime, kHasReleaseF, kPhonBuf_Red_Zone, kPlosive_Release, kDur_One
-    from ._data import PhonFlags2
-    from ._backend import e_get_phon
 
     i = 0
     while i < vv.phonBuf_2_In_Index:
@@ -374,7 +421,6 @@ def insert_closure_release(vv) -> None:
                 if (_flags(PhonFlags2, prev_phon) & kFrontF) or (cur_phon == _t_) or (cur_phon == _d_):
                     vv.phon_Buf_2[i] = _IX_
                 else:
-                    from ._phonemes import _AX_
                     vv.phon_Buf_2[i] = _AX_
 
                 vv.dur_Buf[i] = 25 // kFrameTime

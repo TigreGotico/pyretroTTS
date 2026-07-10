@@ -41,10 +41,25 @@ dependency.
 """
 from __future__ import annotations
 
-from ._consts import *
-from ._data import *
 from ._backend import (
-    VoiceVar, synth_set_volume, start_talk, init_rate_params,
+    VoiceVar,
+    init_rate_params,
+    start_talk,
+    synth_set_volume,
+)
+from ._consts import (
+    kFrameTime,
+    kImmediate,
+    kMIDI_50HZ,
+    kNoError,
+    kNormal,
+    kNoSpeechInterrupt,
+    kNothingToSpeak,
+    kOneTwelfth,
+    kPaused,
+    kPointFive,
+    kStopped,
+    synthNotReady,
 )
 
 # ---------------------------------------------------------------------------

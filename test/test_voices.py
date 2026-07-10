@@ -30,28 +30,48 @@ intermediate control parameters does not prove the final signal matches
 -- always verify the actual output your users hear, not just the values
 that feed into producing it.
 """
-import sys, os, subprocess, re, struct, json, time
+import os
+import struct
+import subprocess
+import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 C_BIN = os.path.expanduser("~/AgentWorkspaces/ovos/lintalker-c/bin/Debug/test_harness")
 
-from pylintalker._backend import (
-    VoiceVar, FormantVar, init_voice, fill_samp_buf,
-    start_talk, e_fill_next_frame,
-    calc_ramp_steps, start_new_pitch_clause,
-    say_frame,
-)
 import pylintalker._backend as be
+from pylintalker._backend import (
+    VoiceVar,
+    calc_ramp_steps,
+    e_fill_next_frame,
+    init_voice,
+    say_frame,
+    start_new_pitch_clause,
+    start_talk,
+)
 from pylintalker._consts import (
-    kFrame1, kFrame2, kOnePtOh, k100percent,
-    kSpeakNewPhon, kSpeakPhon, kSpeakLastFrame,
+    kFrame1,
     kNoMarker,
+    kSpeakLastFrame,
 )
 from pylintalker._data import (
-    Fred_Voice, Kathy_Voice, Princess_Voice, Junior_Voice, Ralph_Voice,
-    Whisper_Voice, Zarvox_Voice, Trinoids_Voice, Bubbles_Voice,
-    Boing_Voice, Bells_Voice, Hysterical_Voice, Deranged_Voice,
-    GoodNews_Voice, BadNews_Voice, PipeOrgan_Voice, Cellos_Voice,
+    BadNews_Voice,
+    Bells_Voice,
+    Boing_Voice,
+    Bubbles_Voice,
+    Cellos_Voice,
+    Deranged_Voice,
+    Fred_Voice,
+    GoodNews_Voice,
+    Hysterical_Voice,
+    Junior_Voice,
+    Kathy_Voice,
+    PipeOrgan_Voice,
+    Princess_Voice,
+    Ralph_Voice,
+    Trinoids_Voice,
+    Whisper_Voice,
+    Zarvox_Voice,
 )
 
 VOICE_DICTS = [
@@ -108,17 +128,17 @@ def parse_sentence_plan(stdout_bytes):
     """Extract phoneme/ctrl/dur/pitch arrays from C stdout."""
     text = stdout_bytes.decode('latin-1')
     lines = text.split('\n')
-    
+
     phonemes = []
     ctrls = []
     durs = []
     pitch_freq = []
     pitch_time = []
     pitch_flags = []
-    
+
     in_phon_table = False
     in_pitch_table = False
-    
+
     for line in lines:
         line = line.strip()
         if line.startswith('S '):
@@ -127,25 +147,25 @@ def parse_sentence_plan(stdout_bytes):
             continue
         if not line:
             continue
-        
+
         if in_phon_table and line.startswith('N '):
             in_phon_table = False
             in_pitch_table = True
-        
+
         if in_phon_table and line.startswith('P '):
             parts = line.split()
             if len(parts) >= 5:
                 phonemes.append(int(parts[2]))  # index=parts[1], phon=parts[2], ctrl=parts[3], dur=parts[4]
                 ctrls.append(int(parts[3]))
                 durs.append(int(parts[4]))
-        
+
         if in_pitch_table and line.startswith('N '):
             parts = line.split()
             if len(parts) >= 5:
                 pitch_freq.append(int(parts[2]))  # index=parts[1], freq=parts[2], time=parts[3], flags=parts[4]
                 pitch_time.append(int(parts[3]))
                 pitch_flags.append(int(parts[4]))
-    
+
     return phonemes, ctrls, durs, pitch_freq, pitch_time, pitch_flags
 
 
@@ -220,22 +240,22 @@ def run_python_backend(vv, phonemes, ctrls, durs,
         vv.phon_Ctrl_Buf_2[i] = ctrls[i]
         vv.dur_Buf[i] = durs[i]
     vv.phonBuf_2_In_Index = len(phonemes)
-    
+
     # Fill pitch buffers
     for i in range(len(pitch_freq)):
         vv.pitch_Buf_Freq[i] = pitch_freq[i]
         vv.pitch_Buf_Time[i] = pitch_time[i]
         vv.pitch_Buf_Flags[i] = pitch_flags[i]
     vv.pitchBuf_In_Index = len(pitch_freq)
-    
+
     # Init ramp steps
     calc_ramp_steps(vv)
     start_new_pitch_clause(vv)
-    
+
     # Run pipeline with frame capture
     frames = []
     frame_num = [0]
-    
+
     def on_frame(vv):
         zz = vv.synthVars
         if zz.curFrameBuf == kFrame1:
@@ -256,7 +276,7 @@ def run_python_backend(vv, phonemes, ctrls, durs,
             'AB': fp.AB, 'FNZ': fp.FNZ, 'marker': fp.marker,
         })
         frame_num[0] += 1
-    
+
     be.post_frame_hook = on_frame
     start_talk(vv)
     while vv.speakState != kSpeakLastFrame:
@@ -264,7 +284,7 @@ def run_python_backend(vv, phonemes, ctrls, durs,
         e_fill_next_frame(vv)
     say_frame(vv)
     be.post_frame_hook = None
-    
+
     return frames, vv
 
 
@@ -284,15 +304,15 @@ def compare_frames(c_frames, py_frames):
     keys = ['f0', 'f1', 'f2', 'f3', 'bw1', 'bw2', 'bw3',
             'Av', 'Af', 'a2', 'a3', 'a4', 'a5', 'a6', 'AB', 'FNZ', 'marker',
             'phon_idx', 'phon_id', 'dur_done']
-    
+
     mismatches = []
-    for i, (cf, pf) in enumerate(zip(c_frames, py_frames)):
+    for i, (cf, pf) in enumerate(zip(c_frames, py_frames, strict=False)):
         for k in keys:
             cv = cf[k]
             pv = pf[k]
             if cv != pv:
                 mismatches.append((i, k, cv, pv))
-    
+
     return mismatches
 
 
@@ -300,21 +320,21 @@ def verify_voice(voice_idx, text, verbose=True):
     """Run full C vs Python comparison for one (voice, text) combo."""
     voice_name = VOICE_NAMES[voice_idx]
     vd = VOICE_DICTS[voice_idx]
-    
+
     # Run C
     c_stdout, c_stderr, wav_path = run_c(voice_idx, text)
     if c_stdout is None:
         return {'voice': voice_idx, 'name': voice_name, 'text': text,
                 'error': 'C timeout or failure'}
-    
+
     # Parse C outputs
     phonemes, ctrls, durs, pf, pt, pfl = parse_sentence_plan(c_stdout)
     c_frames = parse_frames(c_stdout)
-    
+
     if not phonemes:
         return {'voice': voice_idx, 'name': voice_name, 'text': text,
                 'error': 'no sentence plan found'}
-    
+
     # Get WAV info -- actual sample VALUES, not just length. A per-frame
     # CONTROL-parameter match (f0/formants/amplitude/bandwidth, compared
     # below) does NOT guarantee the actual synthesized PCM waveform
@@ -356,7 +376,7 @@ def verify_voice(voice_idx, text, verbose=True):
     # Compare actual PCM sample values (only if counts match)
     sample_mismatches = 0
     if c_wav_len == py_wav_len:
-        sample_mismatches = sum(1 for a, b in zip(c_wav_samples, py_wav_samples) if a != b)
+        sample_mismatches = sum(1 for a, b in zip(c_wav_samples, py_wav_samples, strict=False) if a != b)
     else:
         sample_mismatches = -1  # length mismatch itself is the failure
 
@@ -384,29 +404,29 @@ def main():
     parser.add_argument('--texts', type=str, default=None,
                         help='Comma-separated texts')
     args = parser.parse_args()
-    
+
     if args.all:
         voice_indices = list(range(17))
     else:
         voice_indices = [int(v.strip()) for v in args.voices.split(',')]
-    
+
     if args.texts:
         texts = [t.strip() for t in args.texts.split(',')]
     else:
         texts = DEFAULT_TEXTS
-    
+
     total_errors = 0
     total_mismatches = 0
-    
+
     for vi in voice_indices:
         for text in texts:
             result = verify_voice(vi, text)
-            
+
             if result.get('error'):
                 print(f"FAIL {VOICE_NAMES[vi]:12s} text='{text}': {result['error']}")
                 total_errors += 1
                 continue
-            
+
             mm = len(result['mismatches'])
             sm = result['sample_mismatches']
             report = (
@@ -439,7 +459,7 @@ def main():
                 report += "OK"
 
             print(report)
-    
+
     print(f"\nSummary: {len(voice_indices)} voices × {len(texts)} texts = "
           f"{len(voice_indices)*len(texts)} tests")
     if total_mismatches:

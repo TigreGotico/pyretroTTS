@@ -11,7 +11,9 @@ PartialNumberToPhonemes but is NOT verified end-to-end against a
 working reference (none exists for this path -- see
 docs/architecture.md).
 """
-import sys, os
+import os
+import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from pylintalker._numbers import number_to_phonemes
@@ -74,8 +76,8 @@ def test_zero_alone():
 
 
 def test_end_to_end_via_synthesize_text_does_not_crash():
-    from pylintalker.api import synthesize_text
     from pylintalker._data import Fred_Voice
+    from pylintalker.api import synthesize_text
 
     for text in ["123", "i have 42 apples.", "the year 2023.", "0", "1000000"]:
         pcm = synthesize_text(Fred_Voice, text)
@@ -100,15 +102,15 @@ def test_frontend_tokenize_preserves_digit_tokens():
 
 
 def test_digit_by_digit_reads_each_digit_separately():
-    from pylintalker._numbers import digit_by_digit_phonemes, _ONES
+    from pylintalker._numbers import _ONES, digit_by_digit_phonemes
 
     assert digit_by_digit_phonemes("123") == [_Word_] + _ONES[1] + _ONES[2] + _ONES[3]
     assert digit_by_digit_phonemes("0") == [_Word_] + _ONES[0]
 
 
 def test_nmbr_embedded_command_switches_to_digit_by_digit():
-    from pylintalker._embeddedcmd import scan_bracket_commands
     from pylintalker._assembly import collect_fe_tokens
+    from pylintalker._embeddedcmd import scan_bracket_commands
     from pylintalker._numbers import digit_by_digit_phonemes, number_to_phonemes
 
     clean, _cmds, _emph, _sil, _pos, _rates, _final_rate, nmbr, _rawphon, _char = scan_bracket_commands(
@@ -132,20 +134,20 @@ def test_is_year_number():
 
 
 def test_year_to_phonemes_two_groups():
-    from pylintalker._numbers import year_to_phonemes, _two_digit_phonemes
+    from pylintalker._numbers import _two_digit_phonemes, year_to_phonemes
 
     assert year_to_phonemes("1984") == [_Word_] + _two_digit_phonemes(1, 9) + _two_digit_phonemes(8, 4)
 
 
 def test_year_to_phonemes_oh_insertion():
-    from pylintalker._numbers import year_to_phonemes, _two_digit_phonemes, _OH
+    from pylintalker._numbers import _OH, _two_digit_phonemes, year_to_phonemes
 
     # 1905 -> "nineteen oh five" (second group's tens digit is 0, units isn't)
     assert year_to_phonemes("1905") == [_Word_] + _two_digit_phonemes(1, 9) + _OH + _two_digit_phonemes(0, 5)
 
 
 def test_year_to_phonemes_round_hundred():
-    from pylintalker._numbers import year_to_phonemes, _two_digit_phonemes, _HUNDRED
+    from pylintalker._numbers import _HUNDRED, _two_digit_phonemes, year_to_phonemes
 
     # 1900 -> "nineteen hundred" (second group is "00")
     assert year_to_phonemes("1900") == [_Word_] + _two_digit_phonemes(1, 9) + _HUNDRED
@@ -153,7 +155,7 @@ def test_year_to_phonemes_round_hundred():
 
 def test_number_token_reads_as_year_by_default():
     from pylintalker._assembly import make_fe_word_token
-    from pylintalker._numbers import year_to_phonemes, number_to_phonemes
+    from pylintalker._numbers import number_to_phonemes, year_to_phonemes
 
     tok = make_fe_word_token("1984", None)
     assert tok.phon_str == year_to_phonemes("1984")
@@ -169,8 +171,8 @@ def test_number_token_reads_as_year_by_default():
 
 
 def test_nmbr_mode_latches_until_switched_back():
-    from pylintalker._embeddedcmd import scan_bracket_commands
     from pylintalker._assembly import collect_fe_tokens
+    from pylintalker._embeddedcmd import scan_bracket_commands
     from pylintalker._numbers import digit_by_digit_phonemes, number_to_phonemes
 
     clean, _cmds, _emph, _sil, _pos, _rates, _final_rate, nmbr, _rawphon, _char = scan_bracket_commands(
@@ -203,7 +205,7 @@ def test_dollar_prefix_no_longer_silently_dropped():
 
 
 def test_dollar_phonemes_plural_and_singular():
-    from pylintalker._numbers import dollar_phonemes, number_to_phonemes, _DOLLAR
+    from pylintalker._numbers import _DOLLAR, dollar_phonemes, number_to_phonemes
 
     assert dollar_phonemes("5") == [_Word_] + number_to_phonemes("5")[1:] + _DOLLAR
     assert dollar_phonemes("1") == [_Word_] + number_to_phonemes("1")[1:] + _DOLLAR[:-1]
@@ -294,7 +296,7 @@ def test_tokenize_dollar_decimal_splits_into_dollars_and_and_cents():
 
 
 def test_cent_phonemes_plural_and_singular():
-    from pylintalker._numbers import cent_phonemes, number_to_phonemes, _CENT
+    from pylintalker._numbers import _CENT, cent_phonemes, number_to_phonemes
 
     assert cent_phonemes("25") == [_Word_] + number_to_phonemes("25")[1:] + _CENT
     assert cent_phonemes("1") == [_Word_] + number_to_phonemes("1")[1:] + _CENT[:-1]
@@ -302,7 +304,7 @@ def test_cent_phonemes_plural_and_singular():
 
 def test_dollar_and_cents_reaches_word_tokens_end_to_end():
     from pylintalker._assembly import collect_fe_tokens
-    from pylintalker._numbers import dollar_phonemes, cent_phonemes
+    from pylintalker._numbers import cent_phonemes, dollar_phonemes
 
     sa = collect_fe_tokens("it costs $5.25 total.")
     assert sa.words[2].word == "5"
@@ -335,12 +337,12 @@ def test_tokenize_clock_requires_exactly_two_minute_digits():
     # "3:5" (one minute digit) isn't clock-shaped -- matches the real
     # engine's own tok->tokStr[0] == 2 length check.
     clock_indices = []
-    tokens = tokenize("it is 3:5 now.", _clock_out=clock_indices)
+    tokenize("it is 3:5 now.", _clock_out=clock_indices)
     assert clock_indices == []
 
 
 def test_clock_phonemes_normal_oh_and_oclock():
-    from pylintalker._numbers import clock_phonemes, _two_digit_phonemes, _OH, _CLOCK
+    from pylintalker._numbers import _CLOCK, _OH, _two_digit_phonemes, clock_phonemes
 
     assert clock_phonemes("45") == [_Word_] + _two_digit_phonemes(4, 5)
     assert clock_phonemes("05") == [_Word_] + _OH + _two_digit_phonemes(0, 5)
@@ -349,7 +351,7 @@ def test_clock_phonemes_normal_oh_and_oclock():
 
 def test_clock_time_reaches_word_tokens_end_to_end():
     from pylintalker._assembly import collect_fe_tokens
-    from pylintalker._numbers import number_to_phonemes, clock_phonemes
+    from pylintalker._numbers import clock_phonemes, number_to_phonemes
 
     sa = collect_fe_tokens("it is 3:45 now.")
     assert sa.words[2].word == "3"

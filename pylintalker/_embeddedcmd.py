@@ -39,8 +39,29 @@ it requires hand-populating vv.CMDQueue/vv.user_Cmd_Buf2.
 """
 from __future__ import annotations
 
-from ._consts import *
 from ._backend import VoiceVar, e_midi_to_pitch, set_volume
+from ._consts import (
+    C_absMod,
+    C_absPitch,
+    C_absVol,
+    C_relMod,
+    C_relPitch,
+    C_relVol,
+    C_reset,
+    C_sync,
+    C_voice,
+    kLastPOS,
+    kMIDI_50HZ,
+    kMinRate,
+    kNormal_Speech_Rate,
+)
+from ._frontend import (
+    tokenize,
+)
+from ._rawphon import (
+    parse_raw_phonemes,
+    split_into_word_groups,
+)
 
 __all__ = ["do_ctrl", "scan_bracket_commands"]
 
@@ -388,8 +409,6 @@ def scan_bracket_commands(text: str, initial_rate: int = kNormal_Speech_Rate):
     that command -- this port simply doesn't strip what it can't
     parse, rather than raising).
     """
-    from ._frontend import tokenize
-    from ._rawphon import parse_raw_phonemes, split_into_word_groups
 
     commands = []
     emphasis = {}

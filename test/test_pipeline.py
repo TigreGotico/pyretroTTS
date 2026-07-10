@@ -1,20 +1,23 @@
 """Test the Python formant pipeline against C reference output."""
-import sys, os
+import os
+import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from pylintalker._backend import (
-    VoiceVar, FormantVar,
-    init_voice, fill_samp_buf,
-    start_talk, e_fill_next_frame,
-    calc_ramp_steps, start_new_pitch_clause,
-    say_frame,
-)
 import pylintalker._backend as be
-
+from pylintalker._backend import (
+    VoiceVar,
+    calc_ramp_steps,
+    e_fill_next_frame,
+    init_voice,
+    say_frame,
+    start_new_pitch_clause,
+    start_talk,
+)
 from pylintalker._consts import (
-    kFrame1, kFrame2, kOnePtOh, k100percent,
-    kSpeakNewPhon, kSpeakPhon, kSpeakLastFrame,
+    kFrame1,
     kNoMarker,
+    kSpeakLastFrame,
 )
 from pylintalker._data import Fred_Voice
 

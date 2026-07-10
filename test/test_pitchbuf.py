@@ -26,16 +26,16 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, os.path.dirname(__file__))
 
-from pylintalker._assembly import collect_fe_tokens
-from pylintalker._phonbuf2 import fill_phon_buf_2, insert_closure_release
-from pylintalker._pitchcontour import pitch_raise_and_fall
-from pylintalker._moduration import mod_duration
-from pylintalker._pitchbuf import fill_pitch_buf
-from pylintalker._backend import calc_ramp_steps
-from pylintalker.api import new_voice
-from pylintalker._data import Fred_Voice, Kathy_Voice, Junior_Voice, Zarvox_Voice
+from test_voices import parse_sentence_plan, run_c
 
-from test_voices import run_c, parse_sentence_plan
+from pylintalker._assembly import collect_fe_tokens
+from pylintalker._backend import calc_ramp_steps
+from pylintalker._data import Fred_Voice, Junior_Voice, Kathy_Voice, Zarvox_Voice
+from pylintalker._moduration import mod_duration
+from pylintalker._phonbuf2 import fill_phon_buf_2, insert_closure_release
+from pylintalker._pitchbuf import fill_pitch_buf
+from pylintalker._pitchcontour import pitch_raise_and_fall
+from pylintalker.api import new_voice
 
 _VOICES = {"Fred": Fred_Voice, "Kathy": Kathy_Voice, "Junior": Junior_Voice, "Zarvox": Zarvox_Voice}
 _VOICE_IDX = {"Fred": 0, "Kathy": 1, "Junior": 3, "Zarvox": 6}
@@ -88,7 +88,6 @@ def test_pitch_buf_matches_across_voices():
 
 
 if __name__ == "__main__":
-    import inspect
     mod = sys.modules[__name__]
     tests = [obj for name, obj in vars(mod).items() if name.startswith("test_") and callable(obj)]
     failures = []

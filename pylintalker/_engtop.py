@@ -27,8 +27,15 @@ from __future__ import annotations
 
 from ._consts import kEngToPPad
 from ._data import (
-    Rules, KindTBL, dashruletab, atruletab, lruletab, mruletab,
-    zruletab, percentruletab, bruletab,
+    KindTBL,
+    Rules,
+    atruletab,
+    bruletab,
+    dashruletab,
+    lruletab,
+    mruletab,
+    percentruletab,
+    zruletab,
 )
 from ._phonemes import _Word_
 
@@ -77,7 +84,7 @@ def _kind(ch: int) -> int:
     return 0
 
 
-def find_consonant(g: _EngToPState, text: bytearray, i: int) -> "tuple[int, int] | None":
+def find_consonant(g: _EngToPState, text: bytearray, i: int) -> tuple[int, int] | None:
     """FindConsonant (EngToP.c). Returns (new_i, 0) on match, None on miss."""
     if _kind(text[i]) & CONSON:
         return i + g.e_direction

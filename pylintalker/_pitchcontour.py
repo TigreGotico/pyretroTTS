@@ -20,9 +20,21 @@ by `_phonbuf2.fill_phon_buf_2`). Call order in the real `ParseSentence`:
 from __future__ import annotations
 
 from ._consts import (
-    kBoundryTypeField, kWord_Start, kContent_Word, kIsStressed,
-    kPrimOrEmphStress, kTerm_End, kVowelF, kSyllableTypeField,
-    kPitchRise, kPitchFall, kPitchRise1, kPitchFall1,
+    kBoundryTypeField,
+    kContent_Word,
+    kIsStressed,
+    kPitchFall,
+    kPitchFall1,
+    kPitchRise,
+    kPitchRise1,
+    kPrimOrEmphStress,
+    kSyllableTypeField,
+    kTerm_End,
+    kVowelF,
+    kWord_Start,
+)
+from ._data import (
+    PhonFlags2,
 )
 
 kFallen, kRaised, kStart, kFinished = 0, 1, 2, 3
@@ -36,7 +48,6 @@ def _flags(phon_flags2, phon):
 
 def count_stress_vowels_till_boundry(vv, boundry: int, cur_index: int) -> int:
     """`Count_StressVowels_Till_Boundry` (`BackEnd.c:2041-2065`)."""
-    from ._data import PhonFlags2
     count = 0
     for i in range(cur_index, vv.phonBuf_2_In_Index):
         cur_phon = vv.phon_Buf_2[i]
@@ -52,7 +63,6 @@ def count_stress_vowels_till_boundry(vv, boundry: int, cur_index: int) -> int:
 
 def any_stress_vowels_remain(vv, cur_index: int) -> int:
     """`Any_StressVowels_Remain` (`BackEnd.c:2069-2090`)."""
-    from ._data import PhonFlags2
     count = 0
     for i in range(cur_index + 1, vv.phonBuf_2_In_Index):
         cur_phon = vv.phon_Buf_2[i]
@@ -67,7 +77,6 @@ def any_stress_vowels_remain(vv, cur_index: int) -> int:
 
 def count_vowels_till_boundry(vv, boundry: int, cur_index: int) -> int:
     """`Count_Vowels_Till_Boundry` (`BackEnd.c:2094-2118`)."""
-    from ._data import PhonFlags2
     count = 0
     for i in range(cur_index, vv.phonBuf_2_In_Index):
         cur_phon = vv.phon_Buf_2[i]
@@ -83,7 +92,6 @@ def count_vowels_till_boundry(vv, boundry: int, cur_index: int) -> int:
 
 def pitch_raise_and_fall(vv) -> None:
     """Port of `Pitch_RaiseAndFall` (`BackEnd.c:2127-2295`)."""
-    from ._data import PhonFlags2
 
     p_state = kStart
     last_state = kStart

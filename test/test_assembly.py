@@ -30,15 +30,19 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from pylintalker._assembly import make_fe_word_token, collect_fe_tokens
-from pylintalker._morph import resolve_pos
+from pylintalker._assembly import collect_fe_tokens, make_fe_word_token
 from pylintalker._consts import (
-    kUndefPOS, kNoun, kArt, kPrimaryStress, kSecondaryStress,
-    kEmphaticStress, kContent_Word, kWord_Start, kCompoundNoun,
-    kTerm_Bound, kStressField,
+    kArt,
+    kCompoundNoun,
+    kContent_Word,
+    kEmphaticStress,
+    kNoun,
+    kPrimaryStress,
+    kStressField,
+    kWord_Start,
 )
-from pylintalker._phonemes import _Word_, _Period_, _Comma_, _Quest_, _Exclam_
-
+from pylintalker._morph import resolve_pos
+from pylintalker._phonemes import _Exclam_, _Period_, _Quest_, _Word_
 
 # ---------------------------------------------------------------------------
 # make_fe_word_token() -- per-word field mapping from _lexicon.lookup()
@@ -267,7 +271,6 @@ def test_oracle_goodbye():
 
 
 if __name__ == "__main__":
-    import inspect
     mod = sys.modules[__name__]
     tests = [obj for name, obj in vars(mod).items() if name.startswith("test_") and callable(obj)]
     failures = []

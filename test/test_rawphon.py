@@ -9,14 +9,22 @@ year/dollar/cent/clock words elsewhere in this port, there is no
 Symbols-dictionary corruption or extraction-verification caveat here at
 all.
 """
-import sys, os
+import os
+import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from pylintalker._rawphon import parse_raw_phonemes, split_into_word_groups, MAGIC_MAP
 from pylintalker._phonemes import (
-    _Stress1_, _Stress2_, _Word_, _AA_, _p_, _t_, _Comma_, _Period_,
-    _EmphWord_, _SIL_,
+    _AA_,
+    _Comma_,
+    _EmphWord_,
+    _p_,
+    _Period_,
+    _Stress1_,
+    _t_,
+    _Word_,
 )
+from pylintalker._rawphon import MAGIC_MAP, parse_raw_phonemes, split_into_word_groups
 
 
 def test_two_char_vowel_mnemonics():

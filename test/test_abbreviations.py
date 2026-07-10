@@ -4,10 +4,12 @@ abbreviation ("Mr.", "Dr.", "St.", ...) does not end a sentence/clause,
 matching `SearchAllDicts` finding the word WITH the period as part of
 its lookup key and `is_abbrev=True`.
 """
-import sys, os
+import os
+import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from pylintalker._frontend import tokenize, split_clauses, split_sentences
+from pylintalker._frontend import split_clauses, split_sentences, tokenize
 
 
 def test_tokenize_keeps_period_on_known_abbreviation():

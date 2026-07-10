@@ -3,7 +3,8 @@
 Usage: python3 tools/extract_data.py
 """
 
-import re, os, sys
+import os
+import re
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 C_SRC = os.path.join(os.path.dirname(REPO), "lintalker-c", "src")
@@ -93,7 +94,6 @@ def extract_voice_data(text):
             break
 
         name = m.group(1).strip()
-        start = idx + m.start()
 
         # Find matching closing brace
         brace_start = cleaned.index('{', idx + m.start())
@@ -142,9 +142,9 @@ def main():
     os.makedirs(os.path.join(REPO, "tools"), exist_ok=True)
 
     # Read source files
-    with open(os.path.join(C_SRC, "Data.c"), 'r', errors='replace') as f:
+    with open(os.path.join(C_SRC, "Data.c"), errors='replace') as f:
         data_c = f.read()
-    with open(os.path.join(C_INC, "Data.h"), 'r', errors='replace') as f:
+    with open(os.path.join(C_INC, "Data.h"), errors='replace') as f:
         data_h = f.read()
 
     combined = data_c + "\n\n" + data_h

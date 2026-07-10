@@ -45,8 +45,11 @@ What IS real and tested here (see test/test_frontend.py):
 """
 from __future__ import annotations
 
-from ._phonemes import _Period_, _Comma_, _Quest_, _Exclam_
 from ._engtop import engtop
+from ._lexicon import (
+    lookup,
+)
+from ._phonemes import _Comma_, _Exclam_, _Period_, _Quest_
 
 _PUNCT_PHON = {
     '.': _Period_,
@@ -197,7 +200,6 @@ def tokenize(
             # punctuation -- matches SearchAllDicts finding tok->tokStr
             # with the period appended (FrontEnd.c:524-526) and setting
             # tok->isAbbriv, rather than treating it as end-of-clause.
-            from ._lexicon import lookup
             entry = lookup(w + '.')
             if entry is not None and entry.is_abbrev:
                 w = w + '.'
@@ -226,7 +228,6 @@ def _is_abbreviation_period(text: str, period_pos: int) -> bool:
     word = text[j:period_pos]
     if not word:
         return False
-    from ._lexicon import lookup
     entry = lookup(word.upper() + '.')
     return bool(entry is not None and entry.is_abbrev)
 

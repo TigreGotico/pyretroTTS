@@ -27,20 +27,59 @@ silently zero every note's intended duration.
 """
 from __future__ import annotations
 
-from ._consts import (
-    k1pct, kOneHalf, kDurStepRes,
-    kStopF, kVoicedF, kFric, kVocLiq, kPlosFricF, kNasalF, kSonorantF,
-    kVowelF, kVowel1F, kConsonantF, kAffricateF, kGStopF,
-    kPrimOrEmphStress, kEmphaticStress, kSecondaryStress, kPrimaryStress,
-    kMore_Than_One_Syllable_In_Word, kFirst_Syllable_In_Word,
-    kWord_End, kVerb_End, kTerm_End, kWord_Initial_Consonant,
-    kStressedWInitial, kSyllableOrderField, kSyllableTypeField,
-    kSilenceTypeField, kSilenceTypeShift, kSilenceDuration,
-    kFrameTime, kNormal_Speech_Rate,
-    kTerm_Bound, kNoteDur, kNoteDurShift, kLowVibrato,
-    kSyllable_Start, kSampleMarker, kSampFrameLen,
+from ._backend import (
+    e_get_phon,
+    e_get_phon_ctrl,
+    init_rate_params,
 )
-from ._phonemes import _SIL_, _w_, _l_, _DX_, _SH_, _s_, _TH_, _LX_
+from ._consts import (
+    k1pct,
+    kAffricateF,
+    kConsonantF,
+    kDurStepRes,
+    kEmphaticStress,
+    kFirst_Syllable_In_Word,
+    kFrameTime,
+    kFric,
+    kGStopF,
+    kLowVibrato,
+    kMore_Than_One_Syllable_In_Word,
+    kNasalF,
+    kNormal_Speech_Rate,
+    kNoteDur,
+    kNoteDurShift,
+    kOneHalf,
+    kPlosFricF,
+    kPrimOrEmphStress,
+    kSampFrameLen,
+    kSampleMarker,
+    kSecondaryStress,
+    kSilenceDuration,
+    kSilenceTypeField,
+    kSilenceTypeShift,
+    kSonorantF,
+    kStopF,
+    kStressedWInitial,
+    kSyllable_Start,
+    kSyllableOrderField,
+    kSyllableTypeField,
+    kTerm_Bound,
+    kTerm_End,
+    kVerb_End,
+    kVocLiq,
+    kVoicedF,
+    kVowel1F,
+    kVowelF,
+    kWord_End,
+    kWord_Initial_Consonant,
+)
+from ._data import (
+    PhonFlags2,
+)
+from ._engine import (
+    e_set_tempo,
+)
+from ._phonemes import _DX_, _LX_, _SH_, _SIL_, _TH_, _l_, _s_, _w_
 
 # BackEnd.c's Mod_Duration has its own local `#define k100pct_Dur 128`
 # (percent_Duration's base scale, distinct from k100percent=0x10000).
@@ -59,9 +98,6 @@ def _flags(phon_flags2, phon):
 def mod_duration(vv) -> None:
     """Port of `Mod_Duration`. Writes `vv.dur_Buf[1:vv.phonBuf_2_In_Index]`
     (`vv.dur_Buf[0]` is always 1, matching `BackEnd.c:1397`)."""
-    from ._backend import e_get_phon, e_get_phon_ctrl, init_rate_params
-    from ._data import PhonFlags2
-    from ._engine import e_set_tempo
 
     vv.markerIndex = 0
     vv.dur_Buf[0] = 1  # initial SIL = 5ms

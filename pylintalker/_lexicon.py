@@ -96,10 +96,9 @@ from __future__ import annotations
 
 import struct
 from dataclasses import dataclass, field
-from typing import Optional
 
 from ._data import english_lex_data
-from ._phonemes import _Word_
+from ._phonemes import _pRise_, _Word_
 
 # --- mt4.h constants -------------------------------------------------------
 
@@ -117,8 +116,7 @@ kPrimeStress = 0x40                              # mt4.h:761
 # kDictComp/kDictWord are aliases for phoneme-enum values (mt4.h:759-760);
 # _pRise_ and _pFall_ are never used as literal phonemes inside a dict entry,
 # so the byte values are repurposed as the "compound noun" / "word" markers.
-from ._phonemes import _pRise_ as kDictComp      # mt4.h:759
-from ._phonemes import _pFall_ as kDictWord      # mt4.h:760
+kDictComp = _pRise_  # mt4.h:759
 
 # POS codes (mt4.h:22-53)
 kNoun, kVerb, kAdj, kPrep, kVaux, kRVaux, kInterj, kConj = range(8)
@@ -162,7 +160,7 @@ def parse_dict(raw: bytes) -> DictHeader:
     off += 4
     version, dtype, word_count = struct.unpack_from('>3I', raw, off)
     off += 12
-    hash_vals = struct.unpack_from('>%dI' % HASH_ENTRIES, raw, off)
+    hash_vals = struct.unpack_from(f'>{HASH_ENTRIES}I', raw, off)
     off += 4 * HASH_ENTRIES
     pos_codes = []
     for _ in range(kPOS_Slots):
@@ -171,7 +169,7 @@ def parse_dict(raw: bytes) -> DictHeader:
     words_off, index_off, flags = struct.unpack_from('>3I', raw, off)
     off += 12
 
-    index = list(struct.unpack_from('>%dI' % word_count, raw, index_off))
+    index = list(struct.unpack_from(f'>{word_count}I', raw, index_off))
 
     return DictHeader(
         version=version,
@@ -210,8 +208,8 @@ class LexEntry:
     is_abbrev: bool         # tok->isAbbriv
     is_compound: bool       # convenience hint -- see docstring above
     has_alt: bool           # tok->hasAlt
-    phon_hold: Optional[list] = None    # alt-pronunciation phoneme opcodes (tok->phonHold)
-    pos_code2: Optional[list] = None    # alt-pronunciation POS codes (tok->POScode2)
+    phon_hold: list | None = None    # alt-pronunciation phoneme opcodes (tok->phonHold)
+    pos_code2: list | None = None    # alt-pronunciation POS codes (tok->POScode2)
     comp_pos2: int = 0                  # tok->compPOS2
 
 
@@ -257,7 +255,7 @@ def _decode_pos_row(dict_header: DictHeader, pos_index: int):
     return codes, composite, is_abbrev
 
 
-def search_single_dict(word: str, dict_header: DictHeader) -> Optional[LexEntry]:
+def search_single_dict(word: str, dict_header: DictHeader) -> LexEntry | None:
     """Port of `FrontEnd.c:SearchSingleDict` (`FrontEnd.c:1150-1321`) -- the
     function actually exercised by `SearchAllDicts` for `English.lex`, since
     `dict.type == kEncryptDict (1)`, not `kCompressDict (2)` (confirmed
@@ -350,7 +348,7 @@ def search_single_dict(word: str, dict_header: DictHeader) -> Optional[LexEntry]
 
 # --- module-level singleton dictionary + public lookup API -----------------
 
-_english_dict: Optional[DictHeader] = None
+_english_dict: DictHeader | None = None
 
 
 def _get_english_dict() -> DictHeader:
@@ -360,7 +358,7 @@ def _get_english_dict() -> DictHeader:
     return _english_dict
 
 
-def lookup(word: str) -> Optional[LexEntry]:
+def lookup(word: str) -> LexEntry | None:
     """Port of `SearchAllDicts(vv, text, tok, vv->Dict, true)`
     (`FrontEnd.c:1592-1608`) against the main `English.lex` dictionary only
     (app-specific user dictionaries and the `Symbols` dictionary --

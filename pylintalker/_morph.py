@@ -33,30 +33,119 @@ phoneme's voicing).
 """
 from __future__ import annotations
 
-from typing import List, Optional
-
 from ._consts import (
-    kUndefPOS, kNoun, kVerb, kAdj, kAdv, kPrep, kPPron, kRelPro, kDPron,
-    kIPron, kRPron, kVaux, kRVaux, kInterj, kConj, kCConj, kInterr, kArt,
-    kDet, kInf, kGen, kContr, kQuant, kVPart, kSubjPron, kObjPron,
-    kPalatalF, kConsonantF, kVoicedF,
-    kHas_Noun, kHas_Verb, kHas_Adj, kHas_Adv, kHas_Prep, kHas_PPron,
-    kHas_RelPro, kHas_DPron, kHas_IPron, kHas_Vaux, kHas_RVaux,
-    kHas_Interj, kHas_Conj, kHas_CConj, kHas_Interr, kHas_Art, kHas_Det,
-    kHas_Inf, kHas_Gen, kHas_Contr, kHas_Quant, kHas_VPart,
-    kHas_SubjPron, kHas_ObjPron,
-    kNo_suffix, kS_suffix, kES_suffix, kIES_suffix, kED_suffix, kER_suffix,
-    kERS_suffix, kEST_suffix, kIED_suffix, kIER_suffix, kIERS_suffix,
-    kIEST_suffix, kING_suffix, kINGS_suffix, kMENT_suffix, kMENTS_suffix,
-    kIMENT_suffix, kIMENTS_suffix, kBLY_suffix, kLY_suffix, kCALLY_suffix,
-    kOR_suffix, kORS_suffix, kIZE_suffix, kIZED_suffix, kIZES_suffix,
-    kIZING_suffix, kIZINGS_suffix, kIZER_suffix, kIZERS_suffix,
-    kNESS_suffix, kNESSES_suffix, kINESS_suffix, kINESSES_suffix,
-    kISM_suffix, kISMS_suffix, kABLE_suffix,
+    kABLE_suffix,
+    kAdj,
+    kAdv,
+    kArt,
+    kBLY_suffix,
+    kCALLY_suffix,
+    kCConj,
+    kConj,
+    kConsonantF,
+    kContr,
+    kDet,
+    kDPron,
+    kED_suffix,
+    kER_suffix,
+    kERS_suffix,
+    kES_suffix,
+    kEST_suffix,
+    kHas_Adj,
+    kHas_Adv,
+    kHas_Art,
+    kHas_CConj,
+    kHas_Conj,
+    kHas_Contr,
+    kHas_Det,
+    kHas_DPron,
+    kHas_Gen,
+    kHas_Inf,
+    kHas_Interj,
+    kHas_Interr,
+    kHas_IPron,
+    kHas_Noun,
+    kHas_ObjPron,
+    kHas_PPron,
+    kHas_Prep,
+    kHas_Quant,
+    kHas_RelPro,
+    kHas_RVaux,
+    kHas_SubjPron,
+    kHas_Vaux,
+    kHas_Verb,
+    kHas_VPart,
+    kIED_suffix,
+    kIER_suffix,
+    kIERS_suffix,
+    kIES_suffix,
+    kIEST_suffix,
+    kIMENT_suffix,
+    kIMENTS_suffix,
+    kINESS_suffix,
+    kINESSES_suffix,
+    kInf,
+    kING_suffix,
+    kINGS_suffix,
+    kInterj,
+    kInterr,
+    kIPron,
+    kISM_suffix,
+    kISMS_suffix,
+    kIZE_suffix,
+    kIZED_suffix,
+    kIZER_suffix,
+    kIZERS_suffix,
+    kIZES_suffix,
+    kIZING_suffix,
+    kIZINGS_suffix,
+    kLY_suffix,
+    kMENT_suffix,
+    kMENTS_suffix,
+    kNESS_suffix,
+    kNESSES_suffix,
+    kNoun,
+    kObjPron,
+    kOR_suffix,
+    kORS_suffix,
+    kPalatalF,
+    kPPron,
+    kPrep,
+    kQuant,
+    kRelPro,
+    kRPron,
+    kRVaux,
+    kS_suffix,
+    kSubjPron,
+    kUndefPOS,
+    kVaux,
+    kVerb,
+    kVoicedF,
+    kVPart,
+)
+from ._data import (
+    PhonFlags2,
+)
+from ._lexicon import (
+    lookup,
 )
 from ._phonemes import (
-    _l_, _IY_, _IX_, _s_, _t_, _d_, _ER_, _NG_, _z_, _m_, _AX_, _n_, _b_, _EL_,
-    _AY_, _IH_,
+    _AX_,
+    _AY_,
+    _EL_,
+    _ER_,
+    _IH_,
+    _IX_,
+    _IY_,
+    _NG_,
+    _b_,
+    _d_,
+    _l_,
+    _m_,
+    _n_,
+    _s_,
+    _t_,
+    _z_,
 )
 
 
@@ -118,7 +207,7 @@ def _pos_count_and_hi_rank(pos_code1, pos_code2):
     return count1, count2, hi_rank
 
 
-def resolve_pos(tokens: List) -> None:
+def resolve_pos(tokens: list) -> None:
     """Mutates `tok.pos_choice`/`tok.alt_choice` for every `FEWordToken`
     in `tokens`, in place, using full-sentence context -- port of
     `ResolvePOS` (`Morph.c:358-1006`). Call once per clause, after all
@@ -353,8 +442,6 @@ def _store_s_or_z(phon_str: list) -> list:
     - voiceless consonant -> `_s_` (e.g. "cats")
     - everything else (vowels, voiced consonants) -> `_z_` (e.g. "dogs")
     """
-    from ._data import PhonFlags2
-    from ._phonemes import _IX_, _z_, _s_
 
     last_phon = phon_str[-1]
     flags = PhonFlags2[last_phon] if 0 <= last_phon < len(PhonFlags2) else 0
@@ -394,7 +481,6 @@ def try_s_morph(word: str):
     root hit, so the caller falls back to `_engtop.engtop()` exactly as
     `WordToPhonemes` does when `DoMorph` itself fails.
     """
-    from ._lexicon import lookup
 
     if len(word) < 2 or word[-1] != 'S':
         return None
@@ -546,7 +632,6 @@ def _decompose_e_common(stripped_root: str):
     (`timed` -> `time`) or a doubled consonant undone (`napped` -> `nap`)
     before it matches a dictionary entry. Returns the matching `LexEntry`
     or `None`."""
-    from ._lexicon import lookup
 
     entry = lookup(stripped_root + 'E')
     if entry is not None:
@@ -559,7 +644,6 @@ def _decompose_i_common(stripped_root: str):
     after stripping an -IED/-IER/-IEST suffix ends in a bare "I" that was
     a "Y" in the original spelling (`happier` -> `happi` -> `happy`).
     Returns the matching `LexEntry` or `None`."""
-    from ._lexicon import lookup
 
     return lookup(stripped_root + 'Y')
 
@@ -572,7 +656,6 @@ def _decompose_ness(stripped_root: str):
     a "-LY" adjective root with the "L" also stripped
     (`loneliness` -> `lonel` -> `lone`, reconstructed as root+"ly"+"ness").
     Returns `(entry, is_ly)` or `None`."""
-    from ._lexicon import lookup
 
     entry = lookup(stripped_root + 'Y')
     if entry is not None:
@@ -589,7 +672,6 @@ def _decompose_or(stripped_root: str):
     identically for `Do_ORS_Morph`): tries the root with a trailing "E"
     restored first (`senator` -> `senate`), then the bare root
     (`sailor` -> `sail`). Returns the matching `LexEntry` or `None`."""
-    from ._lexicon import lookup
 
     entry = lookup(stripped_root + 'E')
     if entry is not None:
@@ -642,7 +724,6 @@ def try_do_morph(word: str):
     NOT ported: true compound-noun decomposition -- see module
     docstring.
     """
-    from ._lexicon import lookup
 
     w = word
 
@@ -903,8 +984,6 @@ def _store_ed(phon_str: list) -> list:
     - voiceless consonant -> `_t_` (e.g. "walked")
     - everything else (vowels, voiced consonants) -> `_d_` (e.g. "jogged")
     """
-    from ._data import PhonFlags2
-    from ._phonemes import _IX_, _t_, _d_
 
     last_phon = phon_str[-1]
     flags = PhonFlags2[last_phon] if 0 <= last_phon < len(PhonFlags2) else 0
