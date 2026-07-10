@@ -51,6 +51,7 @@ constants).
 from __future__ import annotations
 
 from ._backend import (
+    VoiceVar,
     e_get_phon,
 )
 from ._consts import (
@@ -127,7 +128,7 @@ def _flags(phon_flags2, phon):
     return phon_flags2[phon]
 
 
-def fill_phon_buf_2(vv, sa) -> None:
+def fill_phon_buf_2(vv: VoiceVar, sa) -> None:
     """Port of `Fill_Phon_Buf_2`. Reads `sa.phon_buf`/`sa.ctrl_buf`
     (`phon_Buf_1`/`phon_Ctrl_Buf_1`), writes `vv.phon_Buf_2`/
     `vv.phon_Ctrl_Buf_2`/`vv.user_*_Buf2`, sets `vv.phonBuf_2_In_Index`.
@@ -384,7 +385,7 @@ def fill_phon_buf_2(vv, sa) -> None:
         last_user_pitch += user_pitch
 
 
-def insert_closure_release(vv) -> None:
+def insert_closure_release(vv: VoiceVar) -> None:
     """Port of `Insert_Closure_Release` (`formantSynth.c`, the body of
     `synth_AdjustPhons2`). Inserts a release phoneme (`_IX_`/`_AX_`) before
     word-final silence after a phoneme with `kHasReleaseF` (plosives).

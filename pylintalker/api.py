@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import wave
 from collections.abc import Iterable
+from dataclasses import dataclass, field
 
 from ._assembly import collect_fe_tokens
 from ._backend import (
@@ -29,9 +30,10 @@ from ._moduration import mod_duration
 from ._phonbuf2 import fill_phon_buf_2, insert_closure_release
 from ._pitchbuf import fill_pitch_buf
 from ._pitchcontour import pitch_raise_and_fall
+from ._voice import Voice
 
 
-def new_voice(voice_dict: dict) -> VoiceVar:
+def new_voice(voice_dict: Voice) -> VoiceVar:
     """Create and initialize a VoiceVar for the given voice definition."""
     vv = VoiceVar()
     init_voice(vv, voice_dict)
@@ -93,8 +95,28 @@ def _reset_for_clause(vv: VoiceVar) -> None:
     vv.frameMarker = kNoMarker
 
 
+@dataclass(frozen=True)
+class PhonemePlan:
+    """Everything the synthesizer needs to voice one clause.
+
+    `phonemes`, `ctrls` and `durs` are parallel: one entry per phoneme (see
+    `pylintalker._phonemes` for the ids). The `pitch_*` lists are likewise
+    parallel to each other and describe the clause's pitch contour.
+    """
+
+    phonemes: list[int] = field(default_factory=list)
+    ctrls: list[int] = field(default_factory=list)
+    durs: list[int] = field(default_factory=list)
+    pitch_freq: list[int] = field(default_factory=list)
+    pitch_time: list[int] = field(default_factory=list)
+    pitch_flags: list[int] = field(default_factory=list)
+    #: the clause's terminator; Calc_Ramp_Steps halves the pitch decline ramp
+    #: for a comma or a question mark, so synthesis must be told which it was.
+    end_punctuation: int = 0
+
+
 def synthesize_phonemes(
-    voice_dict: dict,
+    voice_dict: Voice,
     phonemes: Iterable[int],
     ctrls: Iterable[int],
     durs: Iterable[int],
@@ -108,22 +130,13 @@ def synthesize_phonemes(
 
     ``phonemes``/``ctrls``/``durs`` are parallel arrays describing the
     phoneme sequence (see ``pylintalker._phonemes`` for phoneme ids). ``pitch_*``
-    describe an optional pitch contour overlay, as produced by the C
-    reference's frontend.
+    describe an optional pitch contour overlay.
 
-    ``end_punctuation`` must be the same value `build_phoneme_plan` computed
-    for this plan (its 7th return value) whenever the plan came from real
-    text ending in a comma or question mark: `Calc_Ramp_Steps`
-    (`BackEnd.c:678-739`) halves the pitch decline ramp step for those two
-    terminators, and it reads `vv->end_Punctuation` directly, not something
-    derived from the phoneme/ctrl arrays -- omitting it silently doubles the
-    pitch decline rate for the whole clause. This was a real, confirmed bug:
-    `build_phoneme_plan`'s own internal `VoiceVar` set `end_Punctuation`
-    correctly before running its own `Calc_Ramp_Steps` pass, but that value
-    never reached the SEPARATE `VoiceVar` this function creates for the
-    actual synthesis pass, which re-runs `Calc_Ramp_Steps` from scratch with
-    `end_Punctuation` still at its default (0) -- affecting every
-    comma-containing or yes/no-question sentence, on every voice.
+    ``end_punctuation`` must be the terminator the clause actually ended on:
+    `Calc_Ramp_Steps` (`BackEnd.c:678-739`) reads `vv->end_Punctuation`
+    directly rather than deriving it from the phoneme arrays, and halves the
+    pitch decline ramp step for a comma or a question mark. Prefer
+    `synthesize_plan`, which carries it for you.
     """
     phonemes = list(phonemes)
     ctrls = list(ctrls)
@@ -160,6 +173,18 @@ def synthesize_phonemes(
     return bytes(vv.sampleBuffer)
 
 
+def synthesize_plan(
+    voice_dict: Voice, plan: PhonemePlan, vv: VoiceVar | None = None
+) -> bytes:
+    """Synthesize a `PhonemePlan` into raw 16-bit PCM audio."""
+    return synthesize_phonemes(
+        voice_dict,
+        plan.phonemes, plan.ctrls, plan.durs,
+        plan.pitch_freq, plan.pitch_time, plan.pitch_flags,
+        vv=vv, end_punctuation=plan.end_punctuation,
+    )
+
+
 def pcm_to_wav(pcm: bytes, path: str, sample_rate: int = SamplingRate) -> str:
     """Write raw 16-bit mono PCM to a WAV file. Returns the path."""
     with wave.open(path, "wb") as w:
@@ -170,7 +195,9 @@ def pcm_to_wav(pcm: bytes, path: str, sample_rate: int = SamplingRate) -> str:
     return path
 
 
-def build_phoneme_plan(voice_dict: dict, text: str, vv: VoiceVar | None = None):
+def build_phoneme_plan(
+    voice_dict: Voice, text: str, vv: VoiceVar | None = None
+) -> PhonemePlan:
     """Build a `(phonemes, ctrls, durs, pitch_freq, pitch_time, pitch_flags,
     end_punctuation)` plan from English text, matching `ParseSentence`'s
     real pipeline order:
@@ -203,38 +230,25 @@ def build_phoneme_plan(voice_dict: dict, text: str, vv: VoiceVar | None = None):
         vv = new_voice(voice_dict)
     _reset_for_clause(vv)
 
-    (
-        text, _bracket_cmds, _emphasis_overrides, _silence_overrides,
-        _pos_overrides, _rate_overrides, _final_rate, _nmbr_overrides,
-        _raw_phon_overrides, _char_overrides,
-    ) = scan_bracket_commands(text, initial_rate=vv.speech_Rate)
-    if _bracket_cmds:
-        # Simplified integration (see _embeddedcmd.scan_bracket_commands'
-        # docstring "NOT ported" note): the real engine positions each
-        # command's effect at a specific PHONEME via an opcode embedded
-        # in phon_Buf_1 (StuffBECommand/Parse_Embedded_Command), which
-        # this port's pipeline has no equivalent slot for. Applied here
-        # instead as an immediate state change at the START of this
-        # clause, regardless of which word in the clause the bracketed
-        # command actually appeared before.
+    commands = scan_bracket_commands(text, initial_rate=vv.speech_Rate)
+    if commands.queued:
+        # The real engine positions each command's effect at a specific
+        # phoneme, via an opcode embedded in phon_Buf_1 (StuffBECommand/
+        # Parse_Embedded_Command). This pipeline has no equivalent slot, so
+        # the command applies at the start of the clause instead of before
+        # the word it was written in front of.
         idx = vv.cmdBufCount + vv.ctrlCount
-        for _word_index, ctrl_type, ctrl_data in _bracket_cmds:
+        for _word_index, ctrl_type, ctrl_data in commands.queued:
             vv.CMDQueue[idx] = (ctrl_type, ctrl_data)
             idx += 1
             vv.ctrlCount += 1
         do_ctrl(vv)
-    if _final_rate is not None:
-        # Persist the resolved rate onto vv.speech_Rate so a later
-        # clause's own scan_bracket_commands (or a plain rate/ratr with
-        # no preceding embedded command in THIS clause) sees the right
-        # initial_rate/relative-change baseline -- mirrors vv->lastRate
-        # being a single persistent field, not reset per clause.
-        vv.speech_Rate = _final_rate
+    if commands.final_rate is not None:
+        # vv->lastRate is a single persistent field, not reset per clause, so
+        # a later clause's rate/ratr resolves against this baseline.
+        vv.speech_Rate = commands.final_rate
 
-    sa = collect_fe_tokens(
-        text, _emphasis_overrides, _silence_overrides, _pos_overrides,
-        _rate_overrides, _nmbr_overrides, _raw_phon_overrides, _char_overrides,
-    )
+    sa = collect_fe_tokens(commands.text, commands)
     fill_phon_buf_2(vv, sa)
     vv.end_Punctuation = sa.end_punctuation
     pitch_raise_and_fall(vv)
@@ -262,14 +276,18 @@ def build_phoneme_plan(voice_dict: dict, text: str, vv: VoiceVar | None = None):
 
     n = vv.phonBuf_2_In_Index
     pn = vv.pitchBuf_In_Index
-    return (
-        vv.phon_Buf_2[:n], vv.phon_Ctrl_Buf_2[:n], vv.dur_Buf[:n],
-        vv.pitch_Buf_Freq[:pn], vv.pitch_Buf_Time[:pn], vv.pitch_Buf_Flags[:pn],
-        vv.end_Punctuation,
+    return PhonemePlan(
+        phonemes=vv.phon_Buf_2[:n],
+        ctrls=vv.phon_Ctrl_Buf_2[:n],
+        durs=vv.dur_Buf[:n],
+        pitch_freq=vv.pitch_Buf_Freq[:pn],
+        pitch_time=vv.pitch_Buf_Time[:pn],
+        pitch_flags=vv.pitch_Buf_Flags[:pn],
+        end_punctuation=vv.end_Punctuation,
     )
 
 
-def synthesize_text(voice_dict: dict, text: str) -> bytes:
+def synthesize_text(voice_dict: Voice, text: str) -> bytes:
     """Synthesize English text (one or more clauses/sentences) into raw
     16-bit PCM audio. See `build_phoneme_plan` for the single-clause
     pipeline this composes, and its known gaps.

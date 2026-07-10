@@ -45,6 +45,8 @@ What IS real and tested here (see test/test_frontend.py):
 """
 from __future__ import annotations
 
+from dataclasses import dataclass, field
+
 from ._engtop import engtop
 from ._lexicon import (
     lookup,
@@ -59,13 +61,31 @@ _PUNCT_PHON = {
 }
 
 
-def tokenize(
-    text: str,
-    _dollar_out: list | None = None,
-    _decimal_frac_out: list | None = None,
-    _cent_out: list | None = None,
-    _clock_out: list | None = None,
-) -> list[tuple[str, str | None]]:
+@dataclass(frozen=True)
+class TokenStream:
+    """The word/punctuation stream, plus where the number readers must look.
+
+    Each index list holds positions into `tokens` whose word needs a reader
+    other than the plain cardinal one: a dollar amount, the fractional part
+    of a decimal, a cents amount, or the minutes of a clock time.
+    """
+
+    tokens: list[tuple[str, str | None]] = field(default_factory=list)
+    dollar: list[int] = field(default_factory=list)
+    decimal_frac: list[int] = field(default_factory=list)
+    cent: list[int] = field(default_factory=list)
+    clock: list[int] = field(default_factory=list)
+
+
+def tokenize(text: str) -> list[tuple[str, str | None]]:
+    """Split raw text into (WORD, trailing_punct_or_None) pairs.
+
+    Use `scan_tokens` when the number/currency/clock positions are needed too.
+    """
+    return scan_tokens(text).tokens
+
+
+def scan_tokens(text: str) -> TokenStream:
     """Split raw text into (WORD, trailing_punct_or_None) pairs.
 
     Minimal stand-in for FrontEnd.c's `Collect_FE_Tokens`/word-scanning loop:
@@ -76,7 +96,7 @@ def tokenize(
     "?!") -- FrontEnd.c has dedicated logic for those (search FrontEnd.c for
     `kAbbrev`/`ProcessNumberString`) that is not ported here.
 
-    `_dollar_out`, if given a list, gets the output-token INDEX of every
+    `dollar` gets the output-token INDEX of every
     `$<digits>` token appended to it (e.g. `"$5"` -> the digit token
     `"5"`, with its index recorded) -- a port of `GetNextToken`'s `$`
     handling (`FrontEnd.c:1017-1027`: a `$` immediately followed by a
@@ -91,7 +111,7 @@ def tokenize(
     leaving an empty string) -- a real bug, not just a missing feature;
     fixing the drop and adding dollar-amount reading landed together.
 
-    `_decimal_frac_out`, if given a list, gets the output-token INDEX of
+    `decimal_frac` gets the output-token INDEX of
     the FRACTIONAL half of every `N.M`-shaped token (e.g. `"3.14"` splits
     into three tokens: `"3"`, `"POINT"`, `"14"` -- only the last one's
     index is recorded). Ports the `kPeriodTok` "KLUDGE" (`FrontEnd.c:
@@ -103,15 +123,15 @@ def tokenize(
     token inheriting `kDigitByDigit`-equivalent behavior (`lastType ==
     kDecimalTok` at `FrontEnd.c:2058`) -- e.g. "3.14" -> "three point one
     four", not "three point fourteen". Not applied to a `$`-prefixed
-    token: that combination is `_cent_out`'s job instead (see below).
+    token: that combination is `cent`'s job instead (see below).
     Like a plain `.` before this port, `N.M` was previously silently
     DROPPED entirely (`isdigit()` fails on `"3.14"`, and the
     `isalpha()`-only fallback filter strips both the digits and the
     `.`) -- fixed here.
 
-    `_cent_out`, if given a list, gets the output-token INDEX of the
+    `cent` gets the output-token INDEX of the
     CENTS half of every `$N.M`-shaped token (e.g. `"$5.25"` splits into
-    THREE tokens: `"5"` (recorded in `_dollar_out`), `"AND"`, `"25"`
+    THREE tokens: `"5"` (recorded in `dollar`), `"AND"`, `"25"`
     (recorded here)). Ports `kPeriodTok`'s SEPARATE dollar-flagged
     branch (`FrontEnd.c:2096-2101`): unlike a plain decimal, a `.` right
     after a `kAddDollar` token becomes the word "AND" (not "POINT"),
@@ -120,7 +140,7 @@ def tokenize(
     NOT digit-by-digit -- e.g. `"$5.25"` -> "five dollars AND twenty
     five cents", not "five dollars point two five".
 
-    `_clock_out`, if given a list, gets the output-token INDEX of the
+    `clock` gets the output-token INDEX of the
     MINUTES half of every `H:MM`-shaped token (e.g. `"3:45"` splits
     into `"3"` and `"45"`, only the latter's index recorded). Ports
     `GetNextToken`'s `:`-between-digits handling (`FrontEnd.c:1003
@@ -135,6 +155,10 @@ def tokenize(
     either, the same narrow scope the C source itself has.
     """
     tokens: list[tuple[str, str | None]] = []
+    dollar: list[int] = []
+    decimal_frac: list[int] = []
+    cent: list[int] = []
+    clock: list[int] = []
     for raw in text.split():
         punct = None
         w = raw
@@ -150,8 +174,7 @@ def tokenize(
             _hour_part, _minute_part = w.split(':')
             if _hour_part.isdigit() and len(_minute_part) == 2 and _minute_part.isdigit():
                 tokens.append((_hour_part, None))
-                if _clock_out is not None:
-                    _clock_out.append(len(tokens))
+                clock.append(len(tokens))
                 tokens.append((_minute_part, punct))
                 continue
         if is_dollar and w.count('.') == 1:
@@ -163,12 +186,10 @@ def tokenize(
             # cents", not "five dollars point two five".
             _int_part, _frac_part = w.split('.')
             if _int_part and _frac_part and _int_part.isdigit() and _frac_part.isdigit():
-                if _dollar_out is not None:
-                    _dollar_out.append(len(tokens))
+                dollar.append(len(tokens))
                 tokens.append((_int_part, None))
                 tokens.append(("AND", None))
-                if _cent_out is not None:
-                    _cent_out.append(len(tokens))
+                cent.append(len(tokens))
                 tokens.append((_frac_part, punct))
                 continue
         if not is_dollar and w.count('.') == 1:
@@ -176,8 +197,7 @@ def tokenize(
             if _int_part and _frac_part and _int_part.isdigit() and _frac_part.isdigit():
                 tokens.append((_int_part, None))
                 tokens.append(("POINT", None))
-                if _decimal_frac_out is not None:
-                    _decimal_frac_out.append(len(tokens))
+                decimal_frac.append(len(tokens))
                 tokens.append((_frac_part, punct))
                 continue
         if w.isdigit():
@@ -185,8 +205,8 @@ def tokenize(
             # stripping it (FrontEnd.c's kNumericTok path,
             # ProcessNumberString -- see _numbers.py for the cardinal-
             # reading port this feeds via _assembly.make_fe_word_token).
-            if is_dollar and _dollar_out is not None:
-                _dollar_out.append(len(tokens))
+            if is_dollar:
+                dollar.append(len(tokens))
             tokens.append((w, punct))
             continue
         w = ''.join(c for c in w if c.isalpha() or c == "'")
@@ -205,7 +225,10 @@ def tokenize(
                 w = w + '.'
                 punct = None
         tokens.append((w, punct))
-    return tokens
+    return TokenStream(
+        tokens=tokens, dollar=dollar, decimal_frac=decimal_frac,
+        cent=cent, clock=clock,
+    )
 
 
 def _is_abbreviation_period(text: str, period_pos: int) -> bool:

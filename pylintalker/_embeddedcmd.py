@@ -39,6 +39,8 @@ it requires hand-populating vv.CMDQueue/vv.user_Cmd_Buf2.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass, field
+
 from ._backend import VoiceVar, e_midi_to_pitch, set_volume
 from ._consts import (
     C_absMod,
@@ -211,7 +213,37 @@ _BRACKET_COMMANDS = {
 }
 
 
-def scan_bracket_commands(text: str, initial_rate: int = kNormal_Speech_Rate):
+@dataclass(frozen=True)
+class BracketCommands:
+    """What a clause's `[[...]]` commands ask for, stripped out of the text.
+
+    Every mapping is keyed by word index: how many words of `text` precede
+    the command, so it applies to (or immediately before) that word.
+    """
+
+    #: the input with every recognized bracket command removed
+    text: str = ""
+    #: (word_index, ctrl_type, ctrl_data) triples destined for the CMDQueue
+    queued: tuple[tuple[int, int, int], ...] = ()
+    #: word_index -> "emphasize" | "deemphasize"
+    emphasis: dict[int, str] = field(default_factory=dict)
+    #: word_index -> milliseconds of silence to insert before the word
+    silences: dict[int, int] = field(default_factory=dict)
+    #: word_index -> part-of-speech code, overriding the tagger
+    pos: dict[int, int] = field(default_factory=dict)
+    #: word_index -> speaking rate in words per minute
+    rates: dict[int, int] = field(default_factory=dict)
+    #: word_index -> read digits one at a time (latched, not one-shot)
+    digit_by_digit: dict[int, bool] = field(default_factory=dict)
+    #: word_index -> literal phoneme string, from `mode PHON`
+    raw_phonemes: dict[int, list] = field(default_factory=dict)
+    #: word_index -> spell the word out letter by letter, from `char LTRL`
+    spelled: dict[int, bool] = field(default_factory=dict)
+    #: rate in force at the end of the clause, or None if no rate command ran
+    final_rate: int | None = None
+
+
+def scan_bracket_commands(text: str, initial_rate: int = kNormal_Speech_Rate) -> BracketCommands:
     """Port of `EmbeddedCmd.c`'s bracket-delimited text-command scanner
     (`ProcessEmbeddedCommands` and the `pbas`/`pmod`/`volm`/`emph`
     members of its command dispatch, `EmbeddedCmd.c:990-1010`), scoped
@@ -641,10 +673,17 @@ def scan_bracket_commands(text: str, initial_rate: int = kNormal_Speech_Rate):
 
         i = end + len(END)
 
-    final_rate = last_rate if rates else None
-    return (
-        ''.join(out_parts), commands, emphasis, silences, pos_overrides,
-        rates, final_rate, nmbr_overrides, raw_phon_overrides, char_overrides,
+    return BracketCommands(
+        text=''.join(out_parts),
+        queued=tuple(commands),
+        emphasis=emphasis,
+        silences=silences,
+        pos=pos_overrides,
+        rates=rates,
+        digit_by_digit=nmbr_overrides,
+        raw_phonemes=raw_phon_overrides,
+        spelled=char_overrides,
+        final_rate=last_rate if rates else None,
     )
 
 

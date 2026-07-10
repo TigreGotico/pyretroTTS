@@ -19,6 +19,7 @@ by `_phonbuf2.fill_phon_buf_2`). Call order in the real `ParseSentence`:
 """
 from __future__ import annotations
 
+from ._backend import VoiceVar
 from ._consts import (
     kBoundryTypeField,
     kContent_Word,
@@ -46,7 +47,7 @@ def _flags(phon_flags2, phon):
     return phon_flags2[phon]
 
 
-def count_stress_vowels_till_boundry(vv, boundry: int, cur_index: int) -> int:
+def count_stress_vowels_till_boundry(vv: VoiceVar, boundry: int, cur_index: int) -> int:
     """`Count_StressVowels_Till_Boundry` (`BackEnd.c:2041-2065`)."""
     count = 0
     for i in range(cur_index, vv.phonBuf_2_In_Index):
@@ -61,7 +62,7 @@ def count_stress_vowels_till_boundry(vv, boundry: int, cur_index: int) -> int:
     return count
 
 
-def any_stress_vowels_remain(vv, cur_index: int) -> int:
+def any_stress_vowels_remain(vv: VoiceVar, cur_index: int) -> int:
     """`Any_StressVowels_Remain` (`BackEnd.c:2069-2090`)."""
     count = 0
     for i in range(cur_index + 1, vv.phonBuf_2_In_Index):
@@ -75,7 +76,7 @@ def any_stress_vowels_remain(vv, cur_index: int) -> int:
     return count
 
 
-def count_vowels_till_boundry(vv, boundry: int, cur_index: int) -> int:
+def count_vowels_till_boundry(vv: VoiceVar, boundry: int, cur_index: int) -> int:
     """`Count_Vowels_Till_Boundry` (`BackEnd.c:2094-2118`)."""
     count = 0
     for i in range(cur_index, vv.phonBuf_2_In_Index):
@@ -90,7 +91,7 @@ def count_vowels_till_boundry(vv, boundry: int, cur_index: int) -> int:
     return count
 
 
-def pitch_raise_and_fall(vv) -> None:
+def pitch_raise_and_fall(vv: VoiceVar) -> None:
     """Port of `Pitch_RaiseAndFall` (`BackEnd.c:2127-2295`)."""
 
     p_state = kStart

@@ -204,6 +204,7 @@ from ._phonemes import (
     _w_,
     _z_,
 )
+from ._voice import Voice
 
 # ---------------------------------------------------------------------------
 # Fixed-point math helpers (mirrors C macros)
@@ -1286,7 +1287,7 @@ def init_rate_params(vv: VoiceVar) -> None:
 # Init voice from voiceData dict
 # ---------------------------------------------------------------------------
 
-def init_voice(vv: VoiceVar, vd: dict):
+def init_voice(vv: VoiceVar, vd: Voice):
     """Configure synthesizer from a voice data dict (from _data.py)."""
     zz: FormantVar = vv.synthVars
 

@@ -20,6 +20,7 @@ the C reference's own compiled behavior (they never execute there either).
 from __future__ import annotations
 
 from ._backend import (
+    VoiceVar,
     e_get_phon,
     e_get_phon_ctrl,
 )
@@ -59,7 +60,7 @@ from ._consts import (
 from ._phonemes import _Comma_, _Exclam_, _Period_, _Quest_
 
 
-def store_f0_and_time(vv, pitch: int, time: int, flags: int) -> None:
+def store_f0_and_time(vv: VoiceVar, pitch: int, time: int, flags: int) -> None:
     """Port of `Store_F0_and_Time` (`BackEnd.c:337-360`)."""
     if (vv.pitch_Time_Offset + time) >= 0:
         vv.pitch_Buf_Time[vv.pitchBuf_In_Index] = vv.pitch_Time_Offset + time
@@ -74,7 +75,7 @@ def store_f0_and_time(vv, pitch: int, time: int, flags: int) -> None:
         vv.pitchBuf_In_Index += 1
 
 
-def fill_pitch_buf(vv) -> None:
+def fill_pitch_buf(vv: VoiceVar) -> None:
     """Port of `Fill_Pitch_Buf` (`BackEnd.c:365-671`)."""
 
     pitch_is_fallen = True

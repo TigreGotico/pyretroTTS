@@ -235,8 +235,9 @@ from ._consts import (
 from ._data import (
     PhonFlags2,
 )
+from ._embeddedcmd import BracketCommands
 from ._engtop import engtop
-from ._frontend import tokenize
+from ._frontend import scan_tokens
 from ._letters import (
     spell_word,
 )
@@ -368,15 +369,15 @@ def make_fe_word_token(
     of grouped, matching `SpeakTokenAsNumber`'s automatic `kYearSpecial`
     detection (`FrontEnd.c:1978-1990`) -- this happens by default, not
     behind any embedded command, the same way it does in the real engine.
-    `is_dollar` (set when `_frontend.tokenize()`'s `_dollar_out` recorded
+    `is_dollar` (set when `_frontend.scan_tokens()`'s `dollar` recorded
     this word as a `$<digits>` token) routes to `_numbers.dollar_
     phonemes` instead, appending "dollar"/"dollars" and bypassing year
     detection -- matching `SpeakTokenAsNumber`'s `kAddDollar` exclusion.
-    `is_cent` (set when `_frontend.tokenize()`'s `_cent_out` recorded
+    `is_cent` (set when `_frontend.scan_tokens()`'s `cent` recorded
     this word as the cents half of a `$N.M` token) routes to
     `_numbers.cent_phonemes` instead, appending "cent"/"cents" and
     likewise bypassing year detection (`kAddCent`'s exclusion).
-    `is_clock` (set when `_frontend.tokenize()`'s `_clock_out` recorded
+    `is_clock` (set when `_frontend.scan_tokens()`'s `clock` recorded
     this word as the minutes half of an `H:MM` token) routes to
     `_numbers.clock_phonemes` instead, matching `kClockSpecial`'s "oh"/
     "o'clock" insertion rules.
@@ -728,13 +729,7 @@ def _place_phrasing(words: list) -> list:
 
 def collect_fe_tokens(
     text: str,
-    emphasis_overrides: dict | None = None,
-    silence_overrides: dict | None = None,
-    pos_overrides: dict | None = None,
-    rate_overrides: dict | None = None,
-    nmbr_overrides: dict | None = None,
-    raw_phon_overrides: dict | None = None,
-    char_overrides: dict | None = None,
+    commands: BracketCommands | None = None,
 ) -> SentenceAssembly:
     """Adapted port of `Collect_FE_Tokens` (`BackEnd.c:3712-4157`).
 
@@ -842,6 +837,15 @@ def collect_fe_tokens(
     itself a separate unported function, `BackEnd.c:3481-3519`).
     """
 
+    commands = commands or BracketCommands()
+    emphasis_overrides = commands.emphasis
+    silence_overrides = commands.silences
+    pos_overrides = commands.pos
+    rate_overrides = commands.rates
+    nmbr_overrides = commands.digit_by_digit
+    raw_phon_overrides = commands.raw_phonemes
+    char_overrides = commands.spelled
+
     sa = SentenceAssembly()
     in_index = [1]  # mutable box so nested helpers can advance it; mirrors phonBuf_1_In_Index
 
@@ -897,14 +901,8 @@ def collect_fe_tokens(
     _clause_tokens = []
     _digit_mode = False
     _char_mode = False
-    _dollar_indices: list = []
-    _decimal_frac_indices: list = []
-    _cent_indices: list = []
-    _clock_indices: list = []
-    for _wi, (word, punct) in enumerate(tokenize(
-        text, _dollar_out=_dollar_indices, _decimal_frac_out=_decimal_frac_indices,
-        _cent_out=_cent_indices, _clock_out=_clock_indices,
-    )):
+    stream = scan_tokens(text)
+    for _wi, (word, punct) in enumerate(stream.tokens):
         if nmbr_overrides and _wi in nmbr_overrides:
             _digit_mode = nmbr_overrides[_wi]
         if char_overrides and _wi in char_overrides:
@@ -942,10 +940,10 @@ def collect_fe_tokens(
             continue
         _clause_tokens.append(make_fe_word_token(
             word, punct,
-            digit_by_digit=_digit_mode or _wi in _decimal_frac_indices,
-            is_dollar=_wi in _dollar_indices,
-            is_cent=_wi in _cent_indices,
-            is_clock=_wi in _clock_indices,
+            digit_by_digit=_digit_mode or _wi in stream.decimal_frac,
+            is_dollar=_wi in stream.dollar,
+            is_cent=_wi in stream.cent,
+            is_clock=_wi in stream.clock,
         ))
     if emphasis_overrides:
         for _wi, _emph in emphasis_overrides.items():

@@ -11,8 +11,12 @@ PartialNumberToPhonemes but is NOT verified end-to-end against a
 working reference (none exists for this path -- see
 docs/architecture.md).
 """
+
 import os
 import sys
+
+from pylintalker._assembly import collect_fe_tokens
+from pylintalker._embeddedcmd import BracketCommands, scan_bracket_commands
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
@@ -109,16 +113,14 @@ def test_digit_by_digit_reads_each_digit_separately():
 
 
 def test_nmbr_embedded_command_switches_to_digit_by_digit():
-    from pylintalker._assembly import collect_fe_tokens
-    from pylintalker._embeddedcmd import scan_bracket_commands
     from pylintalker._numbers import digit_by_digit_phonemes, number_to_phonemes
 
-    clean, _cmds, _emph, _sil, _pos, _rates, _final_rate, nmbr, _rawphon, _char = scan_bracket_commands(
+    bc = scan_bracket_commands(
         "[[nmbr LTRL]]123"
     )
-    assert clean == "123"
-    assert nmbr == {0: True}
-    sa = collect_fe_tokens(clean, nmbr_overrides=nmbr)
+    assert bc.text == "123"
+    assert bc.digit_by_digit == {0: True}
+    sa = collect_fe_tokens(bc.text, BracketCommands(digit_by_digit=bc.digit_by_digit))
     assert sa.words[0].phon_str == digit_by_digit_phonemes("123")
     assert sa.words[0].phon_str != number_to_phonemes("123")
 
@@ -171,26 +173,23 @@ def test_number_token_reads_as_year_by_default():
 
 
 def test_nmbr_mode_latches_until_switched_back():
-    from pylintalker._assembly import collect_fe_tokens
-    from pylintalker._embeddedcmd import scan_bracket_commands
     from pylintalker._numbers import digit_by_digit_phonemes, number_to_phonemes
 
-    clean, _cmds, _emph, _sil, _pos, _rates, _final_rate, nmbr, _rawphon, _char = scan_bracket_commands(
+    bc = scan_bracket_commands(
         "[[nmbr LTRL]]12 [[nmbr NORM]]34"
     )
-    assert nmbr == {0: True, 1: False}
-    sa = collect_fe_tokens(clean, nmbr_overrides=nmbr)
+    assert bc.digit_by_digit == {0: True, 1: False}
+    sa = collect_fe_tokens(bc.text, BracketCommands(digit_by_digit=bc.digit_by_digit))
     assert sa.words[0].phon_str == digit_by_digit_phonemes("12")
     assert sa.words[1].phon_str == number_to_phonemes("34")
 
 
 def test_tokenize_dollar_prefix_kept_as_digit_token():
-    from pylintalker._frontend import tokenize
+    from pylintalker._frontend import scan_tokens
 
-    dollar_indices = []
-    tokens = tokenize("i have $5.", dollar_indices)
-    assert tokens == [("I", None), ("HAVE", None), ("5", ".")]
-    assert dollar_indices == [2]
+    stream = scan_tokens("i have $5.")
+    assert stream.tokens == [("I", None), ("HAVE", None), ("5", ".")]
+    assert stream.dollar == [2]
 
 
 def test_dollar_prefix_no_longer_silently_dropped():
@@ -212,7 +211,6 @@ def test_dollar_phonemes_plural_and_singular():
 
 
 def test_dollar_amount_reaches_word_token_end_to_end():
-    from pylintalker._assembly import collect_fe_tokens
     from pylintalker._numbers import dollar_phonemes, number_to_phonemes
 
     sa = collect_fe_tokens("i have $5.")
@@ -235,10 +233,11 @@ def test_dollar_bypasses_year_detection():
 
 
 def test_tokenize_decimal_splits_into_three_tokens():
-    from pylintalker._frontend import tokenize
+    from pylintalker._frontend import scan_tokens
 
-    frac_indices = []
-    tokens = tokenize("it costs 3.14 dollars.", _decimal_frac_out=frac_indices)
+    stream = scan_tokens("it costs 3.14 dollars.")
+    frac_indices = stream.decimal_frac
+    tokens = stream.tokens
     assert tokens == [
         ("IT", None), ("COSTS", None),
         ("3", None), ("POINT", None), ("14", None),
@@ -258,7 +257,6 @@ def test_decimal_no_longer_silently_dropped():
 
 
 def test_decimal_fraction_read_digit_by_digit():
-    from pylintalker._assembly import collect_fe_tokens
     from pylintalker._numbers import digit_by_digit_phonemes, number_to_phonemes
 
     sa = collect_fe_tokens("it costs 3.14 dollars.")
@@ -280,12 +278,11 @@ def test_decimal_not_applied_to_dollar_prefixed_token():
 
 
 def test_tokenize_dollar_decimal_splits_into_dollars_and_and_cents():
-    from pylintalker._frontend import tokenize
+    from pylintalker._frontend import scan_tokens
 
-    dollar_indices, cent_indices = [], []
-    tokens = tokenize(
-        "it costs $5.25 total.", _dollar_out=dollar_indices, _cent_out=cent_indices,
-    )
+    stream = scan_tokens("it costs $5.25 total.")
+    dollar_indices, cent_indices = stream.dollar, stream.cent
+    tokens = stream.tokens
     assert tokens == [
         ("IT", None), ("COSTS", None),
         ("5", None), ("AND", None), ("25", None),
@@ -303,7 +300,6 @@ def test_cent_phonemes_plural_and_singular():
 
 
 def test_dollar_and_cents_reaches_word_tokens_end_to_end():
-    from pylintalker._assembly import collect_fe_tokens
     from pylintalker._numbers import cent_phonemes, dollar_phonemes
 
     sa = collect_fe_tokens("it costs $5.25 total.")
@@ -315,7 +311,6 @@ def test_dollar_and_cents_reaches_word_tokens_end_to_end():
 
 
 def test_cent_amount_reads_as_cardinal_not_digit_by_digit():
-    from pylintalker._assembly import collect_fe_tokens
     from pylintalker._numbers import digit_by_digit_phonemes
 
     sa = collect_fe_tokens("it costs $5.25 total.")
@@ -323,22 +318,19 @@ def test_cent_amount_reads_as_cardinal_not_digit_by_digit():
 
 
 def test_tokenize_clock_splits_hour_and_minutes():
-    from pylintalker._frontend import tokenize
+    from pylintalker._frontend import scan_tokens
 
-    clock_indices = []
-    tokens = tokenize("it is 3:45 now.", _clock_out=clock_indices)
-    assert tokens == [("IT", None), ("IS", None), ("3", None), ("45", None), ("NOW", ".")]
-    assert clock_indices == [3]
+    stream = scan_tokens("it is 3:45 now.")
+    assert stream.tokens == [("IT", None), ("IS", None), ("3", None), ("45", None), ("NOW", ".")]
+    assert stream.clock == [3]
 
 
 def test_tokenize_clock_requires_exactly_two_minute_digits():
-    from pylintalker._frontend import tokenize
+    from pylintalker._frontend import scan_tokens
 
     # "3:5" (one minute digit) isn't clock-shaped -- matches the real
     # engine's own tok->tokStr[0] == 2 length check.
-    clock_indices = []
-    tokenize("it is 3:5 now.", _clock_out=clock_indices)
-    assert clock_indices == []
+    assert scan_tokens("it is 3:5 now.").clock == []
 
 
 def test_clock_phonemes_normal_oh_and_oclock():
@@ -350,7 +342,6 @@ def test_clock_phonemes_normal_oh_and_oclock():
 
 
 def test_clock_time_reaches_word_tokens_end_to_end():
-    from pylintalker._assembly import collect_fe_tokens
     from pylintalker._numbers import clock_phonemes, number_to_phonemes
 
     sa = collect_fe_tokens("it is 3:45 now.")

@@ -28,6 +28,7 @@ silently zero every note's intended duration.
 from __future__ import annotations
 
 from ._backend import (
+    VoiceVar,
     e_get_phon,
     e_get_phon_ctrl,
     init_rate_params,
@@ -95,7 +96,7 @@ def _flags(phon_flags2, phon):
     return phon_flags2[phon]
 
 
-def mod_duration(vv) -> None:
+def mod_duration(vv: VoiceVar) -> None:
     """Port of `Mod_Duration`. Writes `vv.dur_Buf[1:vv.phonBuf_2_In_Index]`
     (`vv.dur_Buf[0]` is always 1, matching `BackEnd.c:1397`)."""
 
