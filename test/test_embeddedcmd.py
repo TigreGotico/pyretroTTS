@@ -346,6 +346,26 @@ def test_scan_bracket_commands_rset():
     assert cmds == []
 
 
+def test_scan_bracket_commands_sync():
+    """Regression test for Parse_sync_Command (EmbeddedCmd.c:753-765):
+    a plain LONG argument (not Fixed-point), queued as C_sync. do_ctrl
+    has no case for C_sync at all (matching the real DoCtrl switch's
+    own default:break for it -- a genuine no-op in the reference too),
+    so applying it must not raise or change any state."""
+    from lintalker._embeddedcmd import scan_bracket_commands
+    from lintalker._consts import C_sync
+
+    clean, cmds, emph, silences = scan_bracket_commands("[[sync12345]]hello")
+    assert clean == "hello"
+    assert cmds == [(0, C_sync, 12345)]
+
+    from lintalker.api import build_phoneme_plan, new_voice
+    from lintalker._data import Fred_Voice
+
+    vv = new_voice(Fred_Voice)
+    build_phoneme_plan(Fred_Voice, "[[sync12345]]hello", vv)  # must not raise
+
+
 if __name__ == "__main__":
     tests = [v for k, v in list(globals().items()) if k.startswith("test_")]
     for t in tests:

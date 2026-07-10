@@ -76,6 +76,19 @@ def _parse_fixed_value(text: str, i: int):
     return (msb << 16) | lsb, i
 
 
+def _parse_long_value(text: str, i: int):
+    """Port of `Get32BitLongValue` (`EmbeddedCmd.c:259-284`): a plain
+    unsigned decimal integer, no Fixed-point scaling (used by `sync`,
+    unlike `pbas`/`pmod`/`volm`/`rset`/`dlim`/`slnc` which all use the
+    Fixed-point grammar above). Returns `(value, next_i)`."""
+    n = len(text)
+    val = 0
+    while i < n and text[i].isdigit():
+        val = val * 10 + int(text[i])
+        i += 1
+    return val, i
+
+
 def _parse_signed_command_value(text: str, i: int):
     """Port of the common preamble shared by `Parse_pbas_Command`/
     `Parse_pmod_Command`/`Parse_volm_Command` (`EmbeddedCmd.c:625-716`,
@@ -209,10 +222,18 @@ def scan_bracket_commands(text: str):
     `embedData >> 16` (`BackEnd.c`'s `Parse_Embedded_Command` `EC_slnc`
     case) recovers the millisecond count the user typed.
 
+    Also recognizes `rset` (`Parse_rset_Command`, `EmbeddedCmd.c:724
+    -739` -- only argument `0` is valid, resolving to `C_reset`; `do_ctrl`
+    already stubs that with `NotImplementedError`) and `sync`
+    (`Parse_sync_Command`, `EmbeddedCmd.c:753-765` -- a plain LONG
+    argument, not Fixed-point, resolving to `C_sync`; `do_ctrl` has no
+    case for `C_sync` at all, matching the real `DoCtrl` switch's own
+    `default: break;` for it -- a genuine no-op in the reference too).
+
     NOT ported: `rate` (routes through `vv->lastRate`/
     `user_Rate_Buf1`, not `CMDQueue`, and `e_set_speech_rate`'s
     non-singing branch already isn't ported -- see `_engine.py`),
-    `rset`/`xtnd`/`char`/`mode`/`nmbr`/`sync` (each its own
+    `xtnd`/`char`/`mode`/`nmbr` (each its own
     separate parser/side-effect, not reachable via `CMDQueue` or a
     plain token field the way `emph` is), and mid-clause
     phoneme-accurate positioning for `pbas`/`pmod`/`volm` (a command
@@ -311,6 +332,18 @@ def scan_bracket_commands(text: str):
             value, _ = _parse_fixed_value(inner, 4)
             if value == 0:
                 commands.append((word_count, C_reset, 0))
+            i = end + len(END)
+            continue
+
+        if keyword == 'SYNC':
+            # Parse_sync_Command (EmbeddedCmd.c:753-765): a plain LONG
+            # value (not Fixed-point), queued as C_sync -- do_ctrl has
+            # no case for C_sync (matching the real DoCtrl switch, which
+            # doesn't either, BackEnd.c:272-322's `default: break;`), so
+            # this is a genuine no-op in the real engine too, not a gap
+            # in this port.
+            value, _ = _parse_long_value(inner, 4)
+            commands.append((word_count, C_sync, value))
             i = end + len(END)
             continue
 
