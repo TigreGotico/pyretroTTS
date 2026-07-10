@@ -10,5 +10,5 @@ jobs:
     uses: OpenVoiceOS/gh-automations/.github/workflows/build-tests.yml@dev
     secrets: inherit
     with:
-      package_name: lintalker
-      version_file: lintalker/version.py
+      install_extras: test
+      test_path: test

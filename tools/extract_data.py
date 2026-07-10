@@ -8,7 +8,12 @@ import re, os, sys
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 C_SRC = os.path.join(os.path.dirname(REPO), "lintalker-c", "src")
 C_INC = os.path.join(os.path.dirname(REPO), "lintalker-c", "include")
-OUT = os.path.join(REPO, "pylintalker", "pylintalker")
+OUT = os.path.join(REPO, "pylintalker")
+
+# `_data.py` interleaves these generated tables with hand-maintained content --
+# the 17 voice dicts, the marker tables, and the base64 lexicon blob -- so it
+# cannot be regenerated wholesale. Emit the tables beside it for review instead.
+GENERATED_NAME = "_data_tables.generated.py"
 
 
 def strip_c_comments(text):
@@ -253,10 +258,12 @@ def main():
             lines.append("")
             lines.append("")
 
-        out_path = os.path.join(OUT, "_data.py")
+        out_path = os.path.join(OUT, GENERATED_NAME)
         with open(out_path, 'w') as f:
             f.write("\n".join(lines))
         print(f"\nWrote {out_path}")
+        print("Diff its tables into pylintalker/_data.py; do not copy the file "
+              "over _data.py, which also holds the voice dicts and lexicon.")
 
     # Extract voice data
     print("\n--- Voice Data ---")
