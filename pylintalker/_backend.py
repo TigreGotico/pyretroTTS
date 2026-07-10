@@ -103,6 +103,7 @@ from ._consts import (
     kSpeakPhon,
     kStepSizeRes,
     kStopF,
+    kStopped,
     kStressField,
     kSyllable_Start,
     kSyllableTypeField,
@@ -324,6 +325,46 @@ class ControlBlock:
 
 class FormantVar:
     """Analogous to formantVar struct in Fsynth.h."""
+    __slots__ = (
+        "Acoeff1", "Acoeff2", "Acoeff3", "Acoeff4", "Acoeff4p", "Acoeff5", "Acoeff6",
+        "AcoeffNP", "AcoeffNZ", "Af", "Av", "Back_Loci_Tbl", "BandNoisePtr", "Bcoeff1",
+        "Bcoeff2", "Bcoeff3", "Bcoeff4", "Bcoeff4p", "Bcoeff5", "Bcoeff6", "BcoeffNP",
+        "BcoeffNZ", "BcoeffTblPtr", "BurstDurTbl", "Ccoeff1", "Ccoeff2", "Ccoeff3",
+        "Ccoeff4", "Ccoeff4p", "Ccoeff5", "Ccoeff6", "CcoeffNP", "CcoeffNZ",
+        "CcoeffTblPtr", "CosTblPtr", "CtrlBlockTypeTbl", "DefaultTargTbl",
+        "EnvelopeListTbl", "FemaleEnvelopeListTbl", "Female_Loci_Tbl",
+        "Female_NoiseAmpTbl", "FormTables", "Front_Loci_Tbl", "HPNoisePtr",
+        "Is16BitSound", "MaleEnvelopeListTbl", "Male_Loci_Tbl", "Male_NoiseAmpTbl",
+        "Mid_Loci_Tbl", "Na1", "Na2", "Na2a", "Na3", "Na3a", "Na4", "Na4a", "Na5",
+        "Na6", "NaNP", "NaNZ", "Nb1", "Nb2", "Nb2a", "Nb3", "Nb3a", "Nb4", "Nb4a",
+        "Nb5", "Nb6", "NbNP", "NbNZ", "NoiseIndexTbl", "NoiseWavePtr", "One_Over_X_Tbl",
+        "Rank_BKWD_Tbl", "Rank_FWD_Tbl", "SampleWave", "SineWave15Ptr", "SineWavePtr",
+        "TOPtr", "VP_offsetPitch", "a_EnvelopeListTbl", "a_avVolTblM", "a_b1FreqTblM",
+        "a_b2FreqTblM", "a_b3FreqTblM", "a_f1FreqTblM", "a_f2FreqTblM", "a_f3FreqTblM",
+        "ab", "addReverb", "amp2", "amp3", "amp4", "amp5", "amp6", "ampStep",
+        "avVolTblF", "avVolTblM", "b1FreqTblF", "b1FreqTblM", "b2FreqTblF",
+        "b2FreqTblM", "b3FreqTblF", "b3FreqTblM", "bNP", "big_Bang", "breathCycle",
+        "breathGain", "breathWave", "bw4_Par", "bw5_Par", "bw6_Par",
+        "controlBlockArray", "controlData", "curAmp", "curAmp_Full", "curFrameBuf",
+        "cur_ControlBlk_Index", "cur_Phon_MaxDur_CF", "cur_Phon_PctOfMaxDur1_CF",
+        "cur_Phon_PctOfMaxDur2_CF", "cur_Phon_PctOfMaxDur_CF", "delayBuffer",
+        "delay_Index", "diphEntryArray", "f1FreqTblF", "f1FreqTblM", "f2FreqTblF",
+        "f2FreqTblM", "f2_HEAD_offset", "f2_HEAD_step", "f2_TAIL_START_time",
+        "f2_TAIL_offset", "f2_TAIL_step", "f3FreqTblF", "f3FreqTblM", "f4_Par",
+        "f5_Par", "f6_Par", "fNP", "frameBuf1", "frameBuf2", "glotInc", "glotInc1",
+        "glotIndex", "glotIndex1", "glotType", "hfEmph", "lastAmp", "lastRevbSample",
+        "lastSample", "lastnSamp", "locusOffset", "loopPoint", "maxRvbDelay",
+        "nasalAmt", "nasalBaseFreq", "nasalTargFreq", "next_DiphEntry", "noiseIndex",
+        "reverbDelay", "reverbDepth", "sampleInc", "sampleInc1", "sampleLength",
+        "setNoiseGain", "sndIndex", "sndIndex1", "speechVolume", "sync_On_Vowel",
+        "tapBuffer", "trans_LEVEL", "trans_LEVEL_f2", "trans_TIME", "trans_TIME_f2",
+        "vd_pitch", "voiceBWgain1", "voiceBWgain2", "voiceBWgain3", "voiceChorus",
+        "voiceF1Gain", "voiceF2Gain", "voiceF3Gain", "voiceMinBW", "voiceNoiseGain",
+        "voiceWaveform", "voiceWaveform1", "voice_F4_BW", "voice_F4_Freq",
+        "voice_Formants", "voice_Locus_Tbl", "voice_NoiseAmp_Tbl", "voice_Num",
+        "voice_av_Tbl", "wavesampleGain",
+    )
+
 
     def __init__(self):
         # Table pointers (set from _data)
@@ -533,6 +574,58 @@ class FormantVar:
 
 class VoiceVar:
     """Analogous to voiceVar struct in mt4.h (simplified for synthesis)."""
+    __slots__ = (
+        "Busy", "outputPaused", "speechState",
+        "BoundryDurTbl", "CMDQueue", "ExpOf2Tbl", "FEinputDone", "Note_Times",
+        "OctFreqTbl", "VP_assertiveness", "VP_baselineFall", "VP_baselinePitch",
+        "VP_baselinePitch_Save1", "VP_baselinePitch_Save2", "VP_fallAmt", "VP_fallAmt1",
+        "VP_intonation", "VP_pitchRange", "VP_quickness", "VP_riseAmt", "VP_riseAmt1",
+        "VP_stressGain", "_i_Cur_Sample_Buffer", "_i_First_Sample_Buffer",
+        "_i_Last_Snd_Buffer", "baseLine_Offset", "basePitch_Offset", "baselineFall_END",
+        "baselineFall_START", "baseline_End_Offset", "baseline_Start_Offset",
+        "bit16_Sound", "cmdBufCount", "cmdBufCount_Save1", "cmdBufCount_Save2",
+        "controlF0", "cpuIsFast", "ctrlCount", "curRamp", "cur_PhonBuf_Index_CF",
+        "cur_PhonCtrl_CF", "cur_PhonDur_CP", "cur_PhonDur_CP_Save1",
+        "cur_PhonDur_CP_Save2", "cur_PhonFlags_CF", "cur_Phon_CF", "cur_Phon_Dur_CC",
+        "cur_Phon_Dur_CC_Save1", "cur_Phon_Dur_CC_Save2", "cur_Phon_Dur_CF",
+        "cur_PitchBuf_Flags", "cur_PitchBuf_Pitch", "cur_PitchBuf_Time",
+        "cur_PitchBuf_Time_Save1", "cur_PitchBuf_Time_Save2", "down_Ramp_Offset",
+        "down_Ramp_Offset_Save1", "down_Ramp_Offset_Save2", "down_Ramp_Step", "dur_Buf",
+        "dur_Done_in_Phon_CF", "e_Fill_Next_Frame", "end_Punctuation",
+        "fallRise1_Offset", "fallRise1_Offset_Save1", "fallRise1_Offset_Save2",
+        "fallRise_Offset", "fallRise_Offset_Save1", "fallRise_Offset_Save2",
+        "frameMarker", "lastMarkerIndex", "lastSongIndex", "lastWordStart",
+        "last_baseline", "logOf2Tbl", "logToLinPtr", "low_Gain_CP", "markerBuf",
+        "markerIndex", "maxDurTbl", "minDurTbl", "nLastWordStart", "newPortaTarget",
+        "newSentence", "nextSampBuf", "next_PhonCtrl_CF", "next_PhonFlags_CF",
+        "next_Phon_CF", "next_PitchBuf_Time", "next_PitchBuf_Time_Save1",
+        "next_PitchBuf_Time_Save2", "notesBuf", "numOfNotes", "pFilter_FB_Gain",
+        "pFilter_In_Gain", "pFilter_Out1", "pFilter_Out1_Save1", "pFilter_Out1_Save2",
+        "pFilter_Out2", "pFilter_Out2_Save1", "pFilter_Out2_Save2", "pbHold",
+        "pbLowGain", "phonBuf_1_In_Index", "phonBuf_1_Out_Index", "phonBuf_2_In_Index",
+        "phonFlags2", "phonPitchTbl", "phon_Buf_2", "phon_Ctrl_Buf_2", "phon_Dur_Delay",
+        "phon_Index_CP", "phon_Index_CP_Save1", "phon_Index_CP_Save2",
+        "phon_Index_Targ", "phon_Index_Targ_Save1", "phon_Index_Targ_Save2",
+        "phon_Pitch_Offset", "phon_Pitch_Offset_1", "pitchBuf_In_Index",
+        "pitchBuf_Out_Index", "pitchBuf_Out_Index_Save1", "pitchBuf_Out_Index_Save2",
+        "pitch_Boundry", "pitch_Buf_Flags", "pitch_Buf_Freq", "pitch_Buf_Time",
+        "pitch_Clause_StartTime", "pitch_Time_Offset", "portamento", "portamentoAccum",
+        "portamentoStep", "prev2_PhonCtrl_CF", "prev2_Phon_CF", "prev_PhonCtrl_CF",
+        "prev_PhonFlags_CF", "prev_Phon_CF", "punct_Offset", "punct_Offset_Save1",
+        "punct_Offset_Save2", "rampSteps", "rate_Ratio", "rate_Ratio_LowGain",
+        "sampleBuffer", "sampleBuffer1", "sampleBuffer2", "singScript", "singing",
+        "songIndex", "songIndex_Save1", "songIndex_Save2", "speakState", "speech_Rate",
+        "start_of_Paragraph_Flag", "starting_New_Phon", "stressDurTime",
+        "stress_Active_Time", "stress_Duration", "stress_Target", "stress_Target_Save1",
+        "stress_Target_Save2", "sync_On_Marker", "synthTech", "synthVars", "tempo",
+        "time_IntoPhon_CP", "time_IntoPhon_CP_Save1", "time_IntoPhon_CP_Save2",
+        "time_IntoPhon_Targ", "time_IntoPhon_Targ_Save1", "time_IntoPhon_Targ_Save2",
+        "user_Cmd_Buf2", "user_Dur_Buf2", "user_Note_Buf2", "user_Pitch_Buf2",
+        "user_Rate_Buf2", "user_Volume", "uvPhon_Pitch_Targ", "vibratoDepth1",
+        "vibratoDepth2", "vibratoFreq", "vibrato_Phase1", "vibrato_Phase2",
+        "voiceNaturalPitch", "waveBuffers", "waveIndex",
+    )
+
 
     def __init__(self):
         self.synthVars = FormantVar()
@@ -580,6 +673,11 @@ class VoiceVar:
         self.cur_Phon_Dur_CF = 0
         self.cur_PhonBuf_Index_CF = 0
         self.speakState = kSpeakDone
+
+        # Engine.c playback state (Engine.c's e_*SpeechAt/e_ContinueSpeech).
+        self.Busy = False
+        self.outputPaused = False
+        self.speechState = kStopped
         self.speech_Rate = kNormal_Speech_Rate
         self.rate_Ratio = 0
         self.rate_Ratio_LowGain = 0
@@ -620,6 +718,7 @@ class VoiceVar:
         self.cur_PitchBuf_Flags = 0
         self.user_Dur_Buf2: list[int] = [0] * kPhonBufSize
         self.user_Note_Buf2: list[int] = [0] * kPhonBufSize
+        self.Note_Times: list[int] = [0] * 16  # mt4.h: short Note_Times[16]
         self.user_Rate_Buf2: list[int] = [0] * kPhonBufSize
 
         # Pitch state
@@ -2317,7 +2416,7 @@ def tail_rules(vv: VoiceVar):
                         zz.trans_TIME = 45 // kFrameTime
                     else:
                         zz.trans_TIME = 0
-                    # goto Done
+                    # Falls through to the shared tail clamp below (C's Done label).
                     if zz.trans_TIME > vv.cur_Phon_Dur_CF:
                         zz.trans_TIME = vv.cur_Phon_Dur_CF
                     if zz.trans_TIME > 130 // kFrameTime:
@@ -2498,7 +2597,7 @@ def init_ctrls_for_new_phon(vv: VoiceVar):
 # Phon_Boundry_Pitch (BackEnd.c:870)
 # ---------------------------------------------------------------------------
 
-def phon_boundry_pitch(vv: VoiceVar):
+def phon_boundary_pitch(vv: VoiceVar):
     if vv.time_IntoPhon_CP >= vv.cur_PhonDur_CP:
         vv.time_IntoPhon_CP -= vv.cur_PhonDur_CP
         vv.phon_Index_CP += 1
@@ -2747,7 +2846,7 @@ def interpolate_pitch(vv: VoiceVar):
                 else:
                     vv.phon_Dur_Delay = 0
 
-        phon_boundry_pitch(vv)
+        phon_boundary_pitch(vv)
 
         stress = vv.stress_Target if vv.stress_Target is not None else 0
         fr = vv.fallRise_Offset if vv.fallRise_Offset is not None else 0
@@ -2786,7 +2885,7 @@ def interpolate_pitch(vv: VoiceVar):
 
         vv.vibrato_Phase1 = (vv.vibratoFreq + vv.vibrato_Phase1) & 0xFFFFFF
         sine_idx = vv.vibrato_Phase1 >> 16
-        vibrato = (vv.synthVars.SineWavePtr[sine_idx] if hasattr(vv.synthVars, 'SineWavePtr') else 0) - 128
+        vibrato = vv.synthVars.SineWavePtr[sine_idx] - 128
         if vv.speech_Rate >= 100:
             vv.controlF0 += (vibrato * vv.vibratoDepth1) >> 16
         else:
@@ -2816,7 +2915,7 @@ def interpolate_pitch(vv: VoiceVar):
 
         vv.vibrato_Phase1 = (vv.vibratoFreq + vv.vibrato_Phase1) & 0xFFFFFF
         sine_idx = vv.vibrato_Phase1 >> 16
-        vibrato = (vv.synthVars.SineWavePtr[sine_idx] if hasattr(vv.synthVars, 'SineWavePtr') else 0) - 128
+        vibrato = vv.synthVars.SineWavePtr[sine_idx] - 128
         if vv.cur_PhonCtrl_CF & kLowVibrato:
             vv.controlF0 += (vibrato * vv.vibratoDepth2) >> 16
         else:
@@ -2962,7 +3061,7 @@ def synth_start_talk(vv: VoiceVar):
 
 def do_note(vv: VoiceVar):
     """BackEnd.c DoNote — embedded pitch (non-scripted note) handling."""
-    note = vv.user_Note_Buf2[vv.cur_PhonBuf_Index_CF] if hasattr(vv, 'user_Note_Buf2') else 0
+    note = vv.user_Note_Buf2[vv.cur_PhonBuf_Index_CF]
     if note != 0 and not (vv.phon_Ctrl_Buf_2[vv.cur_PhonBuf_Index_CF] & kSilenceDuration):
         note = s16((note & 0xFF) << 8)
         if note != 0x7F00:

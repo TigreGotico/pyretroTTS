@@ -66,7 +66,7 @@ _rule = Rules[_HASH_SIZE:]
 
 
 class _EngToPState:
-    """Stand-in for the fields of voiceVar that EngToP.c/dorule() touch.
+    """Stand-in for the fields of voiceVar that EngToP.c/apply_rule() touch.
 
     Only `e_direction` is mutated per call; everything else is static
     rule-table data shared across all calls (module-level `_rule`/`kind`/etc).
@@ -84,11 +84,11 @@ def _kind(ch: int) -> int:
     return 0
 
 
-def find_consonant(g: _EngToPState, text: bytearray, i: int) -> tuple[int, int] | None:
+def find_consonant(state: _EngToPState, text: bytearray, i: int) -> tuple[int, int] | None:
     """FindConsonant (EngToP.c). Returns (new_i, 0) on match, None on miss."""
     if _kind(text[i]) & CONSON:
-        return i + g.e_direction
-    if g.e_direction == -1:
+        return i + state.e_direction
+    if state.e_direction == -1:
         if text[i] == ord('U'):
             if text[i - 1] == ord('G') or text[i - 1] == ord('Q'):
                 return i - 2
@@ -99,11 +99,11 @@ def find_consonant(g: _EngToPState, text: bytearray, i: int) -> tuple[int, int] 
     return None
 
 
-def find_sibilant(g: _EngToPState, text: bytearray, i: int):
+def find_sibilant(state: _EngToPState, text: bytearray, i: int):
     """FindSibilant (EngToP.c)."""
     if _kind(text[i]) & HISCON:
-        return i + g.e_direction
-    if g.e_direction == 1:  # unreachable in practice (per C comment)
+        return i + state.e_direction
+    if state.e_direction == 1:  # unreachable in practice (per C comment)
         if text[i] == ord('C') or text[i] == ord('S'):
             if text[i + 1] == ord('H'):
                 return i + 2
@@ -114,14 +114,14 @@ def find_sibilant(g: _EngToPState, text: bytearray, i: int):
     return None
 
 
-def find_vowel(g: _EngToPState, text: bytearray, i: int):
+def find_vowel(state: _EngToPState, text: bytearray, i: int):
     """FindVowel (EngToP.c)."""
     if _kind(text[i]) & VOWEL:
-        return i + g.e_direction
+        return i + state.e_direction
     return None
 
 
-def search_special(g: _EngToPState, text: bytearray, i: int, sprule: bytes):
+def search_special(state: _EngToPState, text: bytearray, i: int, sprule: bytes):
     """search_special (EngToP.c). sprule entries are comma (44)-delimited,
     zero-terminated. Returns new_i on match, None on miss."""
     si = 0
@@ -133,15 +133,15 @@ def search_special(g: _EngToPState, text: bytearray, i: int, sprule: bytes):
             si += 1
             local_i = i
             continue
-        local_i += g.e_direction
+        local_i += state.e_direction
         si += 1
         if sprule[si] == 44:
             return local_i
     return None
 
 
-def dorule(g: _EngToPState, text: bytearray, i_ptr: int, r_ptr: int):
-    """dorule (EngToP.c). Returns new r_ptr (index into _rule) past the
+def apply_rule(state: _EngToPState, text: bytearray, i_ptr: int, r_ptr: int):
+    """apply_rule (EngToP.c). Returns new r_ptr (index into _rule) past the
     delimiter on match, or None on a missed match. Recursive, exactly as
     in C."""
     if _rule[r_ptr] == DELIMITER:
@@ -151,98 +151,98 @@ def dorule(g: _EngToPState, text: bytearray, i_ptr: int, r_ptr: int):
         rc = _rule[r_ptr]
         if _kind(rc) == SPCHAR:
             if rc == ord('*'):          # one or more consonants
-                res = find_consonant(g, text, i_ptr)
+                res = find_consonant(state, text, i_ptr)
                 if res is None:
                     return None
                 i_ptr = res
                 while _kind(text[i_ptr]) & CONSON:
-                    r_local = dorule(g, text, i_ptr, r_ptr + 1)
+                    r_local = apply_rule(state, text, i_ptr, r_ptr + 1)
                     if r_local is not None:
                         return r_local
-                    i_ptr += g.e_direction
+                    i_ptr += state.e_direction
             elif rc == ord('$'):        # one vowel
-                res = find_vowel(g, text, i_ptr)
+                res = find_vowel(state, text, i_ptr)
                 if res is None:
                     return None
                 i_ptr = res
             elif rc == ord('^'):        # one consonant
-                res = find_consonant(g, text, i_ptr)
+                res = find_consonant(state, text, i_ptr)
                 if res is None:
                     return None
                 i_ptr = res
             elif rc == ord(':'):        # 0 or more consonants
-                res = find_consonant(g, text, i_ptr)
+                res = find_consonant(state, text, i_ptr)
                 if res is not None:
                     i_ptr = res
                 while _kind(text[i_ptr]) & CONSON:
-                    r_local = dorule(g, text, i_ptr, r_ptr + 1)
+                    r_local = apply_rule(state, text, i_ptr, r_ptr + 1)
                     if r_local is not None:
                         return r_local
-                    i_ptr += g.e_direction
+                    i_ptr += state.e_direction
             elif rc == ord('+'):        # front vowel
                 if not (_kind(text[i_ptr]) & FRONT):
                     return None
-                i_ptr += g.e_direction
+                i_ptr += state.e_direction
             elif rc == ord('v'):        # 0 or more vowels
-                res = find_vowel(g, text, i_ptr)
+                res = find_vowel(state, text, i_ptr)
                 if res is not None:
                     i_ptr = res
                 while _kind(text[i_ptr]) & VOWEL:
-                    r_local = dorule(g, text, i_ptr, r_ptr + 1)
+                    r_local = apply_rule(state, text, i_ptr, r_ptr + 1)
                     if r_local is not None:
                         return r_local
-                    i_ptr += g.e_direction
+                    i_ptr += state.e_direction
             elif rc == ord('l'):
-                res = search_special(g, text, i_ptr, bytes(lruletab))
+                res = search_special(state, text, i_ptr, bytes(lruletab))
                 if res is None:
                     return None
                 i_ptr = res
             elif rc == ord('-'):
-                res = search_special(g, text, i_ptr, bytes(dashruletab))
+                res = search_special(state, text, i_ptr, bytes(dashruletab))
                 if res is None:
                     return None
                 i_ptr = res
             elif rc == ord('%'):
-                res = search_special(g, text, i_ptr, bytes(percentruletab))
+                res = search_special(state, text, i_ptr, bytes(percentruletab))
                 if res is None:
                     return None
                 i_ptr = res
             elif rc == ord('z'):
-                res = search_special(g, text, i_ptr, bytes(zruletab))
+                res = search_special(state, text, i_ptr, bytes(zruletab))
                 if res is None:
                     return None
                 i_ptr = res
             elif rc == ord('b'):
-                res = search_special(g, text, i_ptr, bytes(bruletab))
+                res = search_special(state, text, i_ptr, bytes(bruletab))
                 if res is None:
                     return None
                 i_ptr = res
             elif rc == ord('#'):        # one or more vowels
-                res = find_vowel(g, text, i_ptr)
+                res = find_vowel(state, text, i_ptr)
                 if res is None:
                     return None
                 i_ptr = res
                 while _kind(text[i_ptr]) & VOWEL:
-                    r_local = dorule(g, text, i_ptr, r_ptr + 1)
+                    r_local = apply_rule(state, text, i_ptr, r_ptr + 1)
                     if r_local is not None:
                         return r_local
-                    i_ptr += g.e_direction
+                    i_ptr += state.e_direction
             elif rc == ord('.'):        # voiced consonant
                 if not (_kind(text[i_ptr]) & VOICON):
                     return None
-                i_ptr += g.e_direction
+                i_ptr += state.e_direction
             elif rc == ord('&'):        # sibilant consonant
-                res = find_sibilant(g, text, i_ptr)
+                res = find_sibilant(state, text, i_ptr)
                 if res is None:
                     return None
                 i_ptr = res
             elif rc == ord('@'):
-                res = search_special(g, text, i_ptr, bytes(atruletab))
+                res = search_special(state, text, i_ptr, bytes(atruletab))
                 if res is None:
                     return None
                 i_ptr = res
             elif rc == ord('m'):
-                res = search_special(g, text, i_ptr, bytes(mruletab))
+                res = search_special(state, text, i_ptr, bytes(mruletab))
                 if res is None:
                     return None
                 i_ptr = res
@@ -251,7 +251,7 @@ def dorule(g: _EngToPState, text: bytearray, i_ptr: int, r_ptr: int):
             if text[i_ptr] != rc:
                 return None
             r_ptr += 1
-            i_ptr += g.e_direction
+            i_ptr += state.e_direction
     return r_ptr + 1
 
 
@@ -265,7 +265,7 @@ def engtop(word: str) -> list[int]:
     matching EngToP.c line 71. Rule phoneme bytes have their C `-1` bias
     removed, exactly as in `*phonStr = (*rule_ptr) - 1;`.
     """
-    g = _EngToPState()
+    state = _EngToPState()
     word_u = word.upper()
 
     # text buffer layout mirrors EngToP.c: 1 sentinel space before the word
@@ -300,14 +300,14 @@ def engtop(word: str) -> list[int]:
                 continue  # this rule's middle pattern didn't match
             rule_ptr += 1  # past the delimiter
 
-            g.e_direction = -1
-            r = dorule(g, text, input_ptr - 1, rule_ptr)
+            state.e_direction = -1
+            r = apply_rule(state, text, input_ptr - 1, rule_ptr)
             if r is None:
                 continue
             rule_ptr = r
 
-            g.e_direction = 1
-            r = dorule(g, text, scan_ptr, rule_ptr)
+            state.e_direction = 1
+            r = apply_rule(state, text, scan_ptr, rule_ptr)
             if r is None:
                 continue
             rule_ptr = r

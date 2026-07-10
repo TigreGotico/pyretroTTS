@@ -47,7 +47,7 @@ def _flags(phon_flags2, phon):
     return phon_flags2[phon]
 
 
-def count_stress_vowels_till_boundry(vv: VoiceVar, boundry: int, cur_index: int) -> int:
+def count_stress_vowels_till_boundary(vv: VoiceVar, boundary: int, cur_index: int) -> int:
     """`Count_StressVowels_Till_Boundry` (`BackEnd.c:2041-2065`)."""
     count = 0
     for i in range(cur_index, vv.phonBuf_2_In_Index):
@@ -57,7 +57,7 @@ def count_stress_vowels_till_boundry(vv: VoiceVar, boundry: int, cur_index: int)
         if i != cur_index:
             if (cur_ctrl & kPrimOrEmphStress) and (cur_flags & kVowelF):
                 count += 1
-        if (cur_ctrl & kSyllableTypeField) >= boundry:
+        if (cur_ctrl & kSyllableTypeField) >= boundary:
             break
     return count
 
@@ -76,7 +76,7 @@ def any_stress_vowels_remain(vv: VoiceVar, cur_index: int) -> int:
     return count
 
 
-def count_vowels_till_boundry(vv: VoiceVar, boundry: int, cur_index: int) -> int:
+def count_vowels_till_boundary(vv: VoiceVar, boundary: int, cur_index: int) -> int:
     """`Count_Vowels_Till_Boundry` (`BackEnd.c:2094-2118`)."""
     count = 0
     for i in range(cur_index, vv.phonBuf_2_In_Index):
@@ -86,7 +86,7 @@ def count_vowels_till_boundry(vv: VoiceVar, boundry: int, cur_index: int) -> int
         if i != cur_index:
             if cur_flags & kVowelF:
                 count += 1
-        if (cur_ctrl & kSyllableTypeField) >= boundry:
+        if (cur_ctrl & kSyllableTypeField) >= boundary:
             break
     return count
 
@@ -123,11 +123,11 @@ def pitch_raise_and_fall(vv: VoiceVar) -> None:
 
         if cur_flags & kVowelF:
             if p_state == kStart:
-                if count_vowels_till_boundry(vv, kTerm_End, index) == 0:
+                if count_vowels_till_boundary(vv, kTerm_End, index) == 0:
                     vv.phon_Ctrl_Buf_2[index] |= kPitchFall
                     p_state = kFinished
                     break
-                elif count_stress_vowels_till_boundry(vv, kTerm_End, index) == 0:
+                elif count_stress_vowels_till_boundary(vv, kTerm_End, index) == 0:
                     vv.phon_Ctrl_Buf_2[index] |= kPitchFall
                     p_state = kFinished
                 elif cur_ctrl & kIsStressed:
@@ -136,11 +136,11 @@ def pitch_raise_and_fall(vv: VoiceVar) -> None:
             elif p_state == kRaised:
                 if cur_ctrl & kPrimOrEmphStress:
                     stress_count += 1
-                if count_vowels_till_boundry(vv, kTerm_End, index) == 0:
+                if count_vowels_till_boundary(vv, kTerm_End, index) == 0:
                     vv.phon_Ctrl_Buf_2[index] |= kPitchFall
                     p_state = kFallen
                     break
-                elif (cur_ctrl & kPrimOrEmphStress) and (count_stress_vowels_till_boundry(vv, kTerm_End, index) == 0):
+                elif (cur_ctrl & kPrimOrEmphStress) and (count_stress_vowels_till_boundary(vv, kTerm_End, index) == 0):
                     vv.phon_Ctrl_Buf_2[index] |= kPitchFall
                     p_state = kFallen
                     break

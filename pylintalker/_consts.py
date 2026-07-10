@@ -388,9 +388,8 @@ DICT_VERSION = 0x00000001
 # Dict flags
 dictLocked = 0x00000001
 
-# Dict special phonemes
-kDictComp = 55  # _pRise_ = Stress1... no actually let me be precise
-kDictWord = 56  # _pFall_ = Stress2...
+# Dict special phonemes: see _lexicon.py, which aliases these to the
+# _pRise_/_pFall_ phoneme opcodes they are #defined as (mt4.h:759-760).
 
 # kPrimeStress = 0x40
 kPrimeStress = 0x40

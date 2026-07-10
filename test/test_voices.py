@@ -41,17 +41,14 @@ C_BIN = os.path.expanduser("~/AgentWorkspaces/ovos/lintalker-c/bin/Debug/test_ha
 
 import pylintalker._backend as be
 from pylintalker._backend import (
-    VoiceVar,
     calc_ramp_steps,
     e_fill_next_frame,
-    init_voice,
     say_frame,
     start_new_pitch_clause,
     start_talk,
 )
 from pylintalker._consts import (
     kFrame1,
-    kNoMarker,
     kSpeakLastFrame,
 )
 from pylintalker._data import (
@@ -73,6 +70,7 @@ from pylintalker._data import (
     Whisper_Voice,
     Zarvox_Voice,
 )
+from pylintalker.api import new_voice
 
 VOICE_DICTS = [
     Fred_Voice,       # 0
@@ -209,28 +207,6 @@ def parse_frames(stdout_bytes):
     return frames
 
 
-def setup_python_voice(voice_dict):
-    """Create and init a Python VoiceVar for the given voice."""
-    vv = VoiceVar()
-    init_voice(vv, voice_dict)
-    vv.FEinputDone = True
-    vv.newSentence = True
-    vv.start_of_Paragraph_Flag = False
-    vv.stress_Active_Time = 0
-    vv.user_Pitch_Buf2 = [0] * 512
-    vv.controlF0 = vv.VP_baselinePitch
-    vv.frameMarker = kNoMarker
-    # kUseSyncSnd voices (Bells/Hysterical) need vv.markerBuf/
-    # lastMarkerIndex populated for Mod_Duration's sync_On_Marker branch
-    # and the frameMarker it drives -- see api.new_voice()/_data.py's
-    # Bells_Markers/Hysterical_Markers.
-    markers = voice_dict.get('markers')
-    if markers:
-        vv.markerBuf[:len(markers)] = markers
-        vv.lastMarkerIndex = len(markers) - 1
-    return vv
-
-
 def run_python_backend(vv, phonemes, ctrls, durs,
                        pitch_freq, pitch_time, pitch_flags):
     """Run the Python synthesis backend with given reference arrays."""
@@ -354,7 +330,7 @@ def verify_voice(voice_idx, text, verbose=True):
         c_wav_samples, c_wav_len = get_wav_samples(wav_path)
 
     # Run Python
-    vv = setup_python_voice(vd)
+    vv = new_voice(vd)
     py_frames, vv = run_python_backend(vv, phonemes, ctrls, durs, pf, pt, pfl)
 
     # Collect Python audio

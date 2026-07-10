@@ -96,6 +96,7 @@ from __future__ import annotations
 
 import struct
 from dataclasses import dataclass, field
+from functools import cache
 
 from ._data import english_lex_data
 from ._phonemes import _pRise_, _Word_
@@ -129,7 +130,7 @@ kUndefPOS = -1
 kAbriv = kMaxPOS + kNoun                         # 32
 
 
-@dataclass
+@dataclass(frozen=True)
 class DictHeader:
     """Parsed `DictDisk` header (`mt4.h:790-805`, parsed by
     `Linux.c:MakeDictPtrsAbsolute`)."""
@@ -185,7 +186,7 @@ def parse_dict(raw: bytes) -> DictHeader:
     )
 
 
-@dataclass
+@dataclass(frozen=True)
 class LexEntry:
     """Result of a successful dictionary lookup -- the fields a future
     `Fill_Phon_Buf_2` port needs from `FETokenPtr` after `SearchAllDicts`
@@ -348,14 +349,10 @@ def search_single_dict(word: str, dict_header: DictHeader) -> LexEntry | None:
 
 # --- module-level singleton dictionary + public lookup API -----------------
 
-_english_dict: DictHeader | None = None
-
-
+@cache
 def _get_english_dict() -> DictHeader:
-    global _english_dict
-    if _english_dict is None:
-        _english_dict = parse_dict(english_lex_data)
-    return _english_dict
+    """Parse the bundled English dictionary once, on first lookup."""
+    return parse_dict(english_lex_data)
 
 
 def lookup(word: str) -> LexEntry | None:

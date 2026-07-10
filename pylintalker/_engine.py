@@ -320,9 +320,6 @@ def e_set_tempo(vv: VoiceVar, tempo: int) -> None:
     vv.tempo = tempo
     note_16th = kBPM // tempo
 
-    if not hasattr(vv, "Note_Times"):
-        vv.Note_Times = [0] * 16  # mt4.h: short Note_Times[16]
-
     vv.Note_Times[0] = note_16th  # NOT USED (per C comment)
     j = note_16th
     i = 1

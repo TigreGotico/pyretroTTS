@@ -167,6 +167,7 @@ HANDOFF -- what `Fill_Phon_Buf_2` must consume next
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from functools import cache
 
 from ._consts import (
     kAdj,
@@ -847,7 +848,7 @@ def collect_fe_tokens(
     char_overrides = commands.spelled
 
     sa = SentenceAssembly()
-    in_index = [1]  # mutable box so nested helpers can advance it; mirrors phonBuf_1_In_Index
+    in_index = 1  # mirrors phonBuf_1_In_Index
 
     def ensure(i: int) -> None:
         while len(sa.phon_buf) <= i:
@@ -857,17 +858,18 @@ def collect_fe_tokens(
             sa.rate_buf.append(0)
 
     def flag_current(flag: int) -> None:
-        ensure(in_index[0])
-        sa.ctrl_buf[in_index[0]] |= flag
+        ensure(in_index)
+        sa.ctrl_buf[in_index] |= flag
 
     def store(phon: int) -> int:
         """Stand-in for `Store_Phon_In_PhonBuf_1` (`BackEnd.c:3527`): writes
         `phon` at the current index and advances it, returning the index
         just written."""
-        ensure(in_index[0])
-        sa.phon_buf[in_index[0]] = phon
-        written = in_index[0]
-        in_index[0] += 1
+        nonlocal in_index
+        ensure(in_index)
+        sa.phon_buf[in_index] = phon
+        written = in_index
+        in_index += 1
         return written
 
     word_initial = True
@@ -989,7 +991,7 @@ def collect_fe_tokens(
             sa.ctrl_buf[_slnc_idx] |= kSilenceDuration
             sa.note_buf[_slnc_idx] = silence_overrides[_wi]
 
-        word_start_indices.append(in_index[0])
+        word_start_indices.append(in_index)
         flag_current(kWord_Start)
         if _mid_bnd == kBND_Sep6:
             flag_current(_mid_bnd << kSilenceTypeShift)
@@ -997,11 +999,11 @@ def collect_fe_tokens(
         # via Parse_Embedded_Command): recorded at this word's own START
         # position, no extra phoneme (see rate_overrides above).
         if rate_overrides and _wi in rate_overrides:
-            ensure(in_index[0])
-            sa.rate_buf[in_index[0]] = rate_overrides[_wi]
+            ensure(in_index)
+            sa.rate_buf[in_index] = rate_overrides[_wi]
         word_initial = True
         sa.is_compound_noun = False
-        sa.last_word_index = in_index[0]
+        sa.last_word_index = in_index
         sa.word_count += 1
 
         if tok.is_content_word:
@@ -1035,22 +1037,22 @@ def collect_fe_tokens(
             if _is_stress1(cur_phon):
                 if sa.is_compound_noun or not tok.is_content_word:
                     flag_current(kSecondaryStress)
-                    sa.last_stress_2_index = in_index[0]
+                    sa.last_stress_2_index = in_index
                     if word_stress_2_index is None:
-                        word_stress_2_index = in_index[0]
+                        word_stress_2_index = in_index
                 else:
                     flag_current(kPrimaryStress)
-                    sa.last_stress_1_index = in_index[0]
+                    sa.last_stress_1_index = in_index
                     if word_stress_1_index is None:
-                        word_stress_1_index = in_index[0]
+                        word_stress_1_index = in_index
                     sa.stress_counter += 1
                 continue
             if _is_stress2(cur_phon):
                 if not sa.is_compound_noun:
                     flag_current(kSecondaryStress)
                     if word_stress_2_index is None:
-                        word_stress_2_index = in_index[0]
-                sa.last_stress_2_index = in_index[0]
+                        word_stress_2_index = in_index
+                sa.last_stress_2_index = in_index
                 continue
             if _is_emph_stress(cur_phon):
                 flag_current(kEmphaticStress)
@@ -1061,8 +1063,8 @@ def collect_fe_tokens(
             flags = PhonFlags2[cur_phon] if 0 <= cur_phon < len(PhonFlags2) else 0
             if flags & kVowelF:
                 word_initial = False
-                word_vowel_index = in_index[0]
-                sa.last_vowel_index = in_index[0]
+                word_vowel_index = in_index
+                sa.last_vowel_index = in_index
             else:
                 if word_initial:
                     flag_current(kWord_Initial_Consonant)
@@ -1122,7 +1124,7 @@ def collect_fe_tokens(
     if sa.word_count:
         if sa.stress_counter == 0:
             if sa.last_stress_2_index is None:
-                for index in range(sa.last_word_index, in_index[0]):
+                for index in range(sa.last_word_index, in_index):
                     cur_phon = sa.phon_buf[index]
                     if cur_phon is not None and PhonFlags2[cur_phon] & kVowelF:
                         sa.ctrl_buf[index] |= kPrimaryStress
@@ -1149,8 +1151,8 @@ def collect_fe_tokens(
     # Trim unwritten trailing placeholder slots (from `ensure()` overshoot,
     # which cannot happen here since flag_current always targets the slot
     # store() is about to fill next -- kept as a defensive truncation).
-    sa.phon_buf = sa.phon_buf[:in_index[0]]
-    sa.ctrl_buf = sa.ctrl_buf[:in_index[0]]
+    sa.phon_buf = sa.phon_buf[:in_index]
+    sa.ctrl_buf = sa.ctrl_buf[:in_index]
 
     return sa
 
@@ -1217,25 +1219,21 @@ _CONSONANT_CLUSTERS = {
 }
 
 
-def _consonant_cluster_ids():
+@cache
+def _consonant_cluster_ids() -> frozenset[tuple[int, int]]:
+    """`_CONSONANT_CLUSTERS` translated from phoneme names to phoneme ids."""
     name_to_id = {
         'f': _f_, 'v': _v_, 'TH': _TH_, 's': _s_, 'SH': _SH_, 'p': _p_,
         'b': _b_, 't': _t_, 'd': _d_, 'k': _k_, 'g': _g_, 'r': _r_, 'l': _l_,
         'w': _w_, 'm': _m_, 'n': _n_,
     }
-    return {(name_to_id[a], name_to_id[b]) for a, b in _CONSONANT_CLUSTERS}
+    return frozenset((name_to_id[a], name_to_id[b]) for a, b in _CONSONANT_CLUSTERS)
 
 
-_CONSONANT_CLUSTER_IDS = None
-
-
-def if_consonant_cluster(consonant_1st: int, consonant_2nd: int) -> bool:
+def is_consonant_cluster(consonant_1st: int, consonant_2nd: int) -> bool:
     """BackEnd.c:3086-3167 -- is (consonant_1st, consonant_2nd) a cluster
     that stays together at a syllable boundary?"""
-    global _CONSONANT_CLUSTER_IDS
-    if _CONSONANT_CLUSTER_IDS is None:
-        _CONSONANT_CLUSTER_IDS = _consonant_cluster_ids()
-    return (consonant_1st, consonant_2nd) in _CONSONANT_CLUSTER_IDS
+    return (consonant_1st, consonant_2nd) in _consonant_cluster_ids()
 
 
 def find_next_word_bound(sa: SentenceAssembly, index: int) -> int:
@@ -1248,7 +1246,7 @@ def find_next_word_bound(sa: SentenceAssembly, index: int) -> int:
     return i
 
 
-def mark_boundry(sa: SentenceAssembly, scan_index: int) -> None:
+def mark_boundary(sa: SentenceAssembly, scan_index: int) -> None:
     """BackEnd.c:3448-3480 -- back-propagate word/prep/verb/term "-End"
     flags from the next boundary-flagged phoneme onto the consonants
     preceding it, stopping at the first vowel."""
@@ -1347,7 +1345,7 @@ def mark_syllable_start(sa: SentenceAssembly) -> None:
                 elif dist == 2:
                     phon_2nd = sa.phon_buf[index - 1]
                     phon_1st = sa.phon_buf[index - 2]
-                    if if_consonant_cluster(phon_1st, phon_2nd):
+                    if is_consonant_cluster(phon_1st, phon_2nd):
                         index -= 2
                     else:
                         index -= 1
@@ -1355,7 +1353,7 @@ def mark_syllable_start(sa: SentenceAssembly) -> None:
                 elif dist == 3:
                     phon_2nd = sa.phon_buf[index - 1]
                     phon_1st = sa.phon_buf[index - 2]
-                    if if_consonant_cluster(phon_1st, phon_2nd):
+                    if is_consonant_cluster(phon_1st, phon_2nd):
                         if sa.phon_buf[index - 3] == _s_:
                             index -= 3
                         else:
@@ -1366,7 +1364,7 @@ def mark_syllable_start(sa: SentenceAssembly) -> None:
                 else:
                     phon_2nd = sa.phon_buf[index - dist]
                     phon_1st = sa.phon_buf[index - dist + 1]
-                    if if_consonant_cluster(phon_1st, phon_2nd):
+                    if is_consonant_cluster(phon_1st, phon_2nd):
                         index -= (dist - 2)
                     else:
                         index -= (dist >> 1)
@@ -1379,7 +1377,7 @@ def flag_phon_buf_1(sa: SentenceAssembly) -> None:
     """BackEnd.c:3481-3519 -- final annotation pass over the whole sentence
     buffer: tracks is_Compound_Noun while scanning, calls mark_syllable per
     vowel (Place_Stress_In_Consonant, the consonant branch, is dead code in
-    the C reference -- see module docstring), calls mark_boundry per
+    the C reference -- see module docstring), calls mark_boundary per
     phoneme, then mark_syllable_start once at the end."""
 
     for scan_index in range(len(sa.phon_buf)):
@@ -1388,6 +1386,6 @@ def flag_phon_buf_1(sa: SentenceAssembly) -> None:
         if cur_flags & kVowelF:
             mark_syllable(sa, scan_index)
 
-        mark_boundry(sa, scan_index)
+        mark_boundary(sa, scan_index)
 
     mark_syllable_start(sa)

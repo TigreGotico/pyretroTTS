@@ -135,11 +135,19 @@ def _parse_selector_value(text: str, i: int):
     return val, i
 
 
+def _fourcc(code: str) -> int:
+    """Pack a four-character code the way `_parse_selector_value` reads one."""
+    value = 0
+    for ch in code:
+        value = (value << 8) | ord(ch)
+    return value
+
+
 # Versions.h's kMacInTalkCreator ('mtk3') and EmbeddedCmd.c's 'wpos'
 # selector, both four-character codes packed the same way
 # _parse_selector_value builds them.
-_MACINTALK_CREATOR = (ord('m') << 24) | (ord('t') << 16) | (ord('k') << 8) | ord('3')
-_WPOS_SELECTOR = (ord('w') << 24) | (ord('p') << 16) | (ord('o') << 8) | ord('s')
+_MACINTALK_CREATOR = _fourcc('mtk3')
+_WPOS_SELECTOR = _fourcc('wpos')
 
 # SpeechEqu.h's modeNormal ('NORM')/modeLiteral ('LTRL') mode-argument
 # constants, shared by `char`/`nmbr` (Parse_char_Command/
@@ -147,13 +155,13 @@ _WPOS_SELECTOR = (ord('w') << 24) | (ord('p') << 16) | (ord('o') << 8) | ord('s'
 # before comparing against these -- _parse_selector_value already reads
 # raw ASCII, so the uppercasing happens by using upper() on the parsed
 # text below instead of replicating the bitmask).
-_MODE_NORMAL = (ord('N') << 24) | (ord('O') << 16) | (ord('R') << 8) | ord('M')
-_MODE_LITERAL = (ord('L') << 24) | (ord('T') << 16) | (ord('R') << 8) | ord('L')
+_MODE_NORMAL = _fourcc('NORM')
+_MODE_LITERAL = _fourcc('LTRL')
 
 # SpeechEqu.h's modeText ('TEXT')/modePhonemes ('PHON') constants, used
 # by `mode` (`Parse_mode_Command`/`ChangeInputMode`).
-_MODE_TEXT = (ord('T') << 24) | (ord('E') << 16) | (ord('X') << 8) | ord('T')
-_MODE_PHON = (ord('P') << 24) | (ord('H') << 16) | (ord('O') << 8) | ord('N')
+_MODE_TEXT = _fourcc('TEXT')
+_MODE_PHON = _fourcc('PHON')
 
 
 def _parse_signed_command_value(text: str, i: int):

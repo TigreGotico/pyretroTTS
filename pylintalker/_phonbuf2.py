@@ -184,7 +184,9 @@ def fill_phon_buf_2(vv: VoiceVar, sa) -> None:
         target_phon = cur_phon
         del_fwd = False
         insert_glot = False
-        stuff_buff = False  # True once a `goto STUFF_BUFF` is hit
+        # Set once an allophone rule fires; the remaining rules are then skipped
+        # (the C source jumps to its STUFF_BUFF label).
+        rule_matched = False
 
         # --- EN rule (BackEnd.c:2604-2616) ---
         if (cur_phon == _n_) and (prev_phon == _IX_):
@@ -194,17 +196,16 @@ def fill_phon_buf_2(vv: VoiceVar, sa) -> None:
                     del_fwd = True
 
         # --- EL rule (BackEnd.c:2618-2628) ---
-        if not stuff_buff and (cur_phon == _l_) and not (cur_ctrl & (kPrimOrEmphStress | kWord_Initial_Consonant)):
+        if not rule_matched and (cur_phon == _l_) and not (cur_ctrl & (kPrimOrEmphStress | kWord_Initial_Consonant)):
             if (prev_phon == _AX_) or (prev_phon == _UH_):
                 vv.phon_Buf_2[vv.phonBuf_2_In_Index - 1] = _EL_
                 del_fwd = True
-                stuff_buff = True
+                rule_matched = True
 
-        if not stuff_buff:
+        if not rule_matched:
             # --- dark-L / R-coloring rule (BackEnd.c:2631-2673) ---
             if not (cur_ctrl & (kPrimOrEmphStress | kWord_Initial_Consonant)) and (prev_flags & kVowel1F):
                 if cur_phon == _l_:
-                    target_phon = None  # _LX_, set below (avoid None import clutter)
                     target_phon = _LX_
                 elif cur_phon == _r_:
                     target_phon = _RX_
@@ -267,9 +268,9 @@ def fill_phon_buf_2(vv: VoiceVar, sa) -> None:
             if ((next_phon == _YU_) or (next_phon == _y_)) and not (next_ctrl & kPrimOrEmphStress):
                 if cur_phon == _d_:
                     target_phon = _JH_
-                    stuff_buff = True
+                    rule_matched = True
 
-        if not stuff_buff:
+        if not rule_matched:
             # --- t rules (BackEnd.c:2801-2868) ---
             if cur_phon == _t_:
                 if (
@@ -293,10 +294,10 @@ def fill_phon_buf_2(vv: VoiceVar, sa) -> None:
                             target_phon = _TX_
                         else:
                             target_phon = _d_
-                        stuff_buff = True
+                        rule_matched = True
 
         skip_flap = False
-        if not stuff_buff:
+        if not rule_matched:
             # --- dental flap DX rules (BackEnd.c:2873-2988) ---
             if (cur_phon == _d_) or (cur_phon == _t_):
                 if (next_phon == _IX_) and (next2_phon == _n_):

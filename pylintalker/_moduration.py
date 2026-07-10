@@ -44,6 +44,7 @@ from ._consts import (
     kFric,
     kGStopF,
     kLowVibrato,
+    kMid_Syllable_In_Word,
     kMore_Than_One_Syllable_In_Word,
     kNasalF,
     kNormal_Speech_Rate,
@@ -61,6 +62,7 @@ from ._consts import (
     kSonorantF,
     kStopF,
     kStressedWInitial,
+    kStressField,
     kSyllable_Start,
     kSyllableOrderField,
     kSyllableTypeField,
@@ -117,7 +119,7 @@ def mod_duration(vv: VoiceVar) -> None:
         cur_phon = e_get_phon(vv, i)
         cur_ctrl = e_get_phon_ctrl(vv, i)
         cur_syllable_type = cur_ctrl & kSyllableTypeField
-        cur_stress = cur_ctrl & 0x1C00  # kStressField
+        cur_stress = cur_ctrl & kStressField
         cur_flags = _flags(PhonFlags2, cur_phon)
         cur_is_vowel = bool(cur_flags & kVowelF)
 
@@ -206,7 +208,7 @@ def mod_duration(vv: VoiceVar) -> None:
                     min_dur = min_dur - (min_dur >> 2)
 
                 if cur_is_vowel:
-                    if (cur_ctrl & kSyllableOrderField) == 0x0200:  # kMid_Syllable_In_Word
+                    if (cur_ctrl & kSyllableOrderField) == kMid_Syllable_In_Word:
                         percent_duration = (percent_duration * 55 * _PCT) >> 16
                     else:
                         percent_duration = (percent_duration * 70 * _PCT) >> 16
