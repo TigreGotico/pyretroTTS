@@ -365,6 +365,7 @@ class SentenceAssembly:
     phon_buf: list = field(default_factory=lambda: [_SIL_])
     ctrl_buf: list = field(default_factory=lambda: [0])
     note_buf: list = field(default_factory=lambda: [0])   # phon_Buf_1-side user_Note_Buf1 equivalent (EC_slnc durations)
+    rate_buf: list = field(default_factory=lambda: [0])   # phon_Buf_1-side user_Rate_Buf1 equivalent (EC_rate/EC_ratr)
     word_count: int = 0
     stress_counter: int = 0
     end_punctuation: int = 0
@@ -568,8 +569,18 @@ def collect_fe_tokens(
     emphasis_overrides: Optional[dict] = None,
     silence_overrides: Optional[dict] = None,
     pos_overrides: Optional[dict] = None,
+    rate_overrides: Optional[dict] = None,
 ) -> SentenceAssembly:
     """Adapted port of `Collect_FE_Tokens` (`BackEnd.c:3712-4157`).
+
+    `rate_overrides`, if given, is a `{word_index: wpm}` dict (from
+    `_embeddedcmd.scan_bracket_commands`'s `rate`/`ratr` support): the
+    resolved speaking rate is recorded in `sa.rate_buf` at that word's
+    START position (no extra phoneme inserted, unlike `slnc` -- mirrors
+    `Parse_Embedded_Command`'s `EC_rate`/`EC_ratr` cases writing directly
+    to `user_Rate_Buf1[vv->phonBuf_1_In_Index]`), consumed by
+    `_moduration.mod_duration`'s rate-change check
+    (`vv.user_Rate_Buf2[i]`).
 
     `emphasis_overrides`, if given, is a `{word_index: "emphasize"|
     "deemphasize"}` dict (from `_embeddedcmd.scan_bracket_commands`'s
@@ -646,6 +657,7 @@ def collect_fe_tokens(
             sa.phon_buf.append(None)
             sa.ctrl_buf.append(0)
             sa.note_buf.append(0)
+            sa.rate_buf.append(0)
 
     def flag_current(flag: int) -> None:
         ensure(in_index[0])
@@ -739,6 +751,12 @@ def collect_fe_tokens(
         flag_current(kWord_Start)
         if _mid_bnd == kBND_Sep6:
             flag_current(_mid_bnd << kSilenceTypeShift)
+        # --- EC_rate/EC_ratr embedded rate change (BackEnd.c:1900-1915
+        # via Parse_Embedded_Command): recorded at this word's own START
+        # position, no extra phoneme (see rate_overrides above).
+        if rate_overrides and _wi in rate_overrides:
+            ensure(in_index[0])
+            sa.rate_buf[in_index[0]] = rate_overrides[_wi]
         word_initial = True
         sa.is_compound_noun = False
         sa.last_word_index = in_index[0]

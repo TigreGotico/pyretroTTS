@@ -1073,6 +1073,24 @@ def synth_fill_next_samp_buffer(vv: VoiceVar):
         vv._i_Cur_Sample_Buffer(vv, vv.sampleBuffer, vv.waveIndex)
 
 
+def init_rate_params(vv: VoiceVar) -> None:
+    """Port of `Init_Rate_Params` (`BackEnd.c:4303-4327`): derives
+    `rate_Ratio`/`rate_Ratio_LowGain`/`stress_Duration` from
+    `vv.speech_Rate`/`vv.stressDurTime`, clamping `speech_Rate` to
+    `kMinRate` first. Pure fixed-point arithmetic, no missing
+    dependency -- called once from `init_voice` at voice load, and
+    again from `_engine.e_set_speech_rate` whenever the speaking rate
+    changes at runtime (matching `e_SetSpeechRate`'s own call to this
+    same function, `Engine.c:567-580`)."""
+    if vv.speech_Rate < kMinRate:
+        vv.speech_Rate = kMinRate
+    vv.rate_Ratio = (kNormal_Speech_Rate << 16) // vv.speech_Rate
+    vv.rate_Ratio_LowGain = (kNormal_Speech_Rate << 16) // (
+        (((vv.speech_Rate - kNormal_Speech_Rate) * (655 * 60)) >> 16) + kNormal_Speech_Rate
+    )
+    vv.stress_Duration = (vv.rate_Ratio * vv.stressDurTime) >> 16
+
+
 # ---------------------------------------------------------------------------
 # Init voice from voiceData dict
 # ---------------------------------------------------------------------------
@@ -1328,13 +1346,7 @@ def init_voice(vv: VoiceVar, vd: dict):
     # Rate/speaking params (Say.c:1258, 1423 + Init_Rate_Params)
     vv.speech_Rate = vd.get('rate', kNormal_Speech_Rate)
     vv.stressDurTime = vd.get('stressDurTime', 50) >> 1
-    if vv.speech_Rate < kMinRate:
-        vv.speech_Rate = kMinRate
-    vv.rate_Ratio = (kNormal_Speech_Rate << 16) // vv.speech_Rate
-    vv.rate_Ratio_LowGain = (kNormal_Speech_Rate << 16) // (
-        (((vv.speech_Rate - kNormal_Speech_Rate) * (655 * 60)) >> 16) + kNormal_Speech_Rate
-    )
-    vv.stress_Duration = (vv.rate_Ratio * vv.stressDurTime) >> 16
+    init_rate_params(vv)
 
     # Vibrato params (Say.c:1428-1436)
     vib_freq = vd.get('vibratoFreq', 0)

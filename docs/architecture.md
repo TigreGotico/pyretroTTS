@@ -17,7 +17,7 @@
 | `BackEnd.c` (`Fill_Pitch_Buf`, `Store_F0_and_Time`) | `lintalker/_pitchbuf.py` | Turns the ctrl-bit pitch contour into `pitch_Buf_Freq`/`pitch_Buf_Time`/`pitch_Buf_Flags`, verified bit-exact against the C reference across voices/sentences (`test/test_pitchbuf.py`). |
 | `Engine.c` | `lintalker/_engine.py` | Top-level init/speak/reset/rate/pitch/volume API, built on `_backend.py`. `e_speak_buffer` (the text-in entry point) and a few fsynth-dependent setters (`e_reset_params`, `e_use_voice`, `e_reinit_voice`) raise `NotImplementedError` naming the specific unported upstream C function they need. |
 | `BackEnd.c` (`DoCtrl`, the per-phoneme `CMDQueue` dispatcher: absolute/relative pitch, volume, mod) | `lintalker/_embeddedcmd.py` | Ported (see `test/test_embeddedcmd.py`); `C_reset`/`C_voice` are unimplemented/no-op the same way upstream leaves them, pending `ResetVoice`/`NewVoice` |
-| `EmbeddedCmd.c` (the FrontEnd bracket-delimited text-command parser, e.g. `[[pbas200]]` -- `[[`/`]]` are the default delimiters, `mt4.h`'s `defaultCmdBeginDelim`/`defaultCmdEndDelim`, a distinct mechanism from `DoCtrl` above — it sets `PendingCommands` bits that `FrontEnd.c` later turns into `CMDQueue` entries via `QueueCommand`, except `emph`/`xtnd wpos` which copy straight into the next token's fields and `slnc` which inserts a real `_SIL_` phoneme) | `lintalker/_embeddedcmd.py`'s `scan_bracket_commands` | Ported for `pbas`/`pbar`/`pmod`/`pmor`/`volm`/`volr`/`rset`/`sync` (applied as an immediate state change at clause start via `do_ctrl`, not true per-phoneme positioning -- `rset` correctly raises `NotImplementedError` via `do_ctrl`'s existing stub, `sync` is a genuine no-op matching `do_ctrl` having no `C_sync` case, same as the real `DoCtrl`), `emph`/`emph-` (applied to the correct word's `word_emphasis` field via `_assembly.collect_fe_tokens`), `xtnd`'s `wpos` selector (applied to the correct word's `pos_code1`/`comp_pos1` fields, same mechanism as `emph`), `slnc` (inserts a real `_SIL_` phoneme with the requested duration at the exact word position, via `sa.note_buf`/`_moduration.mod_duration`'s `kSilenceDuration` branch), `cmnt`/`vers` (no-ops, stripped), and `dlim` (changes the begin/end delimiter used for later commands in the same text); `rate`/`char`/`mode`/`nmbr` not ported; cannot be verified frame-exact against `lintalker-c`'s compiled `test_harness` -- see "Known gaps" |
+| `EmbeddedCmd.c` (the FrontEnd bracket-delimited text-command parser, e.g. `[[pbas200]]` -- `[[`/`]]` are the default delimiters, `mt4.h`'s `defaultCmdBeginDelim`/`defaultCmdEndDelim`, a distinct mechanism from `DoCtrl` above — it sets `PendingCommands` bits that `FrontEnd.c` later turns into `CMDQueue` entries via `QueueCommand`, except `emph`/`xtnd wpos`/`rate` which write directly to per-token/per-word state) | `lintalker/_embeddedcmd.py`'s `scan_bracket_commands` | Ported for `pbas`/`pbar`/`pmod`/`pmor`/`volm`/`volr`/`rset`/`sync` (applied as an immediate state change at clause start via `do_ctrl`, not true per-phoneme positioning -- `rset` correctly raises `NotImplementedError` via `do_ctrl`'s existing stub, `sync` is a genuine no-op matching `do_ctrl` having no `C_sync` case, same as the real `DoCtrl`), `emph`/`emph-`/`xtnd`'s `wpos` selector/`slnc`/`rate`/`ratr` (all applied at the exact word position -- `emph`/`xtnd wpos` via token fields, `slnc`/`rate` via `sa.note_buf`/`sa.rate_buf` consumed by `_moduration.mod_duration`), `cmnt`/`vers` (no-ops, stripped), and `dlim` (changes the begin/end delimiter used for later commands in the same text); `char`/`mode`/`nmbr` not ported; cannot be verified frame-exact against `lintalker-c`'s compiled `test_harness` -- see "Known gaps" |
 | `Morph.c` (`ResolvePOS`, `PlacePhrasing`, `SetPOS_FromSuffix` including `Zap_POS`, `DoMorph`'s suffix functions) | `lintalker/_morph.py` (suffix decomposition) + `lintalker/_assembly.py` (`resolve_pos`/`_place_phrasing`) | Every top-level function is ported, including `Zap_POS` (`apply_pos_from_suffix`'s `hasAlt`-true branch, which also selects the root's alternate pronunciation `phon_hold` when the ALT `pos_code2` reading wins -- `PlacePhrasing`'s `inParen`/SEP7 aren't real gaps -- neither is ever exercised by the C reference itself, see "Known gaps"); `Search_Suffix`'s real `SuffixTab` trie data is approximated with an ordered `endswith()` cascade instead of extracted |
 | `english_lex.c`/`English.lex` | `lintalker/_lexicon.py` | Dictionary lookup (`lookup(word)`), verified bit-exact against the real engine for 249 words spanning common/rare/compound-noun/abbreviation entries (`test/test_lexicon.py`). |
 | `Sounds.c` | not ported | Embedded sound effects (bells, etc.) — raw PCM blobs, not logic |
@@ -625,13 +625,45 @@ single-sentence text is.
   choice` (forces the otherwise-ambiguous noun/verb word "record" to
   `kVerb`).)
 
-  NOT ported: `rate`/`ratr` (routes through `vv->lastRate`/
-  `user_Rate_Buf1`, not `CMDQueue`, and `e_set_speech_rate`'s
-  non-singing branch already isn't ported, see `_engine.py`),
-  `char`/`mode`/`nmbr` (each a separate
-  parser/side-effect not reachable via
-  `CMDQueue`), and true per-phoneme positioning for `pbas`/`pmod`/`volm`
-  (see above -- `emph`/`slnc` already get real per-word positioning).
+  (Also ported: `rate`/`ratr` (`Parse_rate_Command`/`ChangeRate`,
+  `EmbeddedCmd.c:691-720`) -- a previous pass of several docstrings
+  (`_engine.e_set_speech_rate`, `_moduration.py`'s module docstring)
+  incorrectly claimed `Init_Rate_Params` needed something unported;
+  checking the C source directly shows it's pure fixed-point arithmetic
+  (`BackEnd.c:4303-4327`, computing `rate_Ratio`/`rate_Ratio_LowGain`/
+  `stress_Duration` from `speech_Rate`) with no missing dependency,
+  ported as `_backend.init_rate_params` (factored out of `init_voice`'s
+  inline copy of the same logic) and reused by both
+  `_engine.e_set_speech_rate` (previously stubbed with
+  `NotImplementedError`, now works) and `_moduration.mod_duration`'s
+  `EC_rate`/`EC_ratr` check (`BackEnd.c:1900-1915`, previously
+  documented as permanently dead code since nothing populated
+  `user_Rate_Buf2`). Unlike `pbas`/`pmod`/`volm`, `rate`/`ratr` write
+  directly to `user_Rate_Buf1`/`vv->lastRate`, not `CMDQueue` -- ported
+  with real per-word positioning: `_assembly.SentenceAssembly` gained a
+  `rate_buf` array parallel to `note_buf`, `collect_fe_tokens` accepts a
+  `rate_overrides: {word_index: wpm}` dict recording the resolved rate
+  at that word's start position (no extra phoneme, unlike `slnc`), and
+  `_phonbuf2.fill_phon_buf_2` reads `sa.rate_buf[out_index]` instead of
+  a hardcoded `0` for `user_rate`. `scan_bracket_commands` takes an
+  `initial_rate` parameter (the relative-change accumulator's starting
+  point, i.e. `vv->lastRate`'s value before any `rate`/`ratr` command in
+  the text) and returns a `final_rate` for the caller to persist onto
+  `vv.speech_Rate`, matching `vv->lastRate` being a single field that
+  outlives one clause. Verified end-to-end: a faster rate produces
+  shorter `dur_Buf` values, and the rate persists onto `vv.speech_Rate`
+  for later clauses -- see
+  `test/test_embeddedcmd.py::test_rate_override_applied_end_to_end_via_
+  build_phoneme_plan`.)
+
+  NOT ported: `char`/`mode`/`nmbr` (each needs a real tokenizer-mode/
+  character-processing state -- raw-phoneme input, character-by-
+  character speaking, digit-by-digit number reading -- that this port's
+  simplified `_frontend.py` tokenizer doesn't have any equivalent of;
+  unlike `rate`, there's no existing consumer these could route into),
+  and true per-phoneme positioning for `pbas`/`pmod`/`volm` (see above
+  -- `emph`/`slnc`/`xtnd wpos`/`rate` already get real per-word
+  positioning).
 - Primary/secondary stress placement is gated on POS tagging. For
   dictionary hits, `_lexicon.py:lookup(word)` provides real POS codes.
   For a successful `DoMorph` (`try_s_morph`/`try_do_morph`), the

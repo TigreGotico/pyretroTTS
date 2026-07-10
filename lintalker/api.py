@@ -204,7 +204,10 @@ def build_phoneme_plan(voice_dict: dict, text: str, vv: Optional[VoiceVar] = Non
     _reset_for_clause(vv)
 
     from ._embeddedcmd import scan_bracket_commands, do_ctrl
-    text, _bracket_cmds, _emphasis_overrides, _silence_overrides, _pos_overrides = scan_bracket_commands(text)
+    (
+        text, _bracket_cmds, _emphasis_overrides, _silence_overrides,
+        _pos_overrides, _rate_overrides, _final_rate,
+    ) = scan_bracket_commands(text, initial_rate=vv.speech_Rate)
     if _bracket_cmds:
         # Simplified integration (see _embeddedcmd.scan_bracket_commands'
         # docstring "NOT ported" note): the real engine positions each
@@ -220,8 +223,15 @@ def build_phoneme_plan(voice_dict: dict, text: str, vv: Optional[VoiceVar] = Non
             idx += 1
             vv.ctrlCount += 1
         do_ctrl(vv)
+    if _final_rate is not None:
+        # Persist the resolved rate onto vv.speech_Rate so a later
+        # clause's own scan_bracket_commands (or a plain rate/ratr with
+        # no preceding embedded command in THIS clause) sees the right
+        # initial_rate/relative-change baseline -- mirrors vv->lastRate
+        # being a single persistent field, not reset per clause.
+        vv.speech_Rate = _final_rate
 
-    sa = collect_fe_tokens(text, _emphasis_overrides, _silence_overrides, _pos_overrides)
+    sa = collect_fe_tokens(text, _emphasis_overrides, _silence_overrides, _pos_overrides, _rate_overrides)
     fill_phon_buf_2(vv, sa)
     vv.end_Punctuation = sa.end_punctuation
     pitch_raise_and_fall(vv)

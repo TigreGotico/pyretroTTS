@@ -44,7 +44,7 @@ from __future__ import annotations
 from ._consts import *
 from ._data import *
 from ._backend import (
-    VoiceVar, synth_set_volume, start_talk,
+    VoiceVar, synth_set_volume, start_talk, init_rate_params,
 )
 
 # ---------------------------------------------------------------------------
@@ -215,20 +215,17 @@ def e_get_speech_mod(vv: VoiceVar) -> int:
 
 
 def e_set_speech_rate(vv: VoiceVar, info: int) -> None:
-    """e_SetSpeechRate (Engine.c).
-
-    STUBBED (non-singing branch): real code calls Init_Rate_Params
-    (fsynth.c), which is not ported to _backend.py under any name.
-    """
+    """e_SetSpeechRate (Engine.c:567-580). Pure fixed-point arithmetic,
+    fully portable -- `Init_Rate_Params` (`BackEnd.c:4303-4327`, not
+    `fsynth.c` as a previous pass of this docstring incorrectly claimed)
+    is itself pure arithmetic with no missing dependency, ported as
+    `_backend.init_rate_params` and reused here."""
     if vv.singing:
         vv.tempo = info >> 16
         e_set_tempo(vv, vv.tempo)
     else:
         vv.speech_Rate = info >> 16
-        raise NotImplementedError(
-            "e_set_speech_rate (non-singing) requires Init_Rate_Params "
-            "(fsynth.c), which is not ported in _backend.py."
-        )
+        init_rate_params(vv)
 
 
 def e_set_speech_pitch(vv: VoiceVar, info: int) -> None:

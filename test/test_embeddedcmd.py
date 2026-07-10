@@ -176,7 +176,7 @@ def test_regression_voice_set_never_queues_commands():
 def test_scan_bracket_commands_strips_and_parses_pbas():
     from lintalker._embeddedcmd import scan_bracket_commands
 
-    clean, cmds, _emph, _silences, _pos = scan_bracket_commands("[[pbas300]]hello world")
+    clean, cmds, _emph, _silences, _pos, _rates, _final_rate = scan_bracket_commands("[[pbas300]]hello world")
     assert clean == "hello world"
     assert cmds == [(0, C_absPitch, 300 << 16)]
 
@@ -184,7 +184,7 @@ def test_scan_bracket_commands_strips_and_parses_pbas():
 def test_scan_bracket_commands_word_index_tracks_preceding_words():
     from lintalker._embeddedcmd import scan_bracket_commands
 
-    clean, cmds, _emph, _silences, _pos = scan_bracket_commands("hello [[volm50]] world")
+    clean, cmds, _emph, _silences, _pos, _rates, _final_rate = scan_bracket_commands("hello [[volm50]] world")
     assert clean == "hello  world"
     assert cmds == [(1, C_absVol, 50 << 16)]
 
@@ -192,17 +192,17 @@ def test_scan_bracket_commands_word_index_tracks_preceding_words():
 def test_scan_bracket_commands_relative_sign():
     from lintalker._embeddedcmd import scan_bracket_commands
 
-    clean, cmds, _emph, _silences, _pos = scan_bracket_commands("[[pbas+50]]hello")
+    clean, cmds, _emph, _silences, _pos, _rates, _final_rate = scan_bracket_commands("[[pbas+50]]hello")
     assert cmds == [(0, C_relPitch, 50 << 16)]
 
-    clean, cmds, _emph, _silences, _pos = scan_bracket_commands("[[pbas-50]]hello")
+    clean, cmds, _emph, _silences, _pos, _rates, _final_rate = scan_bracket_commands("[[pbas-50]]hello")
     assert cmds == [(0, C_relPitch, -(50 << 16))]
 
 
 def test_scan_bracket_commands_unrecognized_keyword_left_untouched():
     from lintalker._embeddedcmd import scan_bracket_commands
 
-    clean, cmds, _emph, _silences, _pos = scan_bracket_commands("[[bogus123]]hello")
+    clean, cmds, _emph, _silences, _pos, _rates, _final_rate = scan_bracket_commands("[[bogus123]]hello")
     assert clean == "[[bogus123]]hello"
     assert cmds == []
 
@@ -210,11 +210,11 @@ def test_scan_bracket_commands_unrecognized_keyword_left_untouched():
 def test_scan_bracket_commands_cmnt_and_vers_are_stripped_noops():
     from lintalker._embeddedcmd import scan_bracket_commands
 
-    clean, cmds, emph, _silences, _pos = scan_bracket_commands("[[cmnt this is ignored]]hello")
+    clean, cmds, emph, _silences, _pos, _rates, _final_rate = scan_bracket_commands("[[cmnt this is ignored]]hello")
     assert clean == "hello"
     assert cmds == [] and emph == {}
 
-    clean, cmds, emph, _silences, _pos = scan_bracket_commands("[[vers65536]]hello")
+    clean, cmds, emph, _silences, _pos, _rates, _final_rate = scan_bracket_commands("[[vers65536]]hello")
     assert clean == "hello"
     assert cmds == [] and emph == {}
 
@@ -223,12 +223,12 @@ def test_scan_bracket_commands_dlim_changes_subsequent_delimiters():
     from lintalker._embeddedcmd import scan_bracket_commands
 
     # '<'=60, '>'=62: switch delimiters mid-text, then use them for pbas.
-    clean, cmds, _emph, _silences, _pos = scan_bracket_commands("[[dlim60 62]]<pbas60>hello")
+    clean, cmds, _emph, _silences, _pos, _rates, _final_rate = scan_bracket_commands("[[dlim60 62]]<pbas60>hello")
     assert clean == "hello"
     assert cmds == [(0, C_absPitch, 60 << 16)]
 
     # Old [[ ]] delimiters no longer recognized after a dlim switch.
-    clean, cmds, _emph, _silences, _pos = scan_bracket_commands("[[dlim60 62]][[pbas60]]hello")
+    clean, cmds, _emph, _silences, _pos, _rates, _final_rate = scan_bracket_commands("[[dlim60 62]][[pbas60]]hello")
     assert clean == "[[pbas60]]hello"
     assert cmds == []
 
@@ -257,12 +257,12 @@ def test_scan_bracket_commands_emph():
     next word, a plain per-token field copy (not a CMDQueue entry)."""
     from lintalker._embeddedcmd import scan_bracket_commands
 
-    clean, cmds, emph, _silences, _pos = scan_bracket_commands("[[emph+]]hello world")
+    clean, cmds, emph, _silences, _pos, _rates, _final_rate = scan_bracket_commands("[[emph+]]hello world")
     assert clean == "hello world"
     assert cmds == []
     assert emph == {0: "emphasize"}
 
-    clean, cmds, emph, _silences, _pos = scan_bracket_commands("hello [[emph-]]world")
+    clean, cmds, emph, _silences, _pos, _rates, _final_rate = scan_bracket_commands("hello [[emph-]]world")
     assert clean == "hello world"
     assert emph == {1: "deemphasize"}
 
@@ -281,7 +281,7 @@ def test_scan_bracket_commands_slnc():
     plain millisecond value (500)."""
     from lintalker._embeddedcmd import scan_bracket_commands
 
-    clean, cmds, emph, silences, _pos = scan_bracket_commands("hello [[slnc500]]world")
+    clean, cmds, emph, silences, _pos, _rates, _final_rate = scan_bracket_commands("hello [[slnc500]]world")
     assert clean == "hello world"
     assert silences == {1: 500}
 
@@ -337,11 +337,11 @@ def test_scan_bracket_commands_rset():
     LogParseError's effect of not resetting at all."""
     from lintalker._embeddedcmd import scan_bracket_commands
 
-    clean, cmds, emph, silences, _pos = scan_bracket_commands("[[rset0]]hello")
+    clean, cmds, emph, silences, _pos, _rates, _final_rate = scan_bracket_commands("[[rset0]]hello")
     assert clean == "hello"
     assert cmds == [(0, C_reset, 0)]
 
-    clean, cmds, emph, silences, _pos = scan_bracket_commands("[[rset5]]hello")
+    clean, cmds, emph, silences, _pos, _rates, _final_rate = scan_bracket_commands("[[rset5]]hello")
     assert clean == "hello"
     assert cmds == []
 
@@ -355,7 +355,7 @@ def test_scan_bracket_commands_sync():
     from lintalker._embeddedcmd import scan_bracket_commands
     from lintalker._consts import C_sync
 
-    clean, cmds, emph, silences, _pos = scan_bracket_commands("[[sync12345]]hello")
+    clean, cmds, emph, silences, _pos, _rates, _final_rate = scan_bracket_commands("[[sync12345]]hello")
     assert clean == "hello"
     assert cmds == [(0, C_sync, 12345)]
 
@@ -373,7 +373,7 @@ def test_scan_bracket_commands_xtnd_wpos():
     from lintalker._embeddedcmd import scan_bracket_commands
     from lintalker._consts import kVerb
 
-    clean, cmds, emph, silences, pos = scan_bracket_commands(
+    clean, cmds, emph, silences, pos, _rates, _final_rate = scan_bracket_commands(
         "[[xtnd mtk3 wpos 1]]record it"
     )
     assert clean == "record it"
@@ -385,7 +385,7 @@ def test_scan_bracket_commands_xtnd_wrong_creator_ignored():
     silently ignored -- the command isn't directed at this engine."""
     from lintalker._embeddedcmd import scan_bracket_commands
 
-    clean, cmds, emph, silences, pos = scan_bracket_commands(
+    clean, cmds, emph, silences, pos, _rates, _final_rate = scan_bracket_commands(
         "[[xtnd zzz9 wpos 1]]record it"
     )
     assert clean == "record it"
@@ -401,6 +401,91 @@ def test_xtnd_wpos_override_reaches_pos_choice():
 
     sa = collect_fe_tokens("record it", pos_overrides={0: kVerb})
     assert sa.words[0].pos_choice == kVerb
+
+
+def test_init_rate_params_is_fully_portable():
+    """Regression test for _backend.init_rate_params (Init_Rate_Params,
+    BackEnd.c:4303-4327): pure fixed-point arithmetic, no missing
+    dependency (a previous pass of several docstrings incorrectly
+    claimed it needed something unported)."""
+    from lintalker._backend import VoiceVar, init_rate_params
+    from lintalker._consts import kNormal_Speech_Rate, kMinRate
+
+    vv = VoiceVar()
+    vv.speech_Rate = kNormal_Speech_Rate
+    vv.stressDurTime = 25
+    init_rate_params(vv)
+    assert vv.rate_Ratio == (kNormal_Speech_Rate << 16) // kNormal_Speech_Rate
+
+    vv.speech_Rate = 10  # below kMinRate
+    init_rate_params(vv)
+    assert vv.speech_Rate == kMinRate
+
+
+def test_e_set_speech_rate_no_longer_raises():
+    """Regression test: e_set_speech_rate's non-singing branch used to
+    raise NotImplementedError, based on the same incorrect assumption
+    about Init_Rate_Params -- it now actually changes vv.speech_Rate/
+    vv.rate_Ratio."""
+    from lintalker.api import new_voice
+    from lintalker._engine import e_set_speech_rate
+    from lintalker._data import Fred_Voice
+
+    vv = new_voice(Fred_Voice)
+    before = vv.rate_Ratio
+    e_set_speech_rate(vv, 240 << 16)
+    assert vv.speech_Rate == 240
+    assert vv.rate_Ratio != before
+
+
+def test_scan_bracket_commands_rate():
+    """Regression test for Parse_rate_Command/ChangeRate
+    (EmbeddedCmd.c:691-720): absolute and relative rate changes,
+    positioned at the exact word index (unlike pbas/pmod/volm, which
+    apply at clause start)."""
+    from lintalker._embeddedcmd import scan_bracket_commands
+    from lintalker._consts import kNormal_Speech_Rate, kMinRate
+
+    clean, cmds, emph, silences, pos, rates, final_rate = scan_bracket_commands(
+        "hello [[rate240]]world"
+    )
+    assert clean == "hello world"
+    assert rates == {1: 240}
+    assert final_rate == 240
+
+    # Relative change accumulates from initial_rate.
+    clean, cmds, emph, silences, pos, rates, final_rate = scan_bracket_commands(
+        "[[rate+20]]hello", initial_rate=200
+    )
+    assert rates == {0: 220}
+    assert final_rate == 220
+
+    # Clamped to kMinRate.
+    clean, cmds, emph, silences, pos, rates, final_rate = scan_bracket_commands(
+        "[[rate-500]]hello", initial_rate=kNormal_Speech_Rate
+    )
+    assert rates == {0: kMinRate}
+
+    # No rate command -> final_rate is None.
+    clean, cmds, emph, silences, pos, rates, final_rate = scan_bracket_commands("hello")
+    assert rates == {} and final_rate is None
+
+
+def test_rate_override_applied_end_to_end_via_build_phoneme_plan():
+    """Regression test for the full pipeline: EC_rate's speaking-rate
+    change actually produces shorter durations for a faster rate, and
+    persists onto vv.speech_Rate for subsequent clauses."""
+    from lintalker.api import build_phoneme_plan, new_voice
+    from lintalker._data import Fred_Voice
+
+    vv_plain = new_voice(Fred_Voice)
+    plan_plain = build_phoneme_plan(Fred_Voice, "hello world", vv_plain)
+
+    vv_rate = new_voice(Fred_Voice)
+    plan_rate = build_phoneme_plan(Fred_Voice, "[[rate240]]hello world", vv_rate)
+
+    assert vv_rate.speech_Rate == 240
+    assert sum(plan_rate[2]) < sum(plan_plain[2])
 
 
 if __name__ == "__main__":

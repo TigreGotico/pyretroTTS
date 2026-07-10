@@ -176,7 +176,7 @@ _BRACKET_COMMANDS = {
 }
 
 
-def scan_bracket_commands(text: str):
+def scan_bracket_commands(text: str, initial_rate: int = kNormal_Speech_Rate):
     """Port of `EmbeddedCmd.c`'s bracket-delimited text-command scanner
     (`ProcessEmbeddedCommands` and the `pbas`/`pmod`/`volm`/`emph`
     members of its command dispatch, `EmbeddedCmd.c:990-1010`), scoped
@@ -270,26 +270,40 @@ def scan_bracket_commands(text: str):
     `pos_code1`/`comp_pos1` fields right before `resolve_pos` runs, the
     same insertion point as `emphasis_overrides`.
 
-    NOT ported: `rate` (routes through `vv->lastRate`/
-    `user_Rate_Buf1`, not `CMDQueue`, and `e_set_speech_rate`'s
-    non-singing branch already isn't ported -- see `_engine.py`),
-    `char`/`mode`/`nmbr` (each its own
+    Also recognizes `rate`/`ratr` (`Parse_rate_Command`/`ChangeRate`,
+    `EmbeddedCmd.c:691-720`): sets the speaking rate at an exact word
+    position, matching `Parse_Embedded_Command`'s `EC_rate`/`EC_ratr`
+    cases (`BackEnd.c:1900-1915`) -- unlike `pbas`/`pmod`/`volm`, these
+    write DIRECTLY to `user_Rate_Buf1`/`vv->lastRate`, not `CMDQueue`, so
+    this is returned separately as `rates`, and (like `emph`/`xtnd wpos`)
+    positioned at the real word index rather than applied at clause
+    start. `initial_rate` seeds the relative-change accumulator
+    (`vv->lastRate`'s value before any `rate`/`ratr` command in `text` --
+    pass the voice's current `vv.speech_Rate` for correct behavior
+    across a multi-clause utterance where an earlier clause already
+    changed the rate); the LAST resolved rate (or `None` if `text` has
+    no `rate`/`ratr` command at all) is returned as `final_rate`, for the
+    caller to persist onto `vv.speech_Rate` for subsequent clauses.
+
+    NOT ported: `char`/`mode`/`nmbr` (each its own
     separate parser/side-effect, not reachable via `CMDQueue` or a
-    plain token field the way `emph`/`xtnd` are), and mid-clause
+    plain token field the way `emph`/`xtnd`/`rate` are), and mid-clause
     phoneme-accurate positioning for `pbas`/`pmod`/`volm` (a command
     found after the Nth word of ONE clause is applied before that
-    clause's Nth word for `emph`/`slnc`/`xtnd`, but `pbas`/`pmod`/`volm`
-    are applied as an immediate `do_ctrl` state change at the whole
-    clause's start instead -- see `api.build_phoneme_plan`).
+    clause's Nth word for `emph`/`slnc`/`xtnd`/`rate`, but `pbas`/`pmod`/
+    `volm` are applied as an immediate `do_ctrl` state change at the
+    whole clause's start instead -- see `api.build_phoneme_plan`).
 
-    Returns `(clean_text, commands, emphasis, silences, pos_overrides)`:
-    `clean_text` is `text` with every recognized bracketed command span
-    removed; `commands` is a list of `(word_index, ctrl_type,
-    ctrl_data)` for `pbas`/`pmod`/`volm`/`rset`/`sync`; `emphasis` is a
-    `{word_index: "emphasize"|"deemphasize"}` dict for `emph`;
-    `silences` is a `{word_index: duration_ms}` dict for `slnc`;
-    `pos_overrides` is a `{word_index: pos_value}` dict for `xtnd wpos`.
-    `word_index` is how many words (per
+    Returns `(clean_text, commands, emphasis, silences, pos_overrides,
+    rates, final_rate)`: `clean_text` is `text` with every recognized
+    bracketed command span removed; `commands` is a list of
+    `(word_index, ctrl_type, ctrl_data)` for `pbas`/`pmod`/`volm`/
+    `rset`/`sync`; `emphasis` is a `{word_index: "emphasize"|
+    "deemphasize"}` dict for `emph`; `silences` is a `{word_index:
+    duration_ms}` dict for `slnc`; `pos_overrides` is a `{word_index:
+    pos_value}` dict for `xtnd wpos`; `rates` is a `{word_index: wpm}`
+    dict for `rate`/`ratr`; `final_rate` is described above. `word_index`
+    is how many words (per
     `_frontend.tokenize`) of `clean_text` PRECEDE that command, i.e. the
     command/override applies to (or right before) that word. An
     unrecognized keyword, or a span with no closing delimiter before
@@ -304,6 +318,8 @@ def scan_bracket_commands(text: str):
     emphasis = {}
     silences = {}
     pos_overrides = {}
+    rates = {}
+    last_rate = initial_rate
     out_parts = []
     word_count = 0
     i = 0
@@ -378,6 +394,27 @@ def scan_bracket_commands(text: str):
             i = end + len(END)
             continue
 
+        if keyword == 'RATE':
+            # Parse_rate_Command/ChangeRate (EmbeddedCmd.c:691-720):
+            # same relative-sign/Fixed-value grammar as pbas/pmod/volm,
+            # but EC_rate/EC_ratr (BackEnd.c:1900-1915) write directly
+            # to vv->lastRate/user_Rate_Buf1, not CMDQueue. Absolute:
+            # lastRate = integer part of the Fixed value, clamped to
+            # kMinRate. Relative: lastRate += the signed integer delta,
+            # same clamp.
+            tagged, _ = _parse_signed_command_value(inner, 4)
+            is_relative, resolved = _resolve_tagged_value(tagged)
+            delta_or_abs = resolved >> 16
+            if is_relative:
+                last_rate = last_rate + delta_or_abs
+            else:
+                last_rate = delta_or_abs
+            if last_rate < kMinRate:
+                last_rate = kMinRate
+            rates[word_count] = last_rate
+            i = end + len(END)
+            continue
+
         if keyword == 'SYNC':
             # Parse_sync_Command (EmbeddedCmd.c:753-765): a plain LONG
             # value (not Fixed-point), queued as C_sync -- do_ctrl has
@@ -442,7 +479,8 @@ def scan_bracket_commands(text: str):
 
         i = end + len(END)
 
-    return ''.join(out_parts), commands, emphasis, silences, pos_overrides
+    final_rate = last_rate if rates else None
+    return ''.join(out_parts), commands, emphasis, silences, pos_overrides, rates, final_rate
 
 
 def do_ctrl(vv: VoiceVar) -> None:

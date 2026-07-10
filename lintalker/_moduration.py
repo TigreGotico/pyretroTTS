@@ -11,11 +11,14 @@ PipeOrgan/Cellos) are ported, as is `sync_On_Marker` (`BackEnd.c:1938-1976`,
 duration adjustment against a sample-marker table for `kUseSyncSnd`
 voices, Bells/Hysterical -- `vv.sync_On_Marker`/`vv.markerBuf`/
 `vv.lastMarkerIndex` are set in `api.new_voice()` from the marker tables
-extracted into `_data.py`). NOT ported: the
-`temp = vv.user_Rate_Buf2[i]` embedded-rate-change check
-(`BackEnd.c:1888-1901`, calling the unported `Init_Rate_Params`) is always
-a no-op here since `user_Rate_Buf2` is always zero (no embedded-command
-source is ported -- see docs/architecture.md).
+extracted into `_data.py`). The `temp = vv.user_Rate_Buf2[i]`
+embedded-rate-change check (`BackEnd.c:1900-1915`) is ported
+(`_backend.init_rate_params`/`_engine.e_set_tempo`, both pure
+arithmetic with no missing dependency -- a previous pass of this
+docstring incorrectly assumed `Init_Rate_Params` needed something
+unported), but currently unreachable in practice since nothing yet
+populates `user_Rate_Buf2` with a nonzero value (the embedded `rate`
+command itself isn't ported -- see docs/architecture.md).
 
 Requires `vv.Note_Times` to be populated (`_engine.e_set_tempo`, called
 from `api.new_voice()`) for the singScript/singing branches to compute
@@ -56,8 +59,9 @@ def _flags(phon_flags2, phon):
 def mod_duration(vv) -> None:
     """Port of `Mod_Duration`. Writes `vv.dur_Buf[1:vv.phonBuf_2_In_Index]`
     (`vv.dur_Buf[0]` is always 1, matching `BackEnd.c:1397`)."""
-    from ._backend import e_get_phon, e_get_phon_ctrl
+    from ._backend import e_get_phon, e_get_phon_ctrl, init_rate_params
     from ._data import PhonFlags2
+    from ._engine import e_set_tempo
 
     vv.markerIndex = 0
     vv.dur_Buf[0] = 1  # initial SIL = 5ms
@@ -282,8 +286,15 @@ def mod_duration(vv) -> None:
                 if (vv.phonBuf_2_In_Index < 10) and (min_dur != max_dur):
                     fixed_duration += (5 - (vv.phonBuf_2_In_Index >> 1)) * kFrameTime
 
-                # user_Rate_Buf2 is always 0 in this port (no embedded
-                # commands) -- the rate-change check is always a no-op.
+                # --- Check for rate change (BackEnd.c:1900-1915) ---
+                temp = vv.user_Rate_Buf2[i]
+                if temp != 0:
+                    if vv.singing:
+                        vv.tempo = temp
+                        e_set_tempo(vv, vv.tempo)
+                    else:
+                        vv.speech_Rate = temp
+                        init_rate_params(vv)
 
                 dur_hold = ((percent_duration * (max_dur - min_dur)) >> 7) + min_dur
                 if (vv.speech_Rate != kNormal_Speech_Rate) and (dur_hold != 0):
