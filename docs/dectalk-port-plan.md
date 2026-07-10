@@ -305,12 +305,22 @@ intermediate state: the LTS pipe values in `cm_phon_flush`, the `symbols[]`/
 `set_user_target`, and the per-frame Klatt controls in `ph_drwt*.c`. Effort:
 **1–2 weeks** (build system is old; the Docker path de-risks it).
 
-### Phase 1 — Klatt synthesizer core (`vtm/` → `_dectalk_backend.py`)
+### Phase 1 — Klatt synthesizer core (`vtm/` → `pyretrotts/dectalk/vtm.py`) — DONE
 
-Port `vtm/vtm_f.c`/`vtm.c` frame loop first, driven by hand-fed Klatt control
-frames captured from the oracle. Golden gate: identical PCM for a fixed control
-sequence. This is the highest-risk numeric work (float vs fixed-point; 5 cascade
-formants + parallel + nasal). Effort: **3–4 weeks**.
+**Landed and bit-exact.** The oracle builds with native autotools (see
+[dectalk.md](dectalk.md)) and renders 11025 Hz, 16-bit mono PCM deterministically
+for all ten voices. The compiled synthesizer is **`vtm/vtm1.c`, the integer
+(fixed-point) Klatt cascade/parallel model** — *not* the float `vtm_f.c`, which
+builds only on ALPHA/OSF. `vtm.py` reproduces `speech_waveform_generator` for the
+US-English path (`VTM1`, `PC_SAMPLE_RATE == 11025`, `SAMPLE_RATE_INCREASE`),
+driven by Klatt parameter frames captured from an instrumented oracle. Verified
+**sample-for-sample identical** to the C for all ten voices over multiple
+utterances (`test/test_dectalk_oracle.py`, 50/50 cases). Tables are transcribed
+from the C by a dumper (`tools/dump_dectalk_vtm.py`); the golden gate
+(`test/dectalk_golden.py`) refuses to write unless the oracle match passes first.
+
+Note on the earlier estimate: the synthesizer is fixed-point, so there is no
+float/x87/SSE risk; the risk was the preprocessor config, now pinned exactly.
 
 ### Phase 2 — Phonemic / singing path (`cmd/cm_phon.c` + `ph/` prosody)
 
