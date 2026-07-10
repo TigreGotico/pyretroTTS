@@ -112,6 +112,50 @@ def parse_vtm_dump(path: str) -> tuple[dict[str, int], list[tuple[list[int], lis
     return speaker, frames
 
 
+_PH_SCALARS = 16     # count of E-line header scalars before the parameter blocks
+_PH_PARAM_FIELDS = 11  # PARAMETER scalar fields dumped per parameter
+_PH_NDIP_PARAMS = 7    # the first-loop parameters that also dump ndip0/ndip1
+
+
+def parse_ph_dump(path: str) -> list[tuple[list[int], list[list[int]], list[int]]]:
+    """Parse a `phdraw` frame-drawer dump into (scalars, params, expected) triples.
+
+    The instrumented C (`ph_draw.c`, gated on env `DECTALK_PH_DUMP`) writes, per
+    frame, one `E` line -- 16 header scalars then the sixteen `PARAMETER` states
+    (the first seven each carry two trailing `ndip` peek values) -- immediately
+    followed by one `X` line of the sixteen parameters `phdraw` drew.
+
+    Returns, per frame: the header scalars, a list of sixteen parameter field
+    lists (length 13 for the first seven, 11 for the rest), and the sixteen
+    expected outputs.
+    """
+    frames: list[tuple[list[int], list[list[int]], list[int]]] = []
+    pending: tuple[list[int], list[list[int]]] | None = None
+    with open(path) as fh:
+        for line in fh:
+            tok = line.split()
+            if not tok:
+                continue
+            if tok[0] == "E":
+                nums = [int(x) for x in tok[1:]]
+                scalars = nums[:_PH_SCALARS]
+                rest = nums[_PH_SCALARS:]
+                params: list[list[int]] = []
+                pos = 0
+                for j in range(16):
+                    width = _PH_PARAM_FIELDS + (2 if j < _PH_NDIP_PARAMS else 0)
+                    params.append(rest[pos:pos + width])
+                    pos += width
+                pending = (scalars, params)
+            elif tok[0] == "X":
+                if pending is None:
+                    continue
+                expected = [int(x) for x in tok[1:1 + 16]]
+                frames.append((pending[0], pending[1], expected))
+                pending = None
+    return frames
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--source", default=DEFAULT_SOURCE)
