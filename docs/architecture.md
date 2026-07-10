@@ -90,6 +90,44 @@ single-sentence text is.
 
 ## Known gaps
 
+- (Fixed) A user report that Cellos/PipeOrgan/Bells/Hysterical still
+  sounded like garbage led to discovering that this entire port's
+  correctness testing, up to this point, only ever compared per-frame
+  CONTROL values (f0/formants/amplitude/bandwidth) and PCM sample COUNT
+  against the C reference — never the actual synthesized sample VALUES.
+  A genuine sample-level comparison showed the real audio was completely
+  wrong for those four voices despite every frame-level control value
+  matching exactly. Two real bugs in `_backend.init_voice`:
+  1. `zz.hfEmph` (a per-voice high-frequency emphasis flag applied in
+     `say_frame`'s per-sample output stage, `Say.c:874-887`) was
+     hardcoded to always-on, ignoring the voice data's `emphVoice` flag —
+     only correct by coincidence for voices with `emphVoice=1` (e.g.
+     Fred). Cellos/PipeOrgan/Bells/Hysterical all have `emphVoice=0`.
+  2. `zz.reverbDepth`/`zz.reverbDelay` were raw percentage copies with no
+     fixed-point scaling (`mRatio(x,100,kPrecision)`) or clipping
+     ([10,100]% then `(x<<16)/100`) at all — massively overstating the
+     reverb echo contribution to every sample, for every voice with
+     reverb enabled. There was also a redundant duplicate (unscaled)
+     assignment of both fields later in `init_voice`, now removed.
+  A 12-voice sample-level PCM sweep (not just frame comparison) came back
+  0 mismatches for every voice on `"hello world"` after both fixes, and
+  the full `test/test_voices.py --all` 68-combination suite is 66/68
+  exact at the sample level (see the next entry for the remaining 2).
+  `test_voices.py` now compares actual PCM sample values, not just
+  count — see that file's module docstring for the full history.
+- Two remaining `test/test_voices.py --all` sample-level mismatches:
+  Princess on `"testing one two three"`/`"I am."` (not `"hello"`/
+  `"goodbye"`). Localized (not yet fixed) to `Calc_Pole_Coefficients`'s
+  F1-F4 cascade filter coefficient computation (`Say.c:110-129`) for
+  specific `f1`+`f1_Offset`/`bw1` combinations reached partway through
+  longer utterances — confirmed the divergence is NOT `hfEmph` or reverb
+  related (both already match at the point of divergence), and IS
+  entirely within the cascade branch (`SampV`; the parallel branch
+  contributes 0 at the point checked). Princess has nonzero `f1_Offset`/
+  `f2_Offset`/`f3_Offset` (10/20/50) where Fred/Cellos/other spot-checked
+  voices have 0 — worth checking `CosTblPtr`/`BcoeffTblPtr`/
+  `CcoeffTblPtr` table content or indexing at the specific `pitch`/
+  `bandWidth` values this hits next.
 - (Fixed) What was tracked here as an unexplained `f0` drift over long
   sentences was actually TWO separate, real bugs, both confirmed via
   direct instrumentation of the C reference and now fixed:

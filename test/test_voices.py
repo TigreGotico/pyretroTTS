@@ -2,13 +2,33 @@
 
 For each of the 17 voices, runs the C test harness through the full pipeline
 (frontend + backend) to produce reference data, then feeds the extracted
-sentence plan through the Python backend and compares frame data + audio.
+sentence plan through the Python backend and compares frame data + audio --
+including the actual PCM sample VALUES, not just their count.
 
 Usage:
     python3 tests/test_voices.py                     # Fred only (quick smoke)
     python3 tests/test_voices.py --all               # all 17 voices
     python3 tests/test_voices.py --voices 0,2,5      # specific voices
     python3 tests/test_voices.py --texts "hello"     # one text
+
+IMPORTANT HISTORY -- read before trusting a green run of this file:
+until real sample-level comparison was added, this file only compared
+per-frame CONTROL values (f0/formants/amplitude/bandwidth) and the PCM
+sample COUNT, never the actual synthesized sample VALUES. A user report
+that Cellos/PipeOrgan/Bells/Hysterical still sounded like garbage led to
+discovering the actual audio waveform was completely wrong for those
+voices despite every frame-level control value and the WAV length
+matching exactly. Two real bugs in `_backend.py`'s `init_voice` were
+found: (1) `zz.hfEmph` (a per-voice high-frequency emphasis flag used in
+`say_frame`'s per-sample output stage) was hardcoded to always-on,
+ignoring the voice data's `emphVoice` flag -- correct only for voices
+that happen to have `emphVoice=1` (e.g. Fred). (2) `zz.reverbDepth`/
+`zz.reverbDelay` were raw percentage copies with no fixed-point scaling
+or clipping at all, wildly overstating the reverb echo contribution for
+every voice with reverb enabled. Both are fixed. Moral: matching
+intermediate control parameters does not prove the final signal matches
+-- always verify the actual output your users hear, not just the values
+that feed into producing it.
 """
 import sys, os, subprocess, re, struct, json, time
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -295,30 +315,51 @@ def verify_voice(voice_idx, text, verbose=True):
         return {'voice': voice_idx, 'name': voice_name, 'text': text,
                 'error': 'no sentence plan found'}
     
-    # Get WAV info
-    c_wav_samples = 0
+    # Get WAV info -- actual sample VALUES, not just length. A per-frame
+    # CONTROL-parameter match (f0/formants/amplitude/bandwidth, compared
+    # below) does NOT guarantee the actual synthesized PCM waveform
+    # matches: say_frame's per-sample DSP loop (glottal source mixing,
+    # cascade/parallel resonator filters, emphasis, reverb) has its own
+    # state and voice-specific parameters that never appear in the
+    # per-frame dump at all. This was a real, confirmed gap: frame-level
+    # control values matched exactly for Cellos/PipeOrgan/Bells/Hysterical
+    # while actual PCM samples were completely wrong (hfEmph hardcoded to
+    # always-on regardless of the per-voice emphVoice flag, and
+    # reverbDepth/reverbDelay copied as raw percentages with no fixed-point
+    # scaling or clipping) -- neither bug was visible without comparing
+    # real sample values.
+    c_wav_samples = ()
     c_wav_len = 0
     if os.path.exists(wav_path):
-        _, c_wav_len = get_wav_samples(wav_path)
-    
+        c_wav_samples, c_wav_len = get_wav_samples(wav_path)
+
     # Run Python
     vv = setup_python_voice(vd)
     py_frames, vv = run_python_backend(vv, phonemes, ctrls, durs, pf, pt, pfl)
-    
+
     # Collect Python audio
-    py_wav_len = len(vv.sampleBuffer) // 2 if hasattr(vv, 'sampleBuffer') else 0
-    
+    py_pcm = bytes(vv.sampleBuffer) if hasattr(vv, 'sampleBuffer') else b''
+    py_wav_len = len(py_pcm) // 2
+    py_wav_samples = struct.unpack(f'<{py_wav_len}h', py_pcm) if py_wav_len else ()
+
     # Compare frame counts
     c_fc = len(c_frames)
     py_fc = len(py_frames)
-    
+
     # Compare frame data (only if counts match)
     mismatches = []
     if c_fc == py_fc:
         mismatches = compare_frames(c_frames, py_frames)
     else:
         mismatches = [(-1, 'frame_count', c_fc, py_fc)]
-    
+
+    # Compare actual PCM sample values (only if counts match)
+    sample_mismatches = 0
+    if c_wav_len == py_wav_len:
+        sample_mismatches = sum(1 for a, b in zip(c_wav_samples, py_wav_samples) if a != b)
+    else:
+        sample_mismatches = -1  # length mismatch itself is the failure
+
     return {
         'voice': voice_idx,
         'name': voice_name,
@@ -327,6 +368,7 @@ def verify_voice(voice_idx, text, verbose=True):
         'py_frames': py_fc,
         'c_wav_samples': c_wav_len,
         'py_wav_samples': py_wav_len,
+        'sample_mismatches': sample_mismatches,
         'phonemes': len(phonemes),
         'mismatches': mismatches,
         'error': None,
@@ -366,6 +408,7 @@ def main():
                 continue
             
             mm = len(result['mismatches'])
+            sm = result['sample_mismatches']
             report = (
                 f"  {VOICE_NAMES[vi]:12s} text='{text}'  "
                 f"frames={result['c_frames']}  "
@@ -382,9 +425,19 @@ def main():
                 total_mismatches += mm
                 if mm > 3:
                     report += f" ... (+{mm-3} more)"
+            elif sm != 0:
+                # Frame-level control values matched, but actual PCM sample
+                # values didn't -- a real bug in say_frame's per-sample DSP
+                # loop, invisible to the frame-level comparison above.
+                report += (
+                    f"**{sm} SAMPLE mismatches** (C={result['c_wav_samples']} "
+                    f"Py={result['py_wav_samples']} samples)" if sm > 0
+                    else f"**WAV LENGTH mismatch** C={result['c_wav_samples']} Py={result['py_wav_samples']}"
+                )
+                total_mismatches += max(sm, 1)
             else:
                 report += "OK"
-            
+
             print(report)
     
     print(f"\nSummary: {len(voice_indices)} voices × {len(texts)} texts = "

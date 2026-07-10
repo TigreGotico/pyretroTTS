@@ -1106,9 +1106,31 @@ def init_voice(vv: VoiceVar, vd: dict):
         else:
             vv.sync_On_Marker = False
         zz.wavesampleGain = mRatio(vd.get('sGain', 0), 100, kPrecision)
+
+        # InsertSample (Say.c:1471-1499): the embedded sample data (in
+        # _data.py, header already stripped -- see that file) drives the
+        # actual glottal-source waveform for these voices; sampleLength
+        # comes from the header itself, which extraction already parsed
+        # into the byte count of vd['sample']. Without this, zz.SampleWave
+        # stays None and say_frame's kUseSnd branch (line ~836) silently
+        # falls through to sourceC=0 (no wavesample contribution at all),
+        # which happened to leave every frame-level CONTROL value
+        # (f0/formants/amplitude) matching the C reference exactly while
+        # the actual synthesized PCM samples were completely wrong --
+        # confirmed by a genuine sample-value comparison (not just frame
+        # count), which no test in this port had performed until this bug
+        # was found.
+        zz.SampleWave = vd.get('sample')
+        zz.sampleLength = len(zz.SampleWave) if zz.SampleWave else 0
+        zz.loopPoint = vd.get('loopPoint', 0)
+        zz.sync_On_Vowel = vd.get('vowelSync', 0)
     else:
         zz.VP_offsetPitch = 0
         zz.wavesampleGain = 0
+        zz.SampleWave = None
+        zz.sampleLength = 0
+        zz.loopPoint = 0
+        zz.sync_On_Vowel = 0
 
     # C sets VP_baselinePitch in Init_Pitch_Params/Talk(), which run *after*
     # InitVoice — so it picks up the final voiceNaturalPitch (post sPitch
@@ -1245,13 +1267,30 @@ def init_voice(vv: VoiceVar, vd: dict):
         zz.voice_av_Tbl = zz.avVolTblM
         zz.EnvelopeListTbl = zz.FemaleEnvelopeListTbl
 
-    # Reverb
-    zz.reverbDepth = vd.get('rvbDepth', 0)
-    zz.reverbDelay = vd.get('rvbDelay', 0)
+    # Reverb (Say.c:1450-1458): reverbDepth is a 16.16 ratio (mRatio(x,100,
+    # kPrecision)), and reverbDelay is clipped to [10,100]% before its own
+    # 16.16 conversion ((x<<16)/100) -- both were previously raw percentage
+    # copies with no scaling/clipping at all, wildly overstating the reverb
+    # echo contribution to nSamp for every voice with reverb enabled.
+    zz.reverbDepth = mRatio(vd.get('rvbDepth', 0), 100, kPrecision)
+    _reverb_delay_pct = vd.get('rvbDelay', 0)
+    if _reverb_delay_pct > 100:
+        _reverb_delay_pct = 100
+    if _reverb_delay_pct < 10:
+        _reverb_delay_pct = 10
+    zz.reverbDelay = (_reverb_delay_pct << 16) // 100
     zz.voiceChorus = vd.get('chorus', 0)
 
-    # Emphasis
-    zz.hfEmph = 1
+    # Emphasis (Say.c:1455-1458): a real per-voice flag, not always-on --
+    # voices with emphVoice==0 (Cellos, PipeOrgan, Bells, Hysterical, ...)
+    # must NOT get the high-frequency radiation-loss emphasis applied in
+    # say_frame's nSamp computation. This was hardcoded to 1 unconditionally
+    # before, which happened to match ordinary voices (emphVoice=1, e.g.
+    # Fred) by coincidence but silently corrupted every sample of output
+    # for every voice with emphVoice=0 -- confirmed by a genuine sample-level
+    # PCM comparison against the C reference (frame-level control values
+    # matched exactly throughout, masking this completely).
+    zz.hfEmph = 1 if vd.get('emphVoice', 0) > 0 else 0
 
     # Pitch dynamics
     vv.VP_riseAmt = vd.get('riseAmt', 0)
@@ -1286,10 +1325,6 @@ def init_voice(vv: VoiceVar, vd: dict):
 
     # Init fixed formants
     init_fixed_formants(zz)
-
-    # Init reverb
-    zz.reverbDepth = vd.get('rvbDepth', 0)
-    zz.reverbDelay = vd.get('rvbDelay', 0)
 
     # Rate/speaking params (Say.c:1258, 1423 + Init_Rate_Params)
     vv.speech_Rate = vd.get('rate', kNormal_Speech_Rate)
