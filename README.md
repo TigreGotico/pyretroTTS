@@ -11,8 +11,9 @@ research at MIT:
 - **MacinTalk** (Apple, 1991-1995) — the Macintosh `say -v Fred` voices.
   Ported bit-exact against the original C.
 - **DECtalk** (Digital Equipment Corporation, 1984) — Stephen Hawking's
-  voice. Its inline markup and singing notation are supported; the
-  engine itself is being ported.
+  voice. Only its inline markup and singing notation are implemented; the
+  engine is **not ported**, and its scores currently render in MacinTalk's
+  voices. See `docs/dectalk-port-plan.md`.
 
 The third is older and works nothing like the other two:
 

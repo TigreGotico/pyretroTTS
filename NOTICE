@@ -58,10 +58,23 @@ A markup syntax is a description of an interface, not an implementation, and the
 mapping from mnemonic to phoneme is a fact about the notation. Nothing was
 copied.
 
-**Status: no DECtalk code is vendored.** If the engine itself is ported (see
-`docs/dectalk-port-plan.md`) the source is the Fonix/Force release at
-`github.com/dectalk/dectalk`, whose own licence terms must be read and recorded
-here before any of it lands.
+**Status: no DECtalk code is vendored, and its licence is the most restrictive
+of the three.** `DECtalkEngine` is a markup shim that renders through MacinTalk.
+No DECtalk engine code, tables, or dictionaries are present.
+
+The source at `github.com/dectalk/dectalk` carries an explicit proprietary
+notice, not merely an absent licence:
+
+> Copyright (C) 2002-2003 FONIX Corporation, All rights reserved.
+> This software is proprietary to and embodies the confidential technology of
+> FONIX Corporation. Possession, use, or copying of this software and media is
+> authorized only pursuant to a valid written license from FONIX or an
+> authorized sublicensor.
+
+That is a stronger claim than SAM's, which merely lacks a licence. Porting it
+would produce a derivative work of software its owner declares confidential.
+Nothing from it is in this repository, and nothing from it may be added without
+a deliberate decision recorded here.
 
 ## SAM (Software Automatic Mouth) — `pyretrotts/sam/`
 
