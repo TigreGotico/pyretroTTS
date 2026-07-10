@@ -11,4 +11,4 @@ jobs:
     uses: OpenVoiceOS/gh-automations/.github/workflows/publish-alpha.yml@dev
     secrets: inherit
     with:
-      version_file: pylintalker/version.py
+      version_file: pyretrotts/version.py

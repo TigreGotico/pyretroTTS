@@ -1,4 +1,4 @@
-# pylintalker
+# pyretroTTS
 
 A standalone Python port of the **classic formant speech synthesizers** —
 the "robot voices" of 1980s and 1990s computing. No neural network, no
@@ -18,14 +18,15 @@ They are different codebases by different authors. Fred is not Perfect
 Paul. See `docs/history.md`.
 
 ```python
-from pylintalker import synthesize_text, pcm_to_wav
-from pylintalker._data import Fred_Voice
+from pyretrotts import MacInTalkEngine, DECtalkEngine
 
-pcm = synthesize_text(Fred_Voice, "hello, this is a test.")
-pcm_to_wav(pcm, "out.wav")
+MacInTalkEngine().say("hello, this is a test.", "out.wav")
+
+# DECtalk's singing notation: phoneme, duration in ms, tone
+DECtalkEngine().sing("[:phone on] hxeh<200,13>lb<100>ow<400,20>", "hello.wav")
 ```
 
-That's it — plain text in, a WAV file out, computed in real time on
+That's it — text or a score in, a WAV file out, computed in real time on
 whatever you're running this on right now.
 
 This package has no OVOS/plugin dependencies and no external runtime
@@ -71,14 +72,14 @@ from scratch.
 ## Install
 
 ```bash
-uv pip install pylintalker
+uv pip install pyretrotts
 ```
 
 ## Usage
 
 ```python
-from pylintalker import synthesize_text, pcm_to_wav
-from pylintalker._data import Fred_Voice
+from pyretrotts import synthesize_text, pcm_to_wav
+from pyretrotts._data import Fred_Voice
 
 pcm = synthesize_text(Fred_Voice, "hello, this is a test.")
 pcm_to_wav(pcm, "out.wav")
@@ -87,8 +88,8 @@ pcm_to_wav(pcm, "out.wav")
 Numbers, dates, currency, and embedded commands all work out of the box:
 
 ```python
-from pylintalker import synthesize_text, pcm_to_wav
-from pylintalker._data import Fred_Voice
+from pyretrotts import synthesize_text, pcm_to_wav
+from pyretrotts._data import Fred_Voice
 
 text = (
     "In 1984, Mr. Smith paid $5.25 for a coffee at 3:45. "
@@ -102,10 +103,10 @@ Or work directly with a phoneme plan, bypassing the text frontend
 entirely:
 
 ```python
-from pylintalker import synthesize_phonemes, pcm_to_wav
-from pylintalker._data import Fred_Voice
+from pyretrotts import synthesize_phonemes, pcm_to_wav
+from pyretrotts._data import Fred_Voice
 
-# a phoneme plan for "hi" (see pylintalker/_phonemes.py for phoneme ids)
+# a phoneme plan for "hi" (see pyretrotts/_phonemes.py for phoneme ids)
 phonemes = [23, 11, 54, 3, 33, 22, 23]
 ctrls = [1, 268500993, 0, 268502089, 9, 16393, 2621440]
 durs = [1, 26, 10, 54, 23, 5, 135]
@@ -127,7 +128,7 @@ the ordinary male/female/child/breathy registers — plus the novelty
 voices **Zarvox**, **Trinoids**, **Bubbles**, **Boing**, **Bells**,
 **Hysterical**, **Deranged**, **GoodNews**, **BadNews**, **PipeOrgan**,
 and **Cellos**. Each is nothing more than a different parameter table
-fed into the same formant model (`pylintalker/_data.py`) — see
+fed into the same formant model (`pyretrotts/_data.py`) — see
 `docs/creating-voices.md` to build your own.
 
 ## Text features

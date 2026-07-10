@@ -1,5 +1,5 @@
 """
-Smoke test for the DoCtrl port (pylintalker._embeddedcmd.do_ctrl).
+Smoke test for the DoCtrl port (pyretrotts._embeddedcmd.do_ctrl).
 
 DoCtrl (BackEnd.c) drains vv.ctrlCount queued (type, data) commands from
 vv.CMDQueue, applying pitch/mod/volume/reset/voice changes to vv. The queue
@@ -42,13 +42,13 @@ voice/text data queues any embedded commands.
 import os
 import sys
 
-from pylintalker._assembly import collect_fe_tokens
-from pylintalker._embeddedcmd import BracketCommands, scan_bracket_commands
+from pyretrotts._assembly import collect_fe_tokens
+from pyretrotts._embeddedcmd import BracketCommands, scan_bracket_commands
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from pylintalker._backend import VoiceVar
-from pylintalker._consts import (
+from pyretrotts._backend import VoiceVar
+from pyretrotts._consts import (
     C_absMod,
     C_absPitch,
     C_absVol,
@@ -60,7 +60,7 @@ from pylintalker._consts import (
     kOneTwelfth,
     kPointFive,
 )
-from pylintalker._embeddedcmd import do_ctrl
+from pyretrotts._embeddedcmd import do_ctrl
 
 
 def _midi_to_pitch(midi_note):
@@ -163,8 +163,8 @@ def test_multiple_queued_commands_drain_in_order():
 def test_reset_reloads_the_voice():
     """C_reset -> ResetVoice (BackEnd.c:4359): the voice is reloaded and volume,
     rate and pitch return to what it asks for."""
-    from pylintalker._data import Fred_Voice
-    from pylintalker.api import new_voice
+    from pyretrotts._data import Fred_Voice
+    from pyretrotts.api import new_voice
 
     vv = new_voice(Fred_Voice)
     natural = vv.voiceNaturalPitch
@@ -248,8 +248,8 @@ def test_pbas_is_queued_against_the_phoneme_it_precedes():
     """QueueCommand (BackEnd.c:3592-3599) counts a command against the phoneme
     slot it was written in front of, and DoCtrl applies it when synthesis
     reaches that phoneme -- not when the plan is built."""
-    from pylintalker._data import Fred_Voice
-    from pylintalker.api import build_phoneme_plan, new_voice
+    from pyretrotts._data import Fred_Voice
+    from pyretrotts.api import build_phoneme_plan, new_voice
 
     vv_plain = new_voice(Fred_Voice)
     plan_plain = build_phoneme_plan(Fred_Voice, "hello world", vv_plain)
@@ -280,8 +280,8 @@ def test_pbas_is_queued_against_the_phoneme_it_precedes():
 
 def test_pbas_position_changes_the_audio():
     """Moving a pbas command to a different word must change the output."""
-    from pylintalker._data import Fred_Voice
-    from pylintalker.api import synthesize_text
+    from pyretrotts._data import Fred_Voice
+    from pyretrotts.api import synthesize_text
 
     at_first = synthesize_text(Fred_Voice, "[[pbas60]]hello world")
     at_second = synthesize_text(Fred_Voice, "hello [[pbas60]]world")
@@ -328,8 +328,8 @@ def test_silence_override_inserts_real_sil_with_duration():
     a silence_overrides entry inserts a real _SIL_ phoneme with
     kSilenceDuration set and the duration recorded in note_buf, one
     slot ahead of the plain (no-override) phoneme count."""
-    from pylintalker._consts import kSilenceDuration
-    from pylintalker._phonemes import _SIL_
+    from pyretrotts._consts import kSilenceDuration
+    from pyretrotts._phonemes import _SIL_
 
     sa_plain = collect_fe_tokens("hello world")
     sa_slnc = collect_fe_tokens("hello world", BracketCommands(silences={1: 500}))
@@ -348,10 +348,10 @@ def test_slnc_applied_end_to_end_via_build_phoneme_plan():
     """Regression test for the full pipeline: EC_slnc's duration
     (frame count = ms // kFrameTime) ends up in the final dur_Buf at
     the inserted _SIL_'s position."""
-    from pylintalker._consts import kFrameTime, kSilenceDuration
-    from pylintalker._data import Fred_Voice
-    from pylintalker._phonemes import _SIL_
-    from pylintalker.api import build_phoneme_plan, new_voice
+    from pyretrotts._consts import kFrameTime, kSilenceDuration
+    from pyretrotts._data import Fred_Voice
+    from pyretrotts._phonemes import _SIL_
+    from pyretrotts.api import build_phoneme_plan, new_voice
 
     vv = new_voice(Fred_Voice)
     plan = build_phoneme_plan(
@@ -387,14 +387,14 @@ def test_scan_bracket_commands_sync():
     has no case for C_sync at all (matching the real DoCtrl switch's
     own default:break for it -- a genuine no-op in the reference too),
     so applying it must not raise or change any state."""
-    from pylintalker._consts import C_sync
+    from pyretrotts._consts import C_sync
 
     bc = scan_bracket_commands("[[sync12345]]hello")
     assert bc.text == "hello"
     assert bc.queued == ((0, C_sync, 12345),)
 
-    from pylintalker._data import Fred_Voice
-    from pylintalker.api import build_phoneme_plan, new_voice
+    from pyretrotts._data import Fred_Voice
+    from pyretrotts.api import build_phoneme_plan, new_voice
 
     vv = new_voice(Fred_Voice)
     build_phoneme_plan(Fred_Voice, "[[sync12345]]hello", vv)  # must not raise
@@ -404,7 +404,7 @@ def test_scan_bracket_commands_xtnd_wpos():
     """Regression test for Parse_xtnd_Command's wpos selector
     (EmbeddedCmd.c:895-921): the only selector the real dispatch
     implements, setting the next word's POS directly (SetPOStoVal)."""
-    from pylintalker._consts import kVerb
+    from pyretrotts._consts import kVerb
 
     bc = scan_bracket_commands(
         "[[xtnd mtk3 wpos 1]]record it"
@@ -428,7 +428,7 @@ def test_xtnd_wpos_override_reaches_pos_choice():
     """Regression test for the _assembly.collect_fe_tokens integration:
     a pos_overrides entry resolves an otherwise-ambiguous word (e.g.
     "record", noun/verb) to the forced POS."""
-    from pylintalker._consts import kVerb
+    from pyretrotts._consts import kVerb
 
     sa = collect_fe_tokens("record it", BracketCommands(pos={0: kVerb}))
     assert sa.words[0].pos_choice == kVerb
@@ -439,8 +439,8 @@ def test_init_rate_params_is_fully_portable():
     BackEnd.c:4303-4327): pure fixed-point arithmetic, no missing
     dependency (a previous pass of several docstrings incorrectly
     claimed it needed something unported)."""
-    from pylintalker._backend import VoiceVar, init_rate_params
-    from pylintalker._consts import kMinRate, kNormal_Speech_Rate
+    from pyretrotts._backend import VoiceVar, init_rate_params
+    from pyretrotts._consts import kMinRate, kNormal_Speech_Rate
 
     vv = VoiceVar()
     vv.speech_Rate = kNormal_Speech_Rate
@@ -458,9 +458,9 @@ def test_e_set_speech_rate_no_longer_raises():
     raise NotImplementedError, based on the same incorrect assumption
     about Init_Rate_Params -- it now actually changes vv.speech_Rate/
     vv.rate_Ratio."""
-    from pylintalker._data import Fred_Voice
-    from pylintalker._engine import e_set_speech_rate
-    from pylintalker.api import new_voice
+    from pyretrotts._data import Fred_Voice
+    from pyretrotts._engine import e_set_speech_rate
+    from pyretrotts.api import new_voice
 
     vv = new_voice(Fred_Voice)
     before = vv.rate_Ratio
@@ -474,7 +474,7 @@ def test_scan_bracket_commands_rate():
     (EmbeddedCmd.c:691-720): absolute and relative rate changes,
     positioned at the exact word index (unlike pbas/pmod/volm, which
     apply at clause start)."""
-    from pylintalker._consts import kMinRate, kNormal_Speech_Rate
+    from pyretrotts._consts import kMinRate, kNormal_Speech_Rate
 
     bc = scan_bracket_commands(
         "hello [[rate240]]world"
@@ -505,8 +505,8 @@ def test_rate_override_applied_end_to_end_via_build_phoneme_plan():
     """Regression test for the full pipeline: EC_rate's speaking-rate
     change actually produces shorter durations for a faster rate, and
     persists onto vv.speech_Rate for subsequent clauses."""
-    from pylintalker._data import Fred_Voice
-    from pylintalker.api import build_phoneme_plan, new_voice
+    from pyretrotts._data import Fred_Voice
+    from pyretrotts.api import build_phoneme_plan, new_voice
 
     vv_plain = new_voice(Fred_Voice)
     plan_plain = build_phoneme_plan(Fred_Voice, "hello world", vv_plain)
@@ -519,7 +519,7 @@ def test_rate_override_applied_end_to_end_via_build_phoneme_plan():
 
 
 def test_scan_bracket_commands_mode_phon_parses_raw_phonemes():
-    from pylintalker._rawphon import parse_raw_phonemes, split_into_word_groups
+    from pyretrotts._rawphon import parse_raw_phonemes, split_into_word_groups
 
     bc = scan_bracket_commands(
         "hello [[mode PHON]]_1AAt[[mode TEXT]] world"
@@ -530,7 +530,7 @@ def test_scan_bracket_commands_mode_phon_parses_raw_phonemes():
 
 
 def test_scan_bracket_commands_mode_phon_multiple_word_groups():
-    from pylintalker._rawphon import parse_raw_phonemes, split_into_word_groups
+    from pyretrotts._rawphon import parse_raw_phonemes, split_into_word_groups
 
     # Two _Word_-delimited groups inside one PHON span -> two placeholders.
     bc = scan_bracket_commands(
@@ -543,7 +543,7 @@ def test_scan_bracket_commands_mode_phon_multiple_word_groups():
 
 
 def test_scan_bracket_commands_mode_phon_unterminated_runs_to_end():
-    from pylintalker._rawphon import parse_raw_phonemes, split_into_word_groups
+    from pyretrotts._rawphon import parse_raw_phonemes, split_into_word_groups
 
     bc = scan_bracket_commands(
         "hello [[mode PHON]]_1AAt"
@@ -565,8 +565,8 @@ def test_mode_phon_reaches_word_token_end_to_end():
 
 
 def test_mode_phon_applied_end_to_end_via_build_phoneme_plan_does_not_crash():
-    from pylintalker._data import Fred_Voice
-    from pylintalker.api import build_phoneme_plan, new_voice
+    from pyretrotts._data import Fred_Voice
+    from pyretrotts.api import build_phoneme_plan, new_voice
 
     vv = new_voice(Fred_Voice)
     plan = build_phoneme_plan(Fred_Voice, "hello [[mode PHON]]_1AAt[[mode TEXT]] world", vv)
@@ -582,7 +582,7 @@ def test_scan_bracket_commands_char_toggles_spelling_mode():
 
 
 def test_char_spelling_reaches_word_token_end_to_end():
-    from pylintalker._letters import spell_word
+    from pyretrotts._letters import spell_word
 
     sa = collect_fe_tokens("cab home", BracketCommands(spelled={0: True, 1: False}))
     assert sa.words[0].word == "CAB"
@@ -592,7 +592,7 @@ def test_char_spelling_reaches_word_token_end_to_end():
 
 
 def test_char_mode_latches_until_switched_back():
-    from pylintalker._letters import spell_word
+    from pyretrotts._letters import spell_word
 
     bc = scan_bracket_commands(
         "[[char LTRL]]ab cd[[char NORM]] ef"
@@ -604,8 +604,8 @@ def test_char_mode_latches_until_switched_back():
 
 
 def test_char_mode_applied_end_to_end_via_build_phoneme_plan_does_not_crash():
-    from pylintalker._data import Fred_Voice
-    from pylintalker.api import build_phoneme_plan, new_voice
+    from pyretrotts._data import Fred_Voice
+    from pyretrotts.api import build_phoneme_plan, new_voice
 
     vv = new_voice(Fred_Voice)
     plan = build_phoneme_plan(Fred_Voice, "[[char LTRL]]cab[[char NORM]] home", vv)

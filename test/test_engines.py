@@ -6,7 +6,7 @@ import struct
 
 import pytest
 
-from pylintalker.engines import (
+from pyretrotts.engines import (
     DECtalkEngine,
     Engine,
     MacInTalkEngine,

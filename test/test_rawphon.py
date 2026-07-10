@@ -14,7 +14,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from pylintalker._phonemes import (
+from pyretrotts._phonemes import (
     _AA_,
     _Comma_,
     _EmphWord_,
@@ -24,7 +24,7 @@ from pylintalker._phonemes import (
     _t_,
     _Word_,
 )
-from pylintalker._rawphon import MAGIC_MAP, parse_raw_phonemes, split_into_word_groups
+from pyretrotts._rawphon import MAGIC_MAP, parse_raw_phonemes, split_into_word_groups
 
 
 def test_two_char_vowel_mnemonics():

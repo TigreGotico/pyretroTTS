@@ -88,7 +88,7 @@ class PhonemePlan:
     """Everything the synthesizer needs to voice one clause.
 
     `phonemes`, `ctrls` and `durs` are parallel: one entry per phoneme (see
-    `pylintalker._phonemes` for the ids). The `pitch_*` lists are likewise
+    `pyretrotts._phonemes` for the ids). The `pitch_*` lists are likewise
     parallel to each other and describe the clause's pitch contour.
     """
 
@@ -117,7 +117,7 @@ def synthesize_phonemes(
     """Synthesize a phoneme plan into raw 16-bit PCM audio (little-endian, mono).
 
     ``phonemes``/``ctrls``/``durs`` are parallel arrays describing the
-    phoneme sequence (see ``pylintalker._phonemes`` for phoneme ids). ``pitch_*``
+    phoneme sequence (see ``pyretrotts._phonemes`` for phoneme ids). ``pitch_*``
     describe an optional pitch contour overlay.
 
     ``end_punctuation`` must be the terminator the clause actually ended on:

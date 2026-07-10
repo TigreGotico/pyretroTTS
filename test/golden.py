@@ -18,8 +18,8 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from pylintalker import _data
-from pylintalker.api import synthesize_text
+from pyretrotts import _data
+from pyretrotts.api import synthesize_text
 
 GOLDEN_PATH = os.path.join(os.path.dirname(__file__), "golden_pcm.json")
 

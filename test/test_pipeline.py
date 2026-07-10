@@ -4,8 +4,8 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-import pylintalker._backend as be
-from pylintalker._backend import (
+import pyretrotts._backend as be
+from pyretrotts._backend import (
     VoiceVar,
     calc_ramp_steps,
     e_fill_next_frame,
@@ -14,12 +14,12 @@ from pylintalker._backend import (
     start_new_pitch_clause,
     start_talk,
 )
-from pylintalker._consts import (
+from pyretrotts._consts import (
     kFrame1,
     kNoMarker,
     kSpeakLastFrame,
 )
-from pylintalker._data import Fred_Voice
+from pyretrotts._data import Fred_Voice
 
 REFERENCE_PHONEMES = [23, 11, 54, 3, 33, 22, 23]
 REFERENCE_CTRL = [1, 268500993, 0, 268502089, 9, 16393, 2621440]

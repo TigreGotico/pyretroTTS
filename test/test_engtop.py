@@ -1,5 +1,5 @@
 """
-Smoke test for the EngToP letter-to-sound port (pylintalker._engtop).
+Smoke test for the EngToP letter-to-sound port (pyretrotts._engtop).
 
 This validates _engtop.engtop() against bit-exact output captured from the
 real C EngToP() (EngToP.c), compiled standalone against Sounds.c's Rules[]
@@ -23,8 +23,8 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from pylintalker._engtop import engtop
-from pylintalker._phonemes import _Word_
+from pyretrotts._engtop import engtop
+from pyretrotts._phonemes import _Word_
 
 # word -> expected opcode list, captured from a standalone C EngToP() build.
 REFERENCE = {

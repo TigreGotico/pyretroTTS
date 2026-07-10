@@ -39,19 +39,19 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 C_BIN = os.path.expanduser("~/AgentWorkspaces/ovos/lintalker-c/bin/Debug/test_harness")
 
-import pylintalker._backend as be
-from pylintalker._backend import (
+import pyretrotts._backend as be
+from pyretrotts._backend import (
     calc_ramp_steps,
     e_fill_next_frame,
     say_frame,
     start_new_pitch_clause,
     start_talk,
 )
-from pylintalker._consts import (
+from pyretrotts._consts import (
     kFrame1,
     kSpeakLastFrame,
 )
-from pylintalker._data import (
+from pyretrotts._data import (
     BadNews_Voice,
     Bells_Voice,
     Boing_Voice,
@@ -70,7 +70,7 @@ from pylintalker._data import (
     Whisper_Voice,
     Zarvox_Voice,
 )
-from pylintalker.api import new_voice
+from pyretrotts.api import new_voice
 
 VOICE_DICTS = [
     Fred_Voice,       # 0

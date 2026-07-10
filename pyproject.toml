@@ -3,14 +3,14 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "pylintalker"
+name = "pyretrotts"
 dynamic = ["version"]
-description = "Python port of the DECtalk speech synthesizer"
+description = "Python ports of the classic formant speech synthesizers: MacinTalk and DECtalk"
 readme = "README.md"
 license = {text = "Apache-2.0"}
 authors = [{name = "OpenVoiceOS", email = "jarbasai@mailfence.com"}]
 requires-python = ">=3.10"
-keywords = ["tts", "dectalk", "formant-synthesis", "speech-synthesis"]
+keywords = ["tts", "dectalk", "macintalk", "formant-synthesis", "speech-synthesis", "retro"]
 dependencies = []
 
 [project.optional-dependencies]
@@ -20,19 +20,19 @@ test = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/TigreGotico/pylintalker"
-Repository = "https://github.com/TigreGotico/pylintalker"
+Homepage = "https://github.com/TigreGotico/pyretroTTS"
+Repository = "https://github.com/TigreGotico/pyretroTTS"
 
 [tool.setuptools]
-packages = ["pylintalker"]
+packages = ["pyretrotts"]
 
 [tool.setuptools.dynamic]
-version = {attr = "pylintalker.version.__version__"}
+version = {attr = "pyretrotts.version.__version__"}
 
 [tool.ruff]
 line-length = 100
 target-version = "py310"
-extend-exclude = ["pylintalker/_data.py"]
+extend-exclude = ["pyretrotts/_data.py"]
 
 [tool.ruff.lint]
 select = [
@@ -45,7 +45,7 @@ select = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["pylintalker"]
+known-first-party = ["pyretrotts"]
 
 [tool.ruff.lint.per-file-ignores]
 # The C-oracle scripts bootstrap sys.path before importing the package.

@@ -6,7 +6,7 @@
 Each `.EN` file is a DECtalk score: `[:phone on]` puts the engine into phoneme
 mode, and every phoneme then carries its own duration and pitch, as in
 `weh<250,13>` -- the phonemes `w` and `eh`, lasting 250 ms, on tone 13.
-See `pylintalker/_dectalk.py`.
+See `pyretrotts/_dectalk.py`.
 """
 import argparse
 import os
@@ -15,8 +15,8 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from pylintalker.api import pcm_to_wav  # noqa: E402
-from pylintalker.engines import DECtalkEngine, pcm_duration, pcm_peak  # noqa: E402
+from pyretrotts.api import pcm_to_wav  # noqa: E402
+from pyretrotts.engines import DECtalkEngine, pcm_duration, pcm_peak  # noqa: E402
 
 HERE = pathlib.Path(__file__).parent
 

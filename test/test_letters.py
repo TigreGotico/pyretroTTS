@@ -12,8 +12,8 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from pylintalker._letters import LETTER_PHONEMES, spell_word
-from pylintalker._phonemes import _EH_, _IY_, _b_, _f_, _Word_
+from pyretrotts._letters import LETTER_PHONEMES, spell_word
+from pyretrotts._phonemes import _EH_, _IY_, _b_, _f_, _Word_
 
 
 def test_all_26_letters_present():
@@ -41,8 +41,8 @@ def test_spell_word_skips_non_letter_characters():
 
 
 def test_end_to_end_via_synthesize_text_does_not_crash():
-    from pylintalker._data import Fred_Voice
-    from pylintalker.api import synthesize_text
+    from pyretrotts._data import Fred_Voice
+    from pyretrotts.api import synthesize_text
 
     pcm = synthesize_text(Fred_Voice, "[[char LTRL]]cab[[char NORM]] home")
     assert len(pcm) > 0

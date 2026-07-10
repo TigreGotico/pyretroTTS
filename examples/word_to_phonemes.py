@@ -4,8 +4,8 @@ letter-to-sound rule engine (EngToP.c).
 This does not tokenize sentences or consult the pronunciation dictionary
 (english_lex) — see README.md / docs/architecture.md for the current scope.
 """
-from pylintalker._engtop import engtop
-from pylintalker._phonemes import PHONEME_NAMES_BY_INDEX
+from pyretrotts._engtop import engtop
+from pyretrotts._phonemes import PHONEME_NAMES_BY_INDEX
 
 
 def phonemes_to_names(opcodes):

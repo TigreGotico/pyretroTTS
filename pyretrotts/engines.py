@@ -1,6 +1,6 @@
 """The engines this package speaks for.
 
-    from pylintalker.engines import MacInTalkEngine, DECtalkEngine
+    from pyretrotts.engines import MacInTalkEngine, DECtalkEngine
 
     MacInTalkEngine().say("hello, this is a test.", "out.wav")
     DECtalkEngine().sing(open("song.EN").read(), "song.wav")

@@ -7,8 +7,8 @@ text contains. See README.md/docs/architecture.md for the full feature
 set (embedded bracket commands, number/date/currency reading, etc.) and
 the few remaining scope limits.
 """
-from pylintalker._data import Fred_Voice
-from pylintalker.api import pcm_to_wav, synthesize_text
+from pyretrotts._data import Fred_Voice
+from pyretrotts.api import pcm_to_wav, synthesize_text
 
 
 def main():

@@ -1,15 +1,15 @@
 """The DECtalk markup dialect: commands, phoneme mnemonics, singing notation."""
 import pytest
 
-from pylintalker._consts import kFrameTime
-from pylintalker._dectalk import (
+from pyretrotts._consts import kFrameTime
+from pyretrotts._dectalk import (
     PHONEMES,
     TONE_MAX_NOTE,
     hz_to_midi,
     parse,
     tone_to_midi,
 )
-from pylintalker._phonemes import _AA_, _EH_, _IY_, _JH_, _SIL_, _w_
+from pyretrotts._phonemes import _AA_, _EH_, _IY_, _JH_, _SIL_, _w_
 
 # --- tone semantics -------------------------------------------------------
 # set_user_target (ph_drwt01.c:1955-1984) reads the tone by magnitude: 1..37 is

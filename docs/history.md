@@ -1,6 +1,6 @@
 # Two synthesizers, one ancestor
 
-`pylintalker` ports two engines. Both are formant synthesizers, both descend
+`pyretrotts` ports two engines. Both are formant synthesizers, both descend
 from the same research, and they are routinely confused with each other —
 including, for a while, by this repository's own documentation.
 

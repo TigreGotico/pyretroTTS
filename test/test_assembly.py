@@ -1,4 +1,4 @@
-"""Tests for `pylintalker._assembly` -- Phase 1 of the `Collect_FE_Tokens`
+"""Tests for `pyretrotts._assembly` -- Phase 1 of the `Collect_FE_Tokens`
 (`BackEnd.c:3712-4157`) port.
 
 VALIDATION STATUS: `test_harness.c`'s built-in dump only prints
@@ -30,8 +30,8 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from pylintalker._assembly import collect_fe_tokens, make_fe_word_token
-from pylintalker._consts import (
+from pyretrotts._assembly import collect_fe_tokens, make_fe_word_token
+from pyretrotts._consts import (
     kArt,
     kCompoundNoun,
     kContent_Word,
@@ -41,8 +41,8 @@ from pylintalker._consts import (
     kStressField,
     kWord_Start,
 )
-from pylintalker._morph import resolve_pos
-from pylintalker._phonemes import _Exclam_, _Period_, _Quest_, _Word_
+from pyretrotts._morph import resolve_pos
+from pyretrotts._phonemes import _Exclam_, _Period_, _Quest_, _Word_
 
 # ---------------------------------------------------------------------------
 # make_fe_word_token() -- per-word field mapping from _lexicon.lookup()
@@ -105,11 +105,11 @@ def test_dictionary_miss_falls_back_to_engtop_with_noun_pos():
 def test_trailing_punct_maps_to_phrase_boundary():
     tok = make_fe_word_token("STOP", ".")
     assert tok.trailing_punct == "."
-    from pylintalker._consts import kBND_Decl
+    from pyretrotts._consts import kBND_Decl
     assert tok.phrase_bnd == kBND_Decl
 
     tok2 = make_fe_word_token("STOP", None)
-    from pylintalker._consts import kBND_None
+    from pyretrotts._consts import kBND_None
     assert tok2.phrase_bnd == kBND_None
 
 
@@ -158,7 +158,7 @@ def test_compound_hint_present_but_not_yet_translated_to_comp_opcode():
     assert tok.is_compound_hint is True
     # kDictComp is an alias for the literal _pRise_ opcode (mt4.h:759) --
     # confirm it is present un-translated, i.e. _Comp_ itself is absent.
-    from pylintalker._phonemes import _Comp_
+    from pyretrotts._phonemes import _Comp_
     assert _Comp_ not in tok.phon_str
 
     sa = collect_fe_tokens("chickenpox now.")

@@ -1,6 +1,6 @@
 # Porting the real DECtalk engine to Python
 
-`pylintalker` today is a bit-exact port of Apple **MacinTalk 2/3**, whose C
+`pyretrotts` today is a bit-exact port of Apple **MacinTalk 2/3**, whose C
 reference lives in `../lintalker-c` (repo `dectalk/lintalker`). Despite the
 directory name, that source is *not* DECtalk. This document plans a **second,
 independent engine** in the same repo: the genuine DECtalk from
@@ -44,7 +44,7 @@ aspiration/voicing gains. `NSAMP_FRAME` is 64 samples/frame (`ph_task.c:1285`);
 optional **HLsyn** high-level articulatory front end (`hlsyn/`), off by default.
 
 This matters because **MacinTalk 2/3 is itself a descendant of the same Klatt
-lineage.** `pylintalker/_backend.py` is a Klatt-style formant synthesizer with
+lineage.** `pyretrotts/_backend.py` is a Klatt-style formant synthesizer with
 fixed-point resonators. So the two engines share *heritage and math*, but not a
 line of code — DECtalk's synth is float-capable (`FLTPNT_T`), frame-threaded, and
 has 5 cascade formants + parallel branch + nasal pole/zero, where MacinTalk's is
@@ -55,16 +55,16 @@ the leaner fixed-point Mac variant.
 - **Dictionary**: `dic/Dic_us.txt` (15 537 lines) is the shipped US pronunciation
   dictionary in text form; `dic/dic_cnvt.c` + `lts/loaddict.c`/`ls_dict.c`/
   `maindict.c` compile and search it as a binary trie. MacinTalk's equivalent is
-  `English.lex` → `pylintalker/_lexicon.py`.
+  `English.lex` → `pyretrotts/_lexicon.py`.
 - **Letter-to-sound rules**: `lts/allorules.c`, `lts/l_us_*` and the `ph/p_us_*`
-  rule files. MacinTalk's equivalent is `EngToP.c` → `pylintalker/_engtop.py`.
+  rule files. MacinTalk's equivalent is `EngToP.c` → `pyretrotts/_engtop.py`.
   DECtalk's rule system is far larger and multi-language.
 
 ### Phoneme inventory vs MacinTalk
 
 DECtalk's US phoneme set is defined in `include/l_us_ph.h:59-116` (57 codes,
 `SIL`=0 … `DF`=56; `US_TOT_ALLOPHONES`=71 at line 119). MacinTalk's is
-`pylintalker/_phonemes.py` (75 enum values; 56 "core" phonemes `_IY_`.._DD_ plus
+`pyretrotts/_phonemes.py` (75 enum values; 56 "core" phonemes `_IY_`.._DD_ plus
 19 control/prosody markers).
 
 Both are **ARPABET-derived** and overlap heavily — vowels `IY IH EH AE AA AH AO
@@ -282,7 +282,7 @@ Rows `cmd/c_us_cde.h:403-415`, names `cmd/c_us_cde.h:301-315`:
 gv gn g1 g2 g3 g4 g5 ft bf lx qu hr sr ago agvo aguo chink oq` — e.g. `ap`=average
 pitch (Hz), `pr`=pitch range (% of Paul's), `hs`=head size, `f4`/`b4`=4th-formant
 freq/bw, `gv`=voicing gain. **This is DECtalk's analogue of MacinTalk's 72-key
-voice dict** (`pylintalker/_voice.py`), and is what makes the 10 named voices.
+voice dict** (`pyretrotts/_voice.py`), and is what makes the 10 named voices.
 
 ---
 
@@ -356,7 +356,7 @@ for review, exactly as `tools/extract_data.py` does for MacinTalk.
 Two engine classes with a thin common protocol; **no shared internal pipeline.**
 
 ```
-pylintalker/
+pyretrotts/
   api.py                     # dispatches to either engine; today's MacinTalk entry points
   _phonemes.py … _backend.py # MacinTalk internals (unchanged)
   dectalk/

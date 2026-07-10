@@ -9,7 +9,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from pylintalker._frontend import split_clauses, split_sentences, tokenize
+from pyretrotts._frontend import split_clauses, split_sentences, tokenize
 
 
 def test_tokenize_keeps_period_on_known_abbreviation():

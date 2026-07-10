@@ -30,12 +30,12 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 from test_voices import parse_sentence_plan, run_c
 
-from pylintalker._assembly import collect_fe_tokens
-from pylintalker._data import Fred_Voice, Junior_Voice, Kathy_Voice, Zarvox_Voice
-from pylintalker._moduration import mod_duration
-from pylintalker._phonbuf2 import fill_phon_buf_2, insert_closure_release
-from pylintalker._pitchcontour import pitch_raise_and_fall
-from pylintalker.api import new_voice
+from pyretrotts._assembly import collect_fe_tokens
+from pyretrotts._data import Fred_Voice, Junior_Voice, Kathy_Voice, Zarvox_Voice
+from pyretrotts._moduration import mod_duration
+from pyretrotts._phonbuf2 import fill_phon_buf_2, insert_closure_release
+from pyretrotts._pitchcontour import pitch_raise_and_fall
+from pyretrotts.api import new_voice
 
 _VOICES = {"Fred": Fred_Voice, "Kathy": Kathy_Voice, "Junior": Junior_Voice, "Zarvox": Zarvox_Voice}
 _VOICE_IDX = {"Fred": 0, "Kathy": 1, "Junior": 3, "Zarvox": 6}
