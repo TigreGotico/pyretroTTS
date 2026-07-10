@@ -207,6 +207,7 @@ def build_phoneme_plan(voice_dict: dict, text: str, vv: Optional[VoiceVar] = Non
     (
         text, _bracket_cmds, _emphasis_overrides, _silence_overrides,
         _pos_overrides, _rate_overrides, _final_rate, _nmbr_overrides,
+        _raw_phon_overrides,
     ) = scan_bracket_commands(text, initial_rate=vv.speech_Rate)
     if _bracket_cmds:
         # Simplified integration (see _embeddedcmd.scan_bracket_commands'
@@ -233,7 +234,7 @@ def build_phoneme_plan(voice_dict: dict, text: str, vv: Optional[VoiceVar] = Non
 
     sa = collect_fe_tokens(
         text, _emphasis_overrides, _silence_overrides, _pos_overrides,
-        _rate_overrides, _nmbr_overrides,
+        _rate_overrides, _nmbr_overrides, _raw_phon_overrides,
     )
     fill_phon_buf_2(vv, sa)
     vv.end_Punctuation = sa.end_punctuation

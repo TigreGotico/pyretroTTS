@@ -127,6 +127,11 @@ _WPOS_SELECTOR = (ord('w') << 24) | (ord('p') << 16) | (ord('o') << 8) | ord('s'
 _MODE_NORMAL = (ord('N') << 24) | (ord('O') << 16) | (ord('R') << 8) | ord('M')
 _MODE_LITERAL = (ord('L') << 24) | (ord('T') << 16) | (ord('R') << 8) | ord('L')
 
+# SpeechEqu.h's modeText ('TEXT')/modePhonemes ('PHON') constants, used
+# by `mode` (`Parse_mode_Command`/`ChangeInputMode`).
+_MODE_TEXT = (ord('T') << 24) | (ord('E') << 16) | (ord('X') << 8) | ord('T')
+_MODE_PHON = (ord('P') << 24) | (ord('H') << 16) | (ord('O') << 8) | ord('N')
+
 
 def _parse_signed_command_value(text: str, i: int):
     """Port of the common preamble shared by `Parse_pbas_Command`/
@@ -307,29 +312,54 @@ def scan_bracket_commands(text: str, initial_rate: int = kNormal_Speech_Rate):
     dict applied by `_assembly.collect_fe_tokens` as a running flag
     rather than a one-shot lookup.
 
-    NOT ported: `char`/`mode` (`Parse_char_Command`/`ChangeCharMode`'s
+    Also recognizes `mode` (`Parse_mode_Command`/`ChangeInputMode`,
+    search `EmbeddedCmd.c` for `Parse_mode_Command`): its argument is a
+    bare `TEXT`/`PHON` selector (same shape as `nmbr`'s `NORM`/`LTRL`),
+    toggling whether SUBSEQUENT text is parsed as raw phoneme mnemonics
+    (`kRawPhonemes`, `GetNextPhonemeOpcode`/`CollectPhonemeToken`,
+    `FrontEnd.c:247-345`) instead of English words -- e.g. `[[mode
+    PHON]]_1AAt[[mode TEXT]]` speaks the literal phonemes `_Word_
+    _Stress1_ _AA_ _t_` instead of trying to read "_1AAt" as an English
+    word. `_rawphon.MAGIC_MAP` (`Data.c:3307`'s `MAGIC_CHAR_MAP[]`/
+    `Data.c:3394`'s `MAGIC_OPCODE_MAP[]`) is a direct, bit-exact
+    transcription of a literal compile-time C source table, not a
+    runtime dictionary lookup, so -- unlike `char`'s letter-name
+    spelling below -- it carries no `Symbols`-dictionary corruption
+    caveat. Like `nmbr`, this is a LATCHED mode (stays in effect until
+    the next `mode` command or end of text), applied here in
+    `scan_bracket_commands` itself (not deferred to `_assembly.
+    collect_fe_tokens` the way `nmbr` is): while `PHON` mode is active,
+    `_emit_segment` routes the text between commands through
+    `_rawphon.parse_raw_phonemes`/`split_into_word_groups` instead of
+    treating it as literal English text, synthesizing one placeholder
+    word (`"RAWPHONn"`) per resulting opcode group and recording that
+    group's raw phonemes in `raw_phon_overrides: {word_index:
+    phon_str}` -- `_assembly.collect_fe_tokens` builds that word's
+    `FEWordToken` directly from the recorded phonemes instead of
+    running `make_fe_word_token`'s normal dictionary/`EngToP` lookup on
+    the meaningless placeholder string.
+
+    NOT ported: `char` (`Parse_char_Command`/`ChangeCharMode`'s
     `kCharByChar` letter-by-letter speaking mode needs each letter's own
     NAME pronunciation -- e.g. "B" -> "bee" -- which comes from the
     `Symbols` dictionary's per-character lookup, `LiteralCharToPhonemes`
-    `EmbeddedCmd.c`/`FrontEnd.c:1664-1694`; unlike the digit words
-    `nmbr` reuses above, no bit-exact extraction of the 26 letter-name
-    pronunciations from the compiled reference exists yet, so this
-    remains unported rather than guessed via the letter-to-sound engine.
-    `Parse_mode_Command`/`ChangeInputMode`'s `TEXT`/`PHON` toggle is a
-    different kind of gap entirely: `modePhonemes` switches the FrontEnd
-    tokenizer itself into accepting raw phoneme/markup input instead of
-    English text -- a wholly separate input grammar, not a speaking
-    style, and out of scope for this port's text-in/audio-out surface),
-    and mid-clause phoneme-accurate positioning for `pbas`/`pmod`/`volm`
+    `EmbeddedCmd.c`/`FrontEnd.c:1664-1694`; unlike `mode`'s `MAGIC_MAP`
+    above (a literal compile-time table) or the digit words `nmbr`
+    reuses, no bit-exact extraction of the 26 letter-name pronunciations
+    from the compiled reference exists yet, so this remains unported
+    rather than guessed via the letter-to-sound engine), and mid-clause
+    phoneme-accurate positioning for `pbas`/`pmod`/`volm`
     (a command found after the Nth word of ONE clause is applied before
-    that clause's Nth word for `emph`/`slnc`/`xtnd`/`rate`/`nmbr`, but
-    `pbas`/`pmod`/`volm` are applied as an immediate `do_ctrl` state
+    that clause's Nth word for `emph`/`slnc`/`xtnd`/`rate`/`nmbr`/`mode`,
+    but `pbas`/`pmod`/`volm` are applied as an immediate `do_ctrl` state
     change at the whole clause's start instead -- see
     `api.build_phoneme_plan`).
 
     Returns `(clean_text, commands, emphasis, silences, pos_overrides,
-    rates, final_rate, nmbr_overrides)`: `clean_text` is `text` with
-    every recognized bracketed command span removed; `commands` is a
+    rates, final_rate, nmbr_overrides, raw_phon_overrides)`: `clean_text`
+    is `text` with every recognized bracketed command span removed
+    (raw-phoneme spans replaced with `"RAWPHONn"` placeholder words, one
+    per opcode group); `commands` is a
     list of `(word_index, ctrl_type, ctrl_data)` for `pbas`/`pmod`/
     `volm`/`rset`/`sync`; `emphasis` is a `{word_index: "emphasize"|
     "deemphasize"}` dict for `emph`; `silences` is a `{word_index:
@@ -337,7 +367,8 @@ def scan_bracket_commands(text: str, initial_rate: int = kNormal_Speech_Rate):
     pos_value}` dict for `xtnd wpos`; `rates` is a `{word_index: wpm}`
     dict for `rate`/`ratr`; `final_rate` is described above;
     `nmbr_overrides` is a `{word_index: is_digit_by_digit}` dict for
-    `nmbr`. `word_index`
+    `nmbr`; `raw_phon_overrides` is a `{word_index: phon_str}` dict for
+    `mode PHON`. `word_index`
     is how many words (per
     `_frontend.tokenize`) of `clean_text` PRECEDE that command, i.e. the
     command/override applies to (or right before) that word. An
@@ -348,6 +379,7 @@ def scan_bracket_commands(text: str, initial_rate: int = kNormal_Speech_Rate):
     parse, rather than raising).
     """
     from ._frontend import tokenize
+    from ._rawphon import parse_raw_phonemes, split_into_word_groups
 
     commands = []
     emphasis = {}
@@ -355,22 +387,40 @@ def scan_bracket_commands(text: str, initial_rate: int = kNormal_Speech_Rate):
     pos_overrides = {}
     rates = {}
     nmbr_overrides = {}
+    raw_phon_overrides = {}
     last_rate = initial_rate
     out_parts = []
     word_count = 0
+    phon_mode = False
     i = 0
     n = len(text)
     BEGIN, END = '[[', ']]'
+
+    def _emit_segment(segment: str) -> None:
+        """Appends `segment` to `clean_text`/advances `word_count`,
+        routing through raw-phoneme parsing instead of plain text when
+        `mode PHON` is active (`ChangeInputMode`'s `kRawPhonemes`,
+        `FrontEnd.c:667-675`) -- see `raw_phon_overrides` in this
+        function's docstring."""
+        nonlocal word_count
+        if not phon_mode:
+            out_parts.append(segment)
+            word_count += len(list(tokenize(segment)))
+            return
+        groups = split_into_word_groups(parse_raw_phonemes(segment))
+        placeholders = []
+        for group in groups:
+            placeholders.append(f"RAWPHON{word_count}")
+            raw_phon_overrides[word_count] = group
+            word_count += 1
+        out_parts.append(' '.join(placeholders))
+
     while i < n:
         start = text.find(BEGIN, i)
         if start == -1:
-            segment = text[i:]
-            out_parts.append(segment)
-            word_count += len(list(tokenize(segment)))
+            _emit_segment(text[i:])
             break
-        segment = text[i:start]
-        out_parts.append(segment)
-        word_count += len(list(tokenize(segment)))
+        _emit_segment(text[i:start])
 
         end = text.find(END, start + len(BEGIN))
         if end == -1:
@@ -465,6 +515,23 @@ def scan_bracket_commands(text: str, initial_rate: int = kNormal_Speech_Rate):
             i = end + len(END)
             continue
 
+        if keyword == 'MODE':
+            # Parse_mode_Command/ChangeInputMode (EmbeddedCmd.c: search
+            # for "Parse_mode_Command"): argument is a bare TEXT/PHON
+            # selector (case-insensitive, same as `nmbr`'s NORM/LTRL).
+            # Toggles whether SUBSEQUENT text (up to the next `mode`
+            # command or end of input) is parsed as raw phoneme
+            # mnemonics (`_rawphon.parse_raw_phonemes`) instead of
+            # English words -- see `_emit_segment` above.
+            j = _skip_spaces(inner, 4)
+            mode_val, _ = _parse_selector_value(inner.upper(), j)
+            if mode_val == _MODE_TEXT:
+                phon_mode = False
+            elif mode_val == _MODE_PHON:
+                phon_mode = True
+            i = end + len(END)
+            continue
+
         if keyword == 'SYNC':
             # Parse_sync_Command (EmbeddedCmd.c:753-765): a plain LONG
             # value (not Fixed-point), queued as C_sync -- do_ctrl has
@@ -530,7 +597,10 @@ def scan_bracket_commands(text: str, initial_rate: int = kNormal_Speech_Rate):
         i = end + len(END)
 
     final_rate = last_rate if rates else None
-    return ''.join(out_parts), commands, emphasis, silences, pos_overrides, rates, final_rate, nmbr_overrides
+    return (
+        ''.join(out_parts), commands, emphasis, silences, pos_overrides,
+        rates, final_rate, nmbr_overrides, raw_phon_overrides,
+    )
 
 
 def do_ctrl(vv: VoiceVar) -> None:

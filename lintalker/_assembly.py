@@ -178,7 +178,7 @@ from ._consts import (
     kTerm_Bound, kPrep_Start, kVerb_Start, kSilenceTypeShift, kSilenceTypeField,
     kBND_Pause, kBND_Decl, kBND_Quest, kBND_Emph, kBND_None,
     kBND_Sep1, kBND_Sep2, kBND_Sep3, kBND_Sep4, kBND_Sep5, kBND_Sep6,
-    kSilenceDuration, kHas_Adj,
+    kSilenceDuration, kHas_Adj, kHas_Noun,
 )
 from ._morph import _pos_count_and_hi_rank
 from ._phonemes import (
@@ -639,8 +639,20 @@ def collect_fe_tokens(
     pos_overrides: Optional[dict] = None,
     rate_overrides: Optional[dict] = None,
     nmbr_overrides: Optional[dict] = None,
+    raw_phon_overrides: Optional[dict] = None,
 ) -> SentenceAssembly:
     """Adapted port of `Collect_FE_Tokens` (`BackEnd.c:3712-4157`).
+
+    `raw_phon_overrides`, if given, is a `{word_index: phon_str}` dict
+    (from `_embeddedcmd.scan_bracket_commands`'s `mode PHON` support):
+    the word at that index is a `"RAWPHONn"` placeholder synthesized by
+    `scan_bracket_commands` for one raw-phoneme opcode group -- its
+    `FEWordToken` is built directly from the recorded `phon_str` here,
+    bypassing `make_fe_word_token`'s dictionary/`EngToP`/digit-routing
+    entirely (mirrors `CollectPhonemeToken` producing a `kRawPhonemeTok`
+    whose `phonStr` is used as-is, `FrontEnd.c:334-345`, and its default
+    `SetPOStoVal(tok, kNoun)` when no POS override precedes it,
+    `FrontEnd.c:339-345`).
 
     `rate_overrides`, if given, is a `{word_index: wpm}` dict (from
     `_embeddedcmd.scan_bracket_commands`'s `rate`/`ratr` support): the
@@ -792,6 +804,21 @@ def collect_fe_tokens(
     )):
         if nmbr_overrides and _wi in nmbr_overrides:
             _digit_mode = nmbr_overrides[_wi]
+        if raw_phon_overrides and _wi in raw_phon_overrides:
+            _clause_tokens.append(FEWordToken(
+                word=word,
+                phon_str=list(raw_phon_overrides[_wi]),
+                from_dictionary=True,
+                pos_code1=[kNoun, kUndefPOS, kUndefPOS, kUndefPOS],
+                comp_pos1=kHas_Noun,
+                is_abbrev=False,
+                is_compound_hint=False,
+                has_alt=False,
+                pos_choice=kNoun,
+                trailing_punct=punct,
+                phrase_bnd=_PUNCT_TO_BND.get(punct, kBND_None) if punct else kBND_None,
+            ))
+            continue
         _clause_tokens.append(make_fe_word_token(
             word, punct,
             digit_by_digit=_digit_mode or _wi in _decimal_frac_indices,
