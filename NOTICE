@@ -1,7 +1,21 @@
 # NOTICE — provenance and licensing of each engine
 
-pyretroTTS is licensed MIT (see LICENSE). That licence covers the Python code,
-the tests, the tooling, and the documentation written for this project.
+## Authorship
+
+Every line of this repository was written by an AI, working from the original C
+sources, with a human directing the work and reviewing none of the code.
+
+Under current US law an AI is not an author and its output cannot be
+copyrighted. Whether anyone holds copyright in this code is therefore unclear,
+and whether an AI transpilation of copyrighted source is a derivative work of it
+is likewise unsettled. There is no precedent for either question. Nothing below
+should be read as a legal opinion; it is a record of what is known.
+
+## Licence
+
+pyretroTTS is licensed MIT (see LICENSE), to the extent that copyright can be
+asserted in it at all. That licence covers the Python code, the tests, the
+tooling, and the documentation written for this project.
 
 It does not cover the synthesizers being ported. Each one descends from a
 commercial product, each has a different provenance, and they are not equally

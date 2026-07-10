@@ -1,5 +1,32 @@
 # pyretroTTS
 
+> ## ⚠️ Read this before using, copying, or redistributing anything here
+>
+> **Every line of this code was written by an AI.** No human wrote, edited, or
+> reviewed a single line. A human set the goals, answered questions, and pointed
+> at the source; the AI read the original C and produced the Python. That is the
+> whole authorship story.
+>
+> **The AI had access to the original sources.** These are transpilations, not
+> clean-room reimplementations. MacinTalk is Apple's, DECtalk is FONIX's (which
+> declares it proprietary and confidential), SAM's C derives from a SoftVoice
+> program. See [`NOTICE`](NOTICE) for each.
+>
+> **Nobody knows what any of that means legally.** Under current US law an AI is
+> not an author and its output cannot be copyrighted. So it is unclear who, if
+> anyone, holds copyright in this code — and unclear whether an AI transpilation
+> of copyrighted source is a derivative work of it at all. There is no precedent
+> for either question. Anyone telling you otherwise is guessing.
+>
+> The `LICENSE` file says MIT because a licence has to say *something*. To the
+> extent copyright can be asserted here, treat this as MIT or public domain,
+> whichever you find more convincing. To the extent the upstream engines have
+> owners — and they do — that licence cannot reach them, and `NOTICE` says so.
+>
+> **This is vibe-coded software.** It is tested hard: 574 tests, bit-exact
+> against compiled C references. It has never been read by a human. Use it
+> accordingly.
+
 Standalone Python ports of the **classic speech synthesizers** — the
 "robot voices" of 1980s and 1990s computing. No neural network, no audio
 corpus, no GPU: a few hundred kilobytes of tables and rules, and integer

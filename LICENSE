@@ -22,7 +22,20 @@ SOFTWARE.
 
 ---
 
-The MIT licence above covers the code written for this project. It does not,
-and cannot, cover the upstream synthesizers this project ports. Each engine
-carries its own provenance and its own encumbrance. Read NOTICE before
-redistributing.
+Two things this licence cannot settle.
+
+First, authorship. Every line of this code was written by an AI, from the
+original C sources, with no human writing or reviewing any of it. Under current
+US law an AI is not an author and its output is not copyrightable. It is
+therefore unclear whether anyone holds copyright in this code, and so unclear
+what there is to license. The MIT grant above is offered because a licence has
+to say something; to the extent copyright cannot be asserted, treat this as
+public domain.
+
+Second, derivation. It is unsettled whether an AI transpilation of copyrighted
+source is a derivative work of that source. There is no precedent either way.
+
+What is not unclear: the upstream synthesizers have owners. MacinTalk is Apple's.
+DECtalk is FONIX's, which declares it proprietary and confidential. SAM's C
+derives from a SoftVoice program. This licence does not reach any of them, and
+cannot. Read NOTICE before copying or redistributing anything here.
