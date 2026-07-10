@@ -156,6 +156,43 @@ def parse_ph_dump(path: str) -> list[tuple[list[int], list[list[int]], list[int]
     return frames
 
 
+def parse_tar_dump(path: str) -> list[tuple[dict[str, object], list[tuple[int, int, int]]]]:
+    """Parse a `us_gettar` dump into per-clause (stream, calls) records.
+
+    The instrumented C (`p_us_st0.c`, gated on env `DECTALK_TAR_DUMP`) writes, at
+    the first parameter of the first phone of each clause, one `A` line holding
+    `malfem`, `nallotot`, the `allophons[]` array, a `|`, then the `allofeats[]`
+    array (two extra trailing entries). Every `us_gettar` call then writes one
+    `G <npar> <nphone> <return>` line.
+
+    Returns, per clause: a dict with keys ``malfem``, ``nallotot``, ``allophons``
+    (tuple), ``allofeats`` (tuple), and the list of ``(npar, nphone, ret)`` calls.
+    """
+    records: list[tuple[dict[str, object], list[tuple[int, int, int]]]] = []
+    stream: dict[str, object] | None = None
+    calls: list[tuple[int, int, int]] = []
+    with open(path) as fh:
+        for line in fh:
+            if line.startswith("A "):
+                if stream is not None:
+                    records.append((stream, calls))
+                head, _, tail = line.partition("|")
+                htok = head.split()
+                stream = {
+                    "malfem": int(htok[1]),
+                    "nallotot": int(htok[2]),
+                    "allophons": tuple(int(x) for x in htok[3:]),
+                    "allofeats": tuple(int(x) for x in tail.split()),
+                }
+                calls = []
+            elif line.startswith("G "):
+                tok = line.split()
+                calls.append((int(tok[1]), int(tok[2]), int(tok[3])))
+    if stream is not None:
+        records.append((stream, calls))
+    return records
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--source", default=DEFAULT_SOURCE)
