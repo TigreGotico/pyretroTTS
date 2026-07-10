@@ -259,6 +259,21 @@ def dollar_phonemes(digits: str):
     return [_Word_] + body + suffix
 
 
+def cent_phonemes(digits: str):
+    """Port of the `kAddCent` suffix applied by `PartialNumberToPhonemes`
+    (`FrontEnd.c:1899-1903`): the cents half of a `$N.M`-shaped token
+    (`kPeriodTok`'s dollar-flagged branch, `FrontEnd.c:2096-2101` --
+    `_frontend.tokenize()`'s `_cent_out`) is read as a grouped cardinal
+    number (year detection bypassed the same way `dollar_phonemes` is,
+    `SpeakTokenAsNumber`'s `kYearSpecial` check also excludes
+    `kAddCent`) followed by "cent"/"cents" (`_CENT`, singular when the
+    amount is exactly 1).
+    """
+    body = number_to_phonemes(digits)[1:]  # strip its own leading _Word_
+    suffix = list(_CENT) if int(digits) != 1 else _CENT[:-1]
+    return [_Word_] + body + suffix
+
+
 def digit_by_digit_phonemes(digits: str):
     """Port of `SpeakTokenCharByChar`'s digit-by-digit branch
     (`FrontEnd.c:2057-2062`, `kDigitByDigit`/`EmbeddedCmd.c`'s `nmbr LTRL`

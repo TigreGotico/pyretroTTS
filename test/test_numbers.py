@@ -268,13 +268,56 @@ def test_decimal_fraction_read_digit_by_digit():
 
 def test_decimal_not_applied_to_dollar_prefixed_token():
     # $3.14 isn't handled by the plain-decimal path (the real engine
-    # routes it through a separate, unported "AND ... cents" branch
-    # instead) -- so it must not be silently mis-split either.
+    # routes it through the SEPARATE "AND ... cents" branch instead,
+    # see below) -- so it must not get the plain-decimal "POINT" reading.
     from lintalker._frontend import tokenize
 
     tokens = tokenize("it costs $3.14 total.")
     words = [w for w, _ in tokens]
     assert "POINT" not in words
+
+
+def test_tokenize_dollar_decimal_splits_into_dollars_and_and_cents():
+    from lintalker._frontend import tokenize
+
+    dollar_indices, cent_indices = [], []
+    tokens = tokenize(
+        "it costs $5.25 total.", _dollar_out=dollar_indices, _cent_out=cent_indices,
+    )
+    assert tokens == [
+        ("IT", None), ("COSTS", None),
+        ("5", None), ("AND", None), ("25", None),
+        ("TOTAL", "."),
+    ]
+    assert dollar_indices == [2]
+    assert cent_indices == [4]
+
+
+def test_cent_phonemes_plural_and_singular():
+    from lintalker._numbers import cent_phonemes, number_to_phonemes, _CENT
+
+    assert cent_phonemes("25") == [_Word_] + number_to_phonemes("25")[1:] + _CENT
+    assert cent_phonemes("1") == [_Word_] + number_to_phonemes("1")[1:] + _CENT[:-1]
+
+
+def test_dollar_and_cents_reaches_word_tokens_end_to_end():
+    from lintalker._assembly import collect_fe_tokens
+    from lintalker._numbers import dollar_phonemes, cent_phonemes
+
+    sa = collect_fe_tokens("it costs $5.25 total.")
+    assert sa.words[2].word == "5"
+    assert sa.words[2].phon_str == dollar_phonemes("5")
+    assert sa.words[3].word == "AND"
+    assert sa.words[4].word == "25"
+    assert sa.words[4].phon_str == cent_phonemes("25")
+
+
+def test_cent_amount_reads_as_cardinal_not_digit_by_digit():
+    from lintalker._assembly import collect_fe_tokens
+    from lintalker._numbers import digit_by_digit_phonemes
+
+    sa = collect_fe_tokens("it costs $5.25 total.")
+    assert sa.words[4].phon_str != digit_by_digit_phonemes("25")
 
 
 if __name__ == "__main__":

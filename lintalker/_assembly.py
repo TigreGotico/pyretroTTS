@@ -242,7 +242,10 @@ class FEWordToken:
     phrase_bnd: int = kBND_None        # kBND_Decl/Pause/Quest/Emph from trailing_punct, else kBND_None
 
 
-def make_fe_word_token(word: str, punct: Optional[str], digit_by_digit: bool = False, is_dollar: bool = False) -> FEWordToken:
+def make_fe_word_token(
+    word: str, punct: Optional[str], digit_by_digit: bool = False,
+    is_dollar: bool = False, is_cent: bool = False,
+) -> FEWordToken:
     """Build one `FEWordToken` for `word` (already uppercased by
     `_frontend.tokenize()`), consulting `_lexicon.lookup()` first and
     falling back to `_engtop.engtop()` -- the same dictionary-then-rules
@@ -271,17 +274,23 @@ def make_fe_word_token(word: str, punct: Optional[str], digit_by_digit: bool = F
     this word as a `$<digits>` token) routes to `_numbers.dollar_
     phonemes` instead, appending "dollar"/"dollars" and bypassing year
     detection -- matching `SpeakTokenAsNumber`'s `kAddDollar` exclusion.
+    `is_cent` (set when `_frontend.tokenize()`'s `_cent_out` recorded
+    this word as the cents half of a `$N.M` token) routes to
+    `_numbers.cent_phonemes` instead, appending "cent"/"cents" and
+    likewise bypassing year detection (`kAddCent`'s exclusion).
     """
     if word.isdigit():
         from ._numbers import (
             number_to_phonemes, digit_by_digit_phonemes, is_year_number,
-            year_to_phonemes, dollar_phonemes,
+            year_to_phonemes, dollar_phonemes, cent_phonemes,
         )
 
         if digit_by_digit:
             _digits_phon_str = digit_by_digit_phonemes(word)
         elif is_dollar:
             _digits_phon_str = dollar_phonemes(word)
+        elif is_cent:
+            _digits_phon_str = cent_phonemes(word)
         elif is_year_number(word):
             _digits_phon_str = year_to_phonemes(word)
         else:
@@ -769,8 +778,10 @@ def collect_fe_tokens(
     _digit_mode = False
     _dollar_indices: list = []
     _decimal_frac_indices: list = []
+    _cent_indices: list = []
     for _wi, (word, punct) in enumerate(tokenize(
         text, _dollar_out=_dollar_indices, _decimal_frac_out=_decimal_frac_indices,
+        _cent_out=_cent_indices,
     )):
         if nmbr_overrides and _wi in nmbr_overrides:
             _digit_mode = nmbr_overrides[_wi]
@@ -778,6 +789,7 @@ def collect_fe_tokens(
             word, punct,
             digit_by_digit=_digit_mode or _wi in _decimal_frac_indices,
             is_dollar=_wi in _dollar_indices,
+            is_cent=_wi in _cent_indices,
         ))
     if emphasis_overrides:
         for _wi, _emph in emphasis_overrides.items():

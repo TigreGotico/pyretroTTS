@@ -88,11 +88,12 @@ digit run (e.g. "$5") reads as a cardinal number followed by
 "dollar"/"dollars" (this also fixed a real pre-existing bug where such
 tokens were silently dropped instead of spoken at all). A `.` between
 two numbers (e.g. "3.14") reads as the word "point" followed by the
-fractional digits read one at a time ("three point one four") -- not
-applied when the whole number is preceded by `$` (that combination
-isn't ported, see `docs/architecture.md`). Remaining known gaps:
+fractional digits read one at a time ("three point one four"). A `.`
+between a `$`-prefixed amount and cents (e.g. "$5.25") instead reads
+as "AND" followed by the cents amount plus "cent"/"cents" ("five
+dollars and twenty five cents"). Remaining known gaps:
 `char`/`mode` embedded commands and clock-time/cent-only-currency
-reading modes — see
+(no leading `$`) reading modes — see
 `docs/architecture.md` for
 specifics. You can still synthesize from an
 already-built phoneme plan directly via

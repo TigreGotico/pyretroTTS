@@ -575,17 +575,43 @@ single-sentence text is.
 
   NOT applied when the whole token is `$`-prefixed: the real engine's
   `kPeriodTok` case has a SEPARATE branch for that combination
-  (`FrontEnd.c:2096-2101`): the `.` becomes the word "AND" plus a
-  `kAddCent` flag on the following token instead of "POINT" -- i.e.
-  `"$5.25"` reads as "five dollars AND twenty five cents", not "five
-  dollars point two five". This combination is NOT ported (see below);
-  `tokenize()` simply skips decimal-splitting for a `$`-prefixed token
-  rather than applying the wrong (plain-decimal) reading to it.
+  (`FrontEnd.c:2096-2101`, ported separately below): the `.` becomes
+  the word "AND" plus a `kAddCent` flag on the following token instead
+  of "POINT" -- i.e. `"$5.25"` reads as "five dollars AND twenty five
+  cents", not "five dollars point two five".
 
   Verified: `test/test_numbers.py`'s `test_tokenize_decimal_splits_
   into_three_tokens`/`test_decimal_no_longer_silently_dropped`/
   `test_decimal_fraction_read_digit_by_digit`/`test_decimal_not_
   applied_to_dollar_prefixed_token`.
+
+  (Fixed) Combined dollar-and-cents reading: `kPeriodTok`'s dollar-
+  flagged branch (`FrontEnd.c:2096-2101`) turns the `.` in a `$N.M`
+  token into the word "AND" (an ordinary dictionary word, same
+  `WordToPhonemes` path as "POINT" above -- `_AND`, already extracted
+  bit-exact for the cardinal-grouping "AND" insertion rule, is reused
+  here directly rather than going through the dictionary/`EngToP` path
+  a fresh word lookup would), and the digits after it get `kAddCent`
+  instead of forced digit-by-digit reading: read as a normal cardinal
+  with "cent"/"cents" appended (`_numbers.cent_phonemes`, the same
+  `_CENT`/plural-singular shape as `dollar_phonemes`'s `_DOLLAR`) --
+  e.g. `"$5.25"` -> "five dollars AND twenty five cents".
+
+  `_frontend.tokenize()` gained a THIRD side-channel parameter,
+  `_cent_out`, splitting a `$N.M`-shaped raw token into three output
+  tokens (`"N"` recorded in `_dollar_out`, `"AND"`, `"M"` recorded in
+  `_cent_out`) -- the dollar-flagged decimal check runs BEFORE the
+  plain-decimal check above, so a `$`-prefixed token never falls into
+  the "POINT" path. `_assembly.make_fe_word_token` gained a matching
+  `is_cent` parameter routing to `cent_phonemes`, bypassing year
+  detection the same way `is_dollar` does (`kAddCent` is excluded by
+  `SpeakTokenAsNumber`'s `kYearSpecial` check exactly like `kAddDollar`
+  is, `FrontEnd.c:1982-1983`).
+
+  Verified: `test/test_numbers.py`'s `test_tokenize_dollar_decimal_
+  splits_into_dollars_and_and_cents`/`test_cent_phonemes_plural_and_
+  singular`/`test_dollar_and_cents_reaches_word_tokens_end_to_end`/
+  `test_cent_amount_reads_as_cardinal_not_digit_by_digit`.
 
   CORRECTED: earlier passes of this doc (and `README.md`) listed
   "ordinal" number reading (e.g. "1st"/"2nd") and "phone number"
@@ -605,13 +631,11 @@ single-sentence text is.
   a `:` between two digits, `FrontEnd.c:1003-1010`; a genuinely
   incremental, multi-token-spanning mechanism that wasn't fully traced
   through this compiled build's `GetNextToken`/`PartialNumberToPhonemes`
-  interaction and wasn't ported without that confidence), cent-only
-  currency (`¢`, no realistic ASCII-keyboard input path, unlike `$`),
-  and the `$5.25`-style combined dollar-and-cents reading (`kAddCent`
-  set via the `kPeriodTok` "AND" branch above) -- all requiring either
-  more tokenizer-context-detection scope or additional confidence in
-  the real engine's exact incremental token-splitting behavior than
-  this port currently has.
+  interaction and wasn't ported without that confidence) and cent-only
+  currency (`¢`, no realistic ASCII-keyboard input path, unlike `$`) --
+  both requiring either more tokenizer-context-detection scope or
+  additional confidence in the real engine's exact incremental
+  token-splitting behavior than this port currently has.
 - (Fixed) Abbreviation-period handling: `GetNextToken` doesn't treat a
   `.` right after a known dictionary abbreviation (e.g. "MR.", "DR.",
   "ST.", looked up WITH the period as part of its key, `is_abbrev=True`

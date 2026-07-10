@@ -60,6 +60,7 @@ def tokenize(
     text: str,
     _dollar_out: list | None = None,
     _decimal_frac_out: list | None = None,
+    _cent_out: list | None = None,
 ) -> list[tuple[str, str | None]]:
     """Split raw text into (WORD, trailing_punct_or_None) pairs.
 
@@ -98,13 +99,22 @@ def tokenize(
     token inheriting `kDigitByDigit`-equivalent behavior (`lastType ==
     kDecimalTok` at `FrontEnd.c:2058`) -- e.g. "3.14" -> "three point one
     four", not "three point fourteen". Not applied to a `$`-prefixed
-    token (the real `kPeriodTok` case has a SEPARATE, un-ported branch
-    for that: `$5.25`'s `.` becomes the word "AND" plus a `kAddCent`
-    flag on the following token, i.e. "five dollars AND twenty five
-    cents" -- see `docs/architecture.md` "Known gaps"). Like a plain
-    `.` before this port, `N.M` was previously silently DROPPED
-    entirely (`isdigit()` fails on `"3.14"`, and the `isalpha()`-only
-    fallback filter strips both the digits and the `.`) -- fixed here.
+    token: that combination is `_cent_out`'s job instead (see below).
+    Like a plain `.` before this port, `N.M` was previously silently
+    DROPPED entirely (`isdigit()` fails on `"3.14"`, and the
+    `isalpha()`-only fallback filter strips both the digits and the
+    `.`) -- fixed here.
+
+    `_cent_out`, if given a list, gets the output-token INDEX of the
+    CENTS half of every `$N.M`-shaped token (e.g. `"$5.25"` splits into
+    THREE tokens: `"5"` (recorded in `_dollar_out`), `"AND"`, `"25"`
+    (recorded here)). Ports `kPeriodTok`'s SEPARATE dollar-flagged
+    branch (`FrontEnd.c:2096-2101`): unlike a plain decimal, a `.` right
+    after a `kAddDollar` token becomes the word "AND" (not "POINT"),
+    and the digits after it are read as a normal CARDINAL with
+    "cent"/"cents" appended (`kAddCent`, `_numbers.cent_phonemes`) --
+    NOT digit-by-digit -- e.g. `"$5.25"` -> "five dollars AND twenty
+    five cents", not "five dollars point two five".
     """
     tokens: list[tuple[str, str | None]] = []
     for raw in text.split():
@@ -115,9 +125,26 @@ def tokenize(
                 punct = w[-1]
             w = w[:-1]
         is_dollar = False
-        if len(w) > 1 and w[0] == '$' and w[1:].isdigit():
+        if len(w) > 1 and w[0] == '$' and (w[1:].isdigit() or (w[1:].count('.') == 1 and all(p.isdigit() for p in w[1:].split('.') if p))):
             w = w[1:]
             is_dollar = True
+        if is_dollar and w.count('.') == 1:
+            # $5.25 -- kPeriodTok's SEPARATE branch for a dollar-flagged
+            # token (FrontEnd.c:2096-2101): the "." becomes the word
+            # "AND" (not "POINT") and the following digits are read as
+            # a cardinal with "cent"/"cents" appended (kAddCent), not
+            # digit-by-digit -- e.g. "five dollars AND twenty five
+            # cents", not "five dollars point two five".
+            _int_part, _frac_part = w.split('.')
+            if _int_part and _frac_part and _int_part.isdigit() and _frac_part.isdigit():
+                if _dollar_out is not None:
+                    _dollar_out.append(len(tokens))
+                tokens.append((_int_part, None))
+                tokens.append(("AND", None))
+                if _cent_out is not None:
+                    _cent_out.append(len(tokens))
+                tokens.append((_frac_part, punct))
+                continue
         if not is_dollar and w.count('.') == 1:
             _int_part, _frac_part = w.split('.')
             if _int_part and _frac_part and _int_part.isdigit() and _frac_part.isdigit():
