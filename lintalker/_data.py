@@ -7290,3 +7290,15 @@ english_lex_data_b64 = (
 
 english_lex_data = _base64.b64decode(english_lex_data_b64)
 english_lex_len = 151976
+
+# kUseSyncSnd sample-marker tables (Sounds.c: Bells_Sound/Hysterical_Sound
+# headers -- length, num-markers, then the marker time values themselves;
+# the PCM sample bytes that follow aren't needed since this port's formant
+# synthesizer never switches to the sample-playback glottal source). Used
+# by api.new_voice() to populate vv.markerBuf/vv.lastMarkerIndex/
+# vv.sync_On_Marker for Bells/Hysterical (the only two waveType==kUseSyncSnd
+# voices) -- see _moduration.py's sync_On_Marker branch.
+Bells_Markers = [0, 8430, 16957, 25390, 33820]
+Hysterical_Markers = [0, 8280, 15962, 24426, 33304, 40194]
+Bells_Voice['markers'] = Bells_Markers
+Hysterical_Voice['markers'] = Hysterical_Markers

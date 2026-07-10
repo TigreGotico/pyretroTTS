@@ -113,7 +113,8 @@ and import it wherever you call `new_voice()`/`synthesize_text()`.
 | `pitch` | Baseline pitch in Hz (e.g. `97` for Fred — a fairly low male voice; higher = higher-pitched voice, e.g. Kathy/Princess use higher values). |
 | `voice` | `0` = male formant tables, `1` = female formant tables (`kMaleTbls`/`kFemaleTbls`) — selects which base formant-frequency table `_data.py` uses as the "neutral" starting point before this voice's offsets are applied. |
 | `rate` | Speaking rate in words per minute (normal ≈ 180). |
-| `waveType` | `0` = harmonic-synthesis glottal source (`kUseHarm`, the default — the source is generated from `vWave`/`vWave1` harmonic coefficients). `1` = sampled source (`kUseSnd`, plays back a stored waveform — see `sndID`/`vWave` as a sample instead of harmonics). `2` = pitch-synced sampled source (`kUseSyncSnd`, used by Bells/Hysterical — **not fully ported**, see `docs/architecture.md`'s known gaps, so a new voice using this mode won't be validated against the C reference). |
+| `waveType` | `0` = harmonic-synthesis glottal source (`kUseHarm`, the default — the source is generated from `vWave`/`vWave1` harmonic coefficients). `1` = sampled source (`kUseSnd`, plays back a stored waveform — see `sndID`/`vWave` as a sample instead of harmonics). `2` = pitch-synced sampled source with marker-driven duration adjustment (`kUseSyncSnd`, used by Bells/Hysterical — see `markers` below; a new voice using this mode needs its own marker-time table to match the real engine). |
+| `markers` | Only meaningful with `waveType: 2` (`kUseSyncSnd`): a list of marker TIMES (not the sample audio itself, which this port never plays back) extracted from the original embedded sample header — `[0, t1, t2, ..., tN]`. `Mod_Duration`'s `sync_On_Marker` branch (`_moduration.py`) uses consecutive differences between these to adjust vowel durations so speech stays in sync with the sample's real timing — see `_data.py`'s `Bells_Markers`/`Hysterical_Markers` for the reference values (extracted from `Sounds.c`'s `Bells_Sound`/`Hysterical_Sound` headers). |
 
 ### 2.2 Formant shaping
 
@@ -177,10 +178,11 @@ Python code.
 
 ### 2.7 Note-driven singing voices
 
-`GoodNews`, `BadNews`, `PipeOrgan`, `Cellos` (and, with the caveat in 2.1,
-`Bells`/`Hysterical`) aren't just tuned prosody — they carry an embedded
-**note script**: a fixed melody the pitch contour follows regardless of
-what text you feed them, turning speech into song.
+`GoodNews`, `BadNews`, `PipeOrgan`, `Cellos` aren't just tuned prosody —
+they carry an embedded **note script**: a fixed melody the pitch contour
+follows regardless of what text you feed them, turning speech into song.
+(`Bells`/`Hysterical` use a different mechanism, `waveType: 2`'s
+marker-time table — see 2.1 — not a note script.)
 
 | Key | Meaning |
 |---|---|

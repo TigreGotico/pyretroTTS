@@ -35,10 +35,15 @@ trap -- assert on `len(c_frames) > 0` (or an exact length match) whenever
 a test's "expected" data comes from parsing external output, not just
 absence of mismatches.
 
-Bells/Hysterical are excluded from the all-voices sweep below: they hit
-the pre-existing, independently-documented `kUseSyncSnd` external
-sample-marker gap (see docs/architecture.md), which shows up here as a
-genuine frame-COUNT mismatch, not just value differences.
+Bells/Hysterical (`kUseSyncSnd` voices) are included in the all-voices
+sweep below: `_moduration.py`'s `sync_On_Marker` branch and the marker
+tables extracted from `Sounds.c`'s `Bells_Sound`/`Hysterical_Sound`
+headers into `_data.py` (`Bells_Markers`/`Hysterical_Markers`) make them
+frame-exact too -- what looked like a fundamental external-sample-audio
+gap turned out to be a single missing metadata field (`Frame.marker`,
+plus the vowel-duration adjustment `Mod_Duration` computes from it): the
+formant synthesis itself never needed the actual embedded PCM sample
+bytes, only the marker TIMESTAMPS from the sample header.
 
 TWO FURTHER REAL BUGS found via a broader multi-sentence sweep (a user
 report that several voices "still sound like shit" on ordinary sentences,
@@ -73,6 +78,7 @@ from lintalker.api import synthesize_text
 from lintalker._data import (
     Fred_Voice, Kathy_Voice, Princess_Voice, Junior_Voice, Ralph_Voice,
     Whisper_Voice, Zarvox_Voice, Trinoids_Voice, Bubbles_Voice, Boing_Voice,
+    Bells_Voice, Hysterical_Voice,
     Deranged_Voice, GoodNews_Voice, BadNews_Voice, PipeOrgan_Voice, Cellos_Voice,
 )
 
@@ -82,7 +88,8 @@ _VOICES = {
     "Fred": (0, Fred_Voice), "Kathy": (1, Kathy_Voice), "Princess": (2, Princess_Voice),
     "Junior": (3, Junior_Voice), "Ralph": (4, Ralph_Voice), "Whisper": (5, Whisper_Voice),
     "Zarvox": (6, Zarvox_Voice), "Trinoids": (7, Trinoids_Voice), "Bubbles": (8, Bubbles_Voice),
-    "Boing": (9, Boing_Voice), "Deranged": (12, Deranged_Voice), "GoodNews": (13, GoodNews_Voice),
+    "Boing": (9, Boing_Voice), "Bells": (10, Bells_Voice), "Hysterical": (11, Hysterical_Voice),
+    "Deranged": (12, Deranged_Voice), "GoodNews": (13, GoodNews_Voice),
     "BadNews": (14, BadNews_Voice), "PipeOrgan": (15, PipeOrgan_Voice), "Cellos": (16, Cellos_Voice),
 }
 
@@ -151,8 +158,7 @@ def test_i_am_frame_exact_fred():
 
 def test_hello_world_frame_exact_all_voices():
     """The real regression test for both bugs described in the module
-    docstring: a genuine two-word sentence, across every voice except the
-    two with the pre-existing, independently-documented kUseSyncSnd gap."""
+    docstring: a genuine two-word sentence, across all 17 voices."""
     for voice_name in _VOICES:
         _check("hello world", voice_name)
 
@@ -304,6 +310,30 @@ def test_cross_clause_voicevar_sharing_frame_exact():
     _check("good morning everyone, welcome to the show.", "PipeOrgan")
     _check("good morning everyone, welcome to the show.", "GoodNews")
     _check("good morning everyone, welcome to the show.", "BadNews")
+
+
+def test_kusesyncsnd_marker_frame_exact():
+    """Regression test for a real bug: Bells/Hysterical (the two
+    `waveType == kUseSyncSnd` voices) previously mismatched the C
+    reference only in `Frame.marker` (a metadata field used for external
+    sync callbacks) -- audio synthesis itself (`f0`/formants/amplitude)
+    was already bit-exact, showing this was never the fundamental
+    external-sample-audio gap it was assumed to be. `Mod_Duration`'s
+    `sync_On_Marker` branch (`BackEnd.c:1938-1976`) needs a marker-time
+    table (`vv.markerBuf`/`vv.lastMarkerIndex`) that the real engine reads
+    out of the embedded sample header (`Sounds.c`'s `Bells_Sound`/
+    `Hysterical_Sound` arrays: length, marker count, then the marker
+    times themselves) -- `vv.sync_On_Marker` was already being set
+    correctly (`_backend.init_voice`), but nothing ever populated
+    `markerBuf`. Fixed by extracting just the marker-time header (not the
+    PCM sample bytes, never needed since this port's formant synthesizer
+    never switches glottal source) into `_data.py`'s `Bells_Markers`/
+    `Hysterical_Markers`, wired in by `api.new_voice`, and porting
+    `Mod_Duration`'s `sync_On_Marker` branch itself in `_moduration.py`."""
+    _check("hello world", "Bells")
+    _check("hello world", "Hysterical")
+    _check("testing one two three", "Bells")
+    _check("testing one two three", "Hysterical")
 
 
 if __name__ == "__main__":

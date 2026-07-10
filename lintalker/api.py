@@ -50,6 +50,22 @@ def new_voice(voice_dict: dict) -> VoiceVar:
     # Cellos, GoodNews, BadNews). Harmless no-op for non-singing voices.
     from ._engine import e_set_tempo
     e_set_tempo(vv, vv.tempo)
+
+    # InsertSample (Say.c:1471-1499): for kUseSyncSnd voices (Bells/
+    # Hysterical -- init_voice already set vv.sync_On_Marker=True for
+    # these), the real engine reads a marker-time table out of the
+    # embedded sample-audio header (Sounds.c's Bells_Sound/
+    # Hysterical_Sound arrays) into vv.markerBuf/vv.lastMarkerIndex; this
+    # port never plays the sample audio itself (the formant synthesizer
+    # never switches glottal source), but Mod_Duration's sync_On_Marker
+    # branch (_moduration.py) still needs these marker times to compute
+    # the same vowel-duration adjustments and kSampleMarker/frameMarker
+    # values the real engine produces -- see _data.py's Bells_Markers/
+    # Hysterical_Markers (extracted directly from Sounds.c's headers).
+    markers = voice_dict.get('markers')
+    if markers:
+        vv.markerBuf[:len(markers)] = markers
+        vv.lastMarkerIndex = len(markers) - 1
     return vv
 
 
@@ -204,6 +220,14 @@ def build_phoneme_plan(voice_dict: dict, text: str, vv: Optional[VoiceVar] = Non
     # its post-Mod_Duration value (e.g. 11 instead of 0), corrupting
     # every note pitch for the rest of a singing voice's clause.
     vv.songIndex = vv.lastSongIndex
+    # ParseSentence's other final-reset field (BackEnd.c:4189): Mod_Duration's
+    # sync_On_Marker branch (kUseSyncSnd voices, Bells/Hysterical) also
+    # advances markerIndex as scratch bookkeeping while computing
+    # vowel-duration adjustments against the marker-time table -- exactly
+    # the same songIndex-class bug, confirmed the same way (a shared
+    # VoiceVar left markerIndex advanced instead of 0 by the time
+    # synthesis's own marker lookup, StartNewPhon, ran).
+    vv.markerIndex = 0
 
     n = vv.phonBuf_2_In_Index
     pn = vv.pitchBuf_In_Index

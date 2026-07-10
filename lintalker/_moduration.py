@@ -7,10 +7,11 @@ the already-ported `e_get_phon`/`e_get_phon_ctrl`. Writes `vv.dur_Buf`.
 
 The `singScript`/`singing` branches (`BackEnd.c:1977-2029`) that stretch/
 compress duration to match an embedded note script (GoodNews/BadNews/
-PipeOrgan/Cellos) are ported. NOT ported: `sync_On_Marker`
-(`BackEnd.c:1938-1974`, duration adjustment against a sample-marker
-table) -- only relevant to `kUseSyncSnd` voices (Bells/Hysterical), which
-this port never sets `vv.sync_On_Marker = True` for. Likewise the
+PipeOrgan/Cellos) are ported, as is `sync_On_Marker` (`BackEnd.c:1938-1976`,
+duration adjustment against a sample-marker table for `kUseSyncSnd`
+voices, Bells/Hysterical -- `vv.sync_On_Marker`/`vv.markerBuf`/
+`vv.lastMarkerIndex` are set in `api.new_voice()` from the marker tables
+extracted into `_data.py`). NOT ported: the
 `temp = vv.user_Rate_Buf2[i]` embedded-rate-change check
 (`BackEnd.c:1888-1901`, calling the unported `Init_Rate_Params`) is always
 a no-op here since `user_Rate_Buf2` is always zero (no embedded-command
@@ -34,6 +35,7 @@ from ._consts import (
     kSilenceTypeField, kSilenceTypeShift, kSilenceDuration,
     kFrameTime, kNormal_Speech_Rate,
     kTerm_Bound, kNoteDur, kNoteDurShift, kLowVibrato,
+    kSyllable_Start, kSampleMarker, kSampFrameLen,
 )
 from ._phonemes import _SIL_, _w_, _l_, _DX_, _SH_, _s_, _TH_, _LX_
 
@@ -298,12 +300,42 @@ def mod_duration(vv) -> None:
 
         vv.dur_Buf[i] = dur_hold
 
-        # --- singScript / singing branches (BackEnd.c:1977-2029) ---
-        # (sync_On_Marker, BackEnd.c:1938-1974, is not ported -- it adjusts
-        # duration against a sample-marker table, which only applies to
-        # kUseSyncSnd voices (Bells/Hysterical) and is gated behind
-        # vv.sync_On_Marker, which this port never sets to True.)
-        if getattr(vv, "singScript", False):
+        # --- sync_On_Marker / singScript / singing branches (BackEnd.c:1938-2029) ---
+        # sync_On_Marker (BackEnd.c:1938-1976) adjusts duration against a
+        # sample-marker table -- only applies to kUseSyncSnd voices
+        # (Bells/Hysterical), gated on vv.sync_On_Marker (set in
+        # api.new_voice() from the extracted marker tables in _data.py).
+        if getattr(vv, "sync_On_Marker", False):
+            if (cur_ctrl & kSyllable_Start) and first_pass:
+                vv.phon_Ctrl_Buf_2[i] |= kSampleMarker
+
+            if cur_is_vowel or (cur_ctrl & kTerm_Bound):
+                if not (cur_ctrl & kTerm_Bound) and not first_pass:
+                    if (cur_flags & kSonorantF) or first_pass:
+                        vv.phon_Ctrl_Buf_2[i] |= kSampleMarker
+                    else:
+                        vv.phon_Ctrl_Buf_2[i + 1] |= kSampleMarker
+
+                if not first_pass:
+                    note_dur = (vv.markerBuf[vv.markerIndex + 1] - vv.markerBuf[vv.markerIndex]) // (kSampFrameLen >> 1)
+                    dur_adjust = note_dur - total_dur
+                    if next_phon == _SIL_:
+                        vv.dur_Buf[vowel_index] += (dur_adjust - 20)
+                    else:
+                        vv.dur_Buf[vowel_index] += (dur_adjust - 10)
+                    if vv.dur_Buf[vowel_index] < 4:
+                        vv.dur_Buf[vowel_index] = 4
+                    total_dur = 0
+                    vv.markerIndex += 1
+                    if vv.markerIndex == vv.lastMarkerIndex:
+                        vv.markerIndex = 0
+                first_pass = False
+
+            if cur_is_vowel:
+                vowel_index = i
+            total_dur += dur_hold
+
+        elif getattr(vv, "singScript", False):
             if (cur_flags & kVowelF) or (cur_ctrl & kTerm_Bound):
                 if cur_ctrl & kTerm_Bound:
                     if note_dur < vv.Note_Times[5]:

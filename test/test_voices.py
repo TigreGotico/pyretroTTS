@@ -180,6 +180,14 @@ def setup_python_voice(voice_dict):
     vv.user_Pitch_Buf2 = [0] * 512
     vv.controlF0 = vv.VP_baselinePitch
     vv.frameMarker = kNoMarker
+    # kUseSyncSnd voices (Bells/Hysterical) need vv.markerBuf/
+    # lastMarkerIndex populated for Mod_Duration's sync_On_Marker branch
+    # and the frameMarker it drives -- see api.new_voice()/_data.py's
+    # Bells_Markers/Hysterical_Markers.
+    markers = voice_dict.get('markers')
+    if markers:
+        vv.markerBuf[:len(markers)] = markers
+        vv.lastMarkerIndex = len(markers) - 1
     return vv
 
 

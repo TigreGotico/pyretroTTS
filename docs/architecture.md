@@ -258,20 +258,40 @@ single-sentence text is.
   (`init_voice()` already derives the correct value from `numOfNotes`, the
   same pattern previously fixed in `test/test_voices.py`'s own
   `setup_python_voice()`) and to call `e_set_tempo(vv, vv.tempo)` so
-  `vv.Note_Times` is populated — both were real bugs, now fixed. Only
-  `sync_On_Marker` (duration adjustment against a sample-marker table)
-  remains unported — relevant only to `kUseSyncSnd` voices
-  (Bells/Hysterical), which have their own separate, already-documented
-  gap below regardless.
+  `vv.Note_Times` is populated — both were real bugs, now fixed.
+  `sync_On_Marker` (duration adjustment against a marker-time table, for
+  the `kUseSyncSnd` voices Bells/Hysterical) is ALSO ported — see below.
 - `synth_AdjustPhons1` (a `ParseSentence` hook alongside
   `synth_AdjustPhons2`) is a true no-op in the C reference (confirmed by
   reading its empty body in `formantSynth.c`) and needs no porting.
   `Place_Stress_In_Consonant` is likewise dead code in the C reference —
   its only call site is commented out — so it needs no porting either.
-- Bells/Hysterical (`kUseSyncSnd` voices) show a few residual `marker`
-  field mismatches in `test/test_voices.py`: their marker buffer is
-  populated from an external sample-audio file header in the C reference
-  (`InsertSample`, `Say.c`) that isn't part of this port.
+- (Fixed) Bells/Hysterical (`kUseSyncSnd` voices) used to show a few
+  residual `Frame.marker` mismatches — previously assumed to be a
+  fundamental gap from not porting external sample-audio playback
+  (`InsertSample`, `Say.c:1471-1499`). Investigation showed every OTHER
+  field (`f0`/formants/amplitude/frame count) already matched exactly —
+  the formant synthesizer never actually switches to the sample-playback
+  glottal source for the tested inputs, so the real gap was much
+  narrower: `Mod_Duration`'s `sync_On_Marker` branch (`BackEnd.c:1938-1976`)
+  needs a marker-TIME table (`vv.markerBuf`/`vv.lastMarkerIndex`) that the
+  real engine reads out of the embedded sample header — `vv.sync_On_Marker`
+  itself was already being set correctly (`_backend.init_voice`), but
+  nothing populated `markerBuf`. Fixed by extracting just the marker-time
+  header (length, marker count, marker times — NOT the PCM sample bytes
+  that follow, never needed) from `Sounds.c`'s `Bells_Sound`/
+  `Hysterical_Sound` arrays into `_data.py`'s `Bells_Markers`/
+  `Hysterical_Markers`, wiring them into `api.new_voice`
+  (`voice_dict['markers']`), and porting `Mod_Duration`'s `sync_On_Marker`
+  branch in `_moduration.py`. This surfaced the same `songIndex`-class
+  bug found for singing voices: `markerIndex` also needs resetting to 0
+  at `ParseSentence`'s very end (`BackEnd.c:4189`), not just its start,
+  once clauses share one `VoiceVar` — fixed alongside the `songIndex`
+  reset in `build_phoneme_plan` (`api.py`). All 68/68
+  `test/test_voices.py` voice×text combinations are bit-exact now, and a
+  119-combination multi-voice/multi-sentence sweep of `synthesize_text`
+  itself came back 119/119 exact — see
+  `test/test_synthesize_text.py::test_kusesyncsnd_marker_frame_exact`.
 - 16-bit wraparound truncation inside the `say_frame` hot loop is not
   exhaustively verified against extreme/out-of-range voice parameters.
 
@@ -326,10 +346,9 @@ against the harness's pitch-buffer dump.
 `api.build_phoneme_plan`/`api.synthesize_text` frame-for-frame against the
 C reference's full pipeline (`FrontEnd.c` + `BackEnd.c`) for real text
 input, reusing `test_voices.py`'s per-frame comparison machinery, across
-all 17 voices (except Bells/Hysterical, which hit the documented
-`kUseSyncSnd` gap below) with a genuine two-word sentence. Read this
-file's module docstring before trusting a green run of it: it previously
-passed a corrupted call (`parse_frames(c_stderr)` instead of
+all 17 voices with a genuine two-word sentence. Read this file's module
+docstring before trusting a green run of it: it previously passed a
+corrupted call (`parse_frames(c_stderr)` instead of
 `parse_frames(c_stdout)`) that made every one of its assertions a false
 positive by comparing against an empty list — now guarded with an
 explicit non-empty/length assertion before the real comparison.
