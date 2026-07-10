@@ -564,7 +564,10 @@ reads them). This boundary matters: `phinton` inserts further phones after
   inputs captured from the oracle across all ten voices. It runs in CI without
   the C. `--write` refuses to regenerate the digest unless the port first matches
   the oracle `allodurs` field for field for all ten voices; the gate is verified
-  to bite on a rule-constant mutation.
+  to bite on a rule-constant mutation. The captured vectors are
+  all default-rate text, so they exercise the inherent-duration path but
+  not the `durxx` user-duration-override branch (reached only by a `[:dv]`
+  duration command); a mutation there passes the gate.
 
 ## Limitations
 
