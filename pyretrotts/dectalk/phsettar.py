@@ -355,12 +355,14 @@ def us_special_coartic(st: PhsettarState, nfon: int, diphpos: int) -> int:
 
 
 def getbegtar(st: PhsettarState, nfone: int) -> int:
-    """`getbegtar` (`ph_setar.c:1293`)."""
+    """`getbegtar` (`ph_setar.c:1293`).
+
+    The C gates the coarticulation call on `nfone & PFONT` (`ph_setar.c:1312`),
+    but `nfone` is a phone index, so that mask is zero and never matches
+    `PFUSA<<PSFONT`: `us_special_coartic` is dead here and is not applied."""
     temp = gettar(st, nfone)
     if temp < -1:
         temp = _diph(st, -temp)
-        if st.par_type == IS_FORM_FREQ:
-            temp += us_special_coartic(st, nfone, 0)
     return s16(temp)
 
 
@@ -427,7 +429,9 @@ def make_dip(st: PhsettarState, pdip: int, inhdr_frames: int, shrink: int) -> No
             if st.par_type == IS_FORM_FREQ:
                 if q.tarnex > 0:
                     newvalue += mlsh1(q.tarnex - newvalue, st.gencoartic)
-                newvalue += us_special_coartic(st, st.nphone, 0)
+                # The C gates this call on `nphone & PFONT` (`ph_setar.c:1528`),
+                # a phone index, so the mask is zero and it is not applied here
+                # (unlike the first-value call above, which uses the phone code).
         raw_time = _diph(st, pdip)
         if raw_time != -1:
             newtime = shrdur(st, raw_time, inhdr_frames, shrink)
@@ -792,8 +796,9 @@ def us_back_smooth_rules(st: PhsettarState, feacur: int, feanex: int,
                     st.bouval = temp + 3
                     if st.phonex == GEN_SIL or (strucnex & FDUMMY_VOWEL) != 0:
                         st.durtran = NF75MS
-            elif st.np == PAP:
-                st.bouval = st.param[PAP].tarend - 6
+                # The C's `else if (np == PAP)` here is nested inside `if (np ==
+                # PAV)` (`p_us_st0.c:1133`), so it is unreachable dead code and
+                # PAP.tarend - 6 is never assigned.
             if ((st.phonex >= USP_P)
                     and (((feacur & FNASAL) == 0) or (st.np != PAV))):
                 st.durtran = 0
@@ -976,16 +981,8 @@ def phsettar(st: PhsettarState) -> None:
             q.tarend = q.tarcur
         # Rule 6: approx general coartic of tarnex with tarend.
         if st.par_type == IS_FORM_FREQ:
-            arg2 = N10PRCNT
-            if (struccur & FSTRESS) == 0:
-                arg2 = N15PRCNT
-                if npar == PF2:
-                    arg2 = N25PRCNT
-            if q.tarnex <= 0:
-                arg1 = q.tarend
-            else:
-                arg1 = q.tarend - q.tarnex
-            q.tarnex = s16(q.tarnex + mlsh1(arg1, arg2))
+            arg1 = q.tarend - q.tarnex
+            q.tarnex = s16(q.tarnex + mlsh1(arg1, N10PRCNT))
 
         # Rule 7: forward smoothing.
         st.bouval = (q.tarlas + q.tarcur) >> 1

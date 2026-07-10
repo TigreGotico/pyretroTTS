@@ -25,9 +25,12 @@ Build the instrumented oracle from a copy of github.com/dectalk/dectalk:
 
 The transition fields (`ftran`/`dftran`/`btran`/`dbtran`/`deldip`/`durlin`/
 `tbacktr`/`tspesh`/`pspesh`) are the interpolation state `draw_frame` (ph.py)
-consumes; `ndip[0]`/`ndip[1]` are the dumped `PARAMETER.ndip` pointer peek (the C
-leaves the pointer advanced past `durlin`/`deldip`, so on non-diphthong phones it
-reads whatever now sits at that offset in the shared `dipspec[]` buffer).
+consumes and match the C exactly. `ndip[0]`/`ndip[1]` are the dumped
+`PARAMETER.ndip` pointer peek: on the phone where a parameter is diphthongized
+they match the C exactly, but on a later non-diphthong phone the C's pointer has
+been advanced further by `advance_frame` (ph.py) during the intervening frames,
+which this phone-by-phone replay does not run -- so those peeks are excluded here
+and are validated instead by the end-to-end frame loop.
 
 Usage:
     DECTALK_SAY=.../say DECTALK_GEN_LIB=.../us/release DECTALK_US_LIB=.../us/release \
