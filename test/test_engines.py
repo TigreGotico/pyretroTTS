@@ -129,3 +129,55 @@ def test_rendered_songs_match_their_golden_hash(path):
         f"the render of {path.name} changed. Synthesis is deterministic, so "
         f"this is a regression -- do not regenerate golden_songs.json."
     )
+
+
+# --- SAM sings ------------------------------------------------------------
+
+def test_sam_sings_a_dectalk_score():
+    from pyretrotts import SAMEngine
+    pcm = SAMEngine().sing("[:phone on] hxeh<200,13>lb<100>ow<400,20>")
+    assert pcm_duration(pcm) > 0.5
+    assert pcm_peak(pcm) > 500
+
+
+@pytest.mark.parametrize("tone,hz", [(13, 130.8), (20, 196.0), (25, 261.6)])
+def test_a_note_sam_sings_lands_on_its_pitch(tone, hz):
+    """Within a semitone. SAM's eight-bit pitch cannot reach every note."""
+    from pitch import fundamental
+
+    from pyretrotts import SAMEngine
+    pcm = SAMEngine().sing(f"[:phone on] aa<400,{tone}>")
+    assert abs(fundamental(pcm) - hz) / hz < 0.059
+
+
+def test_every_dectalk_phoneme_has_a_sam_spelling():
+    from pyretrotts._dectalk import PHONEMES
+    from pyretrotts.sam.engine import DECTALK_TO_SAM
+    speech_sounds = set(PHONEMES) - {"_"}
+    assert speech_sounds <= set(DECTALK_TO_SAM)
+
+
+def test_sam_honours_a_rest():
+    from pyretrotts import SAMEngine
+    scored = SAMEngine().sing("[:phone on] aa<300,13> _<200> iy<300,20>")
+    assert abs(pcm_duration(scored) - 0.8) < 0.05
+
+
+def test_the_tuned_knob_beats_the_modelled_one_where_they_differ():
+    """SAM's pitch arithmetic is not monotonic; some knobs land an octave off."""
+    from pitch import fundamental
+
+    from pyretrotts.sam.engine import SamVoice, _u8_to_s16, pitch_knob, tuned_knob
+    from pyretrotts.sam.sam import render_pcm
+
+    knobs = SamVoice(72, 64, 128, 128)
+    hz = 174.6  # F3, where the modelled knob renders an octave high
+    modelled = pitch_knob(hz)
+    tuned = tuned_knob("AA5", hz, knobs)
+
+    def rendered(knob):
+        return fundamental(_u8_to_s16(render_pcm(
+            "AA5", speed=72, pitch=knob, mouth=knobs.mouth,
+            throat=knobs.throat, singmode=True, phonetic=True)))
+
+    assert abs(rendered(tuned) - hz) < abs(rendered(modelled) - hz)
