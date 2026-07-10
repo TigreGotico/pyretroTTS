@@ -23,6 +23,7 @@ from .api import (
     synthesize_text,
 )
 from .engines import DECtalkEngine, Engine, MacInTalkEngine, SAMEngine
+from .g2p import phonemize, phonemize_words
 from .version import __version__
 
 __all__ = [
@@ -34,6 +35,8 @@ __all__ = [
     "__version__",
     "build_phoneme_plan",
     "new_voice",
+    "phonemize",
+    "phonemize_words",
     "pcm_to_wav",
     "synthesize_phonemes",
     "synthesize_plan",
