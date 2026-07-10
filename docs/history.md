@@ -103,3 +103,33 @@ But formant synthesis has properties neither of those can offer:
 See [architecture.md](architecture.md) for how the MacinTalk engine maps onto
 this codebase, and [dectalk-port-plan.md](dectalk-port-plan.md) for the state
 of the DECtalk port.
+
+## SAM (Don't Ask Software, 1982) — the odd one out
+
+The third engine in this repository is not a Klatt descendant at all. **SAM**,
+the **Software Automatic Mouth**, was written by **Don't Ask Software** and
+published in 1982 for the Commodore 64 and Apple II — years before either
+DECtalk or MacinTalk, and running on an 8-bit machine with a fraction of their
+power. It was sold commercially, later bundled as the C64's on-board speech,
+and its buzzy, robotic voice is one of the most recognizable sounds of early
+home computing.
+
+Where MacinTalk and DECtalk are **formant synthesizers** — resonant filters
+modelling the vocal tract — SAM is **additive**. Each 10 ms frame is three
+oscillators (two sine waves and one rectangle wave) summed open-loop, with no
+resonators and no bandwidths. Consonants that cannot be built that way — the
+fricatives and plosives — are played back from a compressed **1-bit sample
+table** instead. The whole synthesizer is integer-only 8-bit arithmetic
+producing 8-bit unsigned PCM, small enough to have run on a 6502.
+
+SAM has no formant voices to tune. Instead it has four integer knobs —
+**speed, pitch, throat, mouth** — and the well-known preset voices ("Sam",
+"Elf", "Little Robot", "Stuffy Guy", "Little Old Lady", "Extra-Terrestrial")
+are just settings of those four numbers. Its input is either English text,
+converted by an on-board rule engine (the "reciter"), or phoneme mnemonics
+written directly (`/HEHLOW`, with stress digits like `AA5`).
+
+Because SAM descends from a reverse-engineered commercial program whose
+copyright is still held by SoftVoice, Inc., it is **not** covered by this
+project's MIT licence and lives in its own subpackage. See
+[sam.md](sam.md) for the port and `NOTICE` for the licensing position.

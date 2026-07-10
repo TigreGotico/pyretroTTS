@@ -1,0 +1,50 @@
+{
+  "Elf": {
+    "phonetic_vowel": "f171e22baf5a92fe1ae12f66aed4b20bfa8a84e666bd51d41f9c56fca967980b",
+    "phonetic_word": "8595f311dbff40126c471034d2178efd533a6922d93e3dc18fab72d899c9f76a",
+    "text_flap": "813dd256a2259288adabd5ef4cdf46db4b0a1ae29447e2cebe353f02d13418c8",
+    "text_hello": "5cd79c7c6a4ce8e8701a24b4019cb6c989260e5bd9657ca623e642de55f6231b",
+    "text_numbers": "da53097a8931d937991f88e90b9ce31c37824ebdf3a7ff10dec56a239d622944",
+    "text_sentence": "04ed75621399b85bb0a25b1f7834cdd4e603a0733bf852b905de0eea047ab8e1"
+  },
+  "Extra-Terrestrial": {
+    "phonetic_vowel": "33dfd1a62f1ead876458746589b500cfb3586ed18150ec459f5c7a1b4ec1fe0a",
+    "phonetic_word": "690415c5cf3b9c1c9a2aaf8b15b4ee57663a751c6b58c7c5ad92eda48ef69294",
+    "text_flap": "4ff00c754276080b2de07e425db093dda5a9654e367cb81949db7eef02919cb8",
+    "text_hello": "549fc16a588030c7da6eaaf68a4d09c2f18d8053e0b79ccb3760a520d80420c1",
+    "text_numbers": "55ed93f85cb3328bb4225e101c233aae2760b378defa6429e59f177aae9584f6",
+    "text_sentence": "af2e05fc92b293ffda0d862bbe37d5b4a52050b24ac528e7ca08ed342c283e5d"
+  },
+  "Little Old Lady": {
+    "phonetic_vowel": "e3756bd88bfdfc50943d02c9b052b03166266c61e7a75dcc835dcb39d7208643",
+    "phonetic_word": "6523d1938a1efbd53be08b33b2ac1115c7a93d4bb39db30f872d972fdcb9fd1f",
+    "text_flap": "ee3660cc49cb3480c92062caebb6297c00fca1c7222595f6dec783a32f7911a9",
+    "text_hello": "053714fdf65f228e728145aa3ae1f88b576f319cf3902e5d516ac395f1676481",
+    "text_numbers": "bc4bae1ccf395bc76654492f71c303ef108c44fa4ccac884ab744e87d2443bdc",
+    "text_sentence": "a2adb11e0a0c0dab5a6f2a76f6879b4e34734951046988ad4860605a0485f879"
+  },
+  "Little Robot": {
+    "phonetic_vowel": "b8f2a733a07b45e567ce92e7fdcfcb90322d2ec47a38ef9a6d87796cf56015a6",
+    "phonetic_word": "84d19fc9024b7a27ac8c7aa9dbf100ac6ac199233adc4ae5730e0769b8934e0b",
+    "text_flap": "83d9c6a2c4b639aed39d478de5f1711d95f13aebdfc6c6b6b1ecb9fe910f14d7",
+    "text_hello": "8db621a73939c1c84a4bda921b1fc4bb0b54ac71ae41cc286c434effe3bf1793",
+    "text_numbers": "0492d387d68d5ccc05b2389d32716bad64437b28acd8dda4eff23f0208dcc4b4",
+    "text_sentence": "a904086195b0b243bbcaeedf1233b2c1c649414e698a0aa9f6b06565c70c4175"
+  },
+  "Sam": {
+    "phonetic_vowel": "4f7f72cffe5b67920b96b4f783c3c85ffdab1d21a4d1820cf34dec352fb80984",
+    "phonetic_word": "0988b5fa3971907e56e6b99860a61780ad762036045e0d8f06cc4ed9aacb268f",
+    "text_flap": "48670b8ddee2792d39b355815bb35ddc69bb5b21546d1599711959fcd8b2165b",
+    "text_hello": "a332a643bed3f7f0f63c2c639de51c9d07e888ad9246401e78404d518e70ceff",
+    "text_numbers": "ac2b799f5aa5b9c04971852f43f2fddc0ee5986bb21f0919fd4b85c057ea147b",
+    "text_sentence": "266239ef3aa3db0bb24cef5b3d5d87ef065465c1881a12bb44c95a0edf158314"
+  },
+  "Stuffy Guy": {
+    "phonetic_vowel": "94feb7a668abf9ea762fe3b31d15747b19cb751791b2f7db9a3a6f27703a49fc",
+    "phonetic_word": "fce66a62586c70bf2d8ccdc2fa04144daf405e5cf7ce9e26868036584f584ba3",
+    "text_flap": "c05b0a668f9f8c5aeba41028fde5c95b7c80776e82eb79d5f066c046360d76d4",
+    "text_hello": "34fb10b5555b5978a4569cdd4cc7df7e9830e0848bf50eee82d2a06a578e96b1",
+    "text_numbers": "b3419c138902f57dba4c1e0669cb19c35df55894ca472c6b5e9e9606e5c1d135",
+    "text_sentence": "6945af3c006da4e22b5de1f6df7b0537300d831c3fa0ec7c5846d772c57a05a9"
+  }
+}

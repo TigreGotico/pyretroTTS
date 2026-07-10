@@ -1,5 +1,11 @@
 # Adding SAM (Software Automatic Mouth) as a third engine
 
+> **Status: shipped.** The port landed in `pyretrotts/sam/` and is byte-exact
+> against the C reference. For the engine as built — modules, voices, quirks,
+> verification and limitations — see [sam.md](sam.md). The evaluation below is
+> the analysis that preceded it; the licensing position it reaches still holds,
+> and the repo owner accepted that risk knowingly (see `NOTICE`).
+
 `pylintalker` (renaming to `pyretroTTS`) hosts two engines behind the `Engine`
 ABC in `pylintalker/engines.py`: `MacInTalkEngine` (a bit-exact port of Apple
 MacinTalk 2/3) and `DECtalkEngine` (DECtalk markup voiced through the MacinTalk

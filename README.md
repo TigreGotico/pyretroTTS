@@ -5,7 +5,7 @@ the "robot voices" of 1980s and 1990s computing. No neural network, no
 audio corpus, no GPU: just a physical model of the human vocal tract,
 driven by a few hundred kilobytes of tables and rules.
 
-Two engines, both descended from Dennis Klatt's formant synthesis
+Two of the three engines descend from Dennis Klatt's formant synthesis
 research at MIT:
 
 - **MacinTalk** (Apple, 1991-1995) — the Macintosh `say -v Fred` voices.
@@ -14,16 +14,28 @@ research at MIT:
   voice. Its inline markup and singing notation are supported; the
   engine itself is being ported.
 
+The third is older and works nothing like the other two:
+
+- **SAM** (Don't Ask Software, 1982) — the Commodore 64 / Apple II
+  "Software Automatic Mouth." Not a formant synthesizer at all: three
+  additive oscillators plus 1-bit sampled consonants. Ported bit-exact
+  against the C reference. It is separately encumbered and kept in its
+  own subpackage — see `NOTICE` and `docs/sam.md`.
+
 They are different codebases by different authors. Fred is not Perfect
-Paul. See `docs/history.md`.
+Paul, and neither is Sam. See `docs/history.md`.
 
 ```python
 from pyretrotts import MacInTalkEngine, DECtalkEngine
+from pyretrotts.sam import SAMEngine
 
 MacInTalkEngine().say("hello, this is a test.", "out.wav")
 
 # DECtalk's singing notation: phoneme, duration in ms, tone
 DECtalkEngine().sing("[:phone on] hxeh<200,13>lb<100>ow<400,20>", "hello.wav")
+
+# SAM: pick a voice preset, or feed it phoneme mnemonics directly
+SAMEngine().say("i am sam.", "sam.wav", "Little Robot")
 ```
 
 That's it — text or a score in, a WAV file out, computed in real time on
