@@ -284,3 +284,41 @@ if __name__ == "__main__":
     print(f"\n{len(tests) - len(failures)}/{len(tests)} passed")
     if failures:
         sys.exit(1)
+
+
+# --- the four opcodes that step a phoneme's own duration and pitch ---------
+# BackEnd.c:4013-4027. Written `>`, `<`, `/` and `\` in raw phoneme input.
+
+def test_p_rise_steps_the_pitch_of_its_own_phoneme():
+    from pyretrotts._assembly import collect_fe_tokens
+    sa = collect_fe_tokens("the chickenpox.", dur_cmd_step=341, pitch_cmd_step=42)
+    # CHICKENPOX carries kDictComp, which aliases _pRise_ (mt4.h:759).
+    assert [v for v in sa.pitch_buf if v] == [42]
+
+
+def test_a_voice_without_a_step_size_cannot_step():
+    from pyretrotts._assembly import collect_fe_tokens
+    sa = collect_fe_tokens("the chickenpox.", dur_cmd_step=0, pitch_cmd_step=0)
+    assert not any(sa.pitch_buf)
+
+
+def test_duration_multipliers_default_to_one_hundred_percent():
+    from pyretrotts._assembly import collect_fe_tokens
+    from pyretrotts._consts import kDur_One
+    sa = collect_fe_tokens("hello world.", dur_cmd_step=341, pitch_cmd_step=42)
+    assert set(sa.dur_buf) == {kDur_One}
+
+
+def test_a_compound_noun_word_synthesizes():
+    """CHICKENPOX's kDictComp opcode once reached maxDurTbl as a phoneme id."""
+    from pyretrotts._data import Fred_Voice
+    from pyretrotts.api import synthesize_text
+    assert len(synthesize_text(Fred_Voice, "the chickenpox.")) > 1000
+
+
+def test_the_step_sizes_come_from_the_voice():
+    from pyretrotts._data import Fred_Voice
+    from pyretrotts.api import new_voice
+    vv = new_voice(Fred_Voice)          # Say.c:1421-1422
+    assert vv.pitchCmdStep == Fred_Voice["pitchCmdStep"]
+    assert vv.durCmdStep == Fred_Voice["durCmdStep"]

@@ -577,6 +577,7 @@ class VoiceVar:
     """Analogous to voiceVar struct in mt4.h (simplified for synthesis)."""
     __slots__ = (
         "Busy", "outputPaused", "speechState",
+        "durCmdStep", "pitchCmdStep",
         "BoundryDurTbl", "CMDQueue", "ExpOf2Tbl", "FEinputDone", "Note_Times",
         "OctFreqTbl", "VP_assertiveness", "VP_baselineFall", "VP_baselinePitch",
         "VP_baselinePitch_Save1", "VP_baselinePitch_Save2", "VP_fallAmt", "VP_fallAmt1",
@@ -674,6 +675,8 @@ class VoiceVar:
         self.cur_Phon_Dur_CF = 0
         self.cur_PhonBuf_Index_CF = 0
         self.speakState = kSpeakDone
+        self.pitchCmdStep = 0
+        self.durCmdStep = 0
 
         # Engine.c playback state (Engine.c's e_*SpeechAt/e_ContinueSpeech).
         self.Busy = False
@@ -1624,7 +1627,9 @@ def init_voice(vv: VoiceVar, vd: Voice) -> None:
         gain = mRatio(vd.get('vGain', 100), 200, 16)
         _inv_dft(zz, voice_wave, vd.get('vWave1', None), gain)
 
-    zz.locusOffset = vd.get('locus', 0)  # Say.c:1425
+    vv.pitchCmdStep = vd.get('pitchCmdStep', 0)  # Say.c:1421
+    vv.durCmdStep = vd.get('durCmdStep', 0)      # Say.c:1422
+    zz.locusOffset = vd.get('locus', 0)          # Say.c:1425
     init_fixed_formants(zz)
     _init_rate_and_vibrato(vv, vd)
     _init_notes(vv, vd)

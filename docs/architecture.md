@@ -193,9 +193,11 @@ against.
 **`Search_Suffix`'s trie is approximated.** `_morph.py` uses an ordered
 `endswith()` cascade rather than the `SuffixTab` data at `Data.c:3848`.
 
-**`user_Dur_Buf2` and `user_Pitch_Buf2` have no source.** All nineteen embedded
-commands are implemented, but none of them writes those two per-phoneme override
-channels. `Fill_Phon_Buf_2` carries them through faithfully; nothing fills them.
+**The C oracle cannot check the duration and pitch channels.** `test_voices.py`
+transfers the C reference's phoneme plan into a fresh `VoiceVar`, but the
+harness dumps no `user_Pitch_Buf2` or `user_Dur_Buf2`, so those arrive zeroed
+and any text that steps them appears to mismatch. Compare the rendered WAV
+sample-for-sample instead, as the golden gate does.
 
 **`e_SpeakBuffer` and `e_UseVoice` are absent.** They drive `FrontEnd.c`'s
 streaming parser and `fsynth.c`'s voice loader. `api.synthesize_text` and

@@ -229,7 +229,10 @@ def build_phoneme_plan(
             vv.sync_On_Marker = False
             vv.singing = False
 
-    sa = collect_fe_tokens(commands.text, commands)
+    sa = collect_fe_tokens(
+        commands.text, commands,
+        dur_cmd_step=vv.durCmdStep, pitch_cmd_step=vv.pitchCmdStep,
+    )
     # collect_fe_tokens counted each queued command against the phoneme it was
     # written in front of (QueueCommand, BackEnd.c:3592-3599). Load the queue
     # itself; fill_phon_buf_2 carries the per-phoneme counts into

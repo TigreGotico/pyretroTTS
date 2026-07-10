@@ -57,6 +57,8 @@ from ._consts import (
     kContent_Word,
     kContr,
     kDet,
+    kDur_One,
+    kDurStepRes,
     kEmphaticStress,
     kFirst_Syllable_In_Word,
     kHas_Adj,
@@ -134,6 +136,8 @@ from ._phonemes import (
     _Comma_,
     _Comp_,
     _d_,
+    _dDec_,
+    _dInc_,
     _EmphStress_,
     _Exclam_,
     _f_,
@@ -144,7 +148,9 @@ from ._phonemes import (
     _n_,
     _p_,
     _Period_,
+    _pFall_,
     _Prep_,
+    _pRise_,
     _Quest_,
     _r_,
     _s_,
@@ -391,6 +397,10 @@ class SentenceAssembly:
     note_buf: list = field(default_factory=lambda: [0])   # user_Note_Buf1: EC_slnc durations
     rate_buf: list = field(default_factory=lambda: [0])   # user_Rate_Buf1: EC_rate/EC_ratr
     cmd_buf: list = field(default_factory=lambda: [0])    # user_Cmd_Buf1: commands queued at each phoneme
+    #: user_Pitch_Buf1: a pitch offset, stepped by the _pRise_/_pFall_ opcodes
+    pitch_buf: list = field(default_factory=lambda: [0])
+    #: user_Dur_Buf1: a duration multiplier, scaled by the _dInc_/_dDec_ opcodes
+    dur_buf: list = field(default_factory=lambda: [kDur_One])
     #: (ctrl_type, ctrl_data) in queue order, the CMDQueue `cmd_buf` counts into
     queued_commands: list = field(default_factory=list)
     word_count: int = 0
@@ -607,6 +617,8 @@ def _place_phrasing(words: list) -> list:
 def collect_fe_tokens(
     text: str,
     commands: BracketCommands | None = None,
+    dur_cmd_step: int = 0,
+    pitch_cmd_step: int = 0,
 ) -> SentenceAssembly:
     """Adapted port of `Collect_FE_Tokens` (`BackEnd.c:3712-4157`).
 
@@ -715,6 +727,8 @@ def collect_fe_tokens(
     """
 
     commands = commands or BracketCommands()
+    durCmdStep = dur_cmd_step
+    pitchCmdStep = pitch_cmd_step
     emphasis_overrides = commands.emphasis
     silence_overrides = commands.silences
     pos_overrides = commands.pos
@@ -735,6 +749,8 @@ def collect_fe_tokens(
             sa.note_buf.append(0)
             sa.rate_buf.append(0)
             sa.cmd_buf.append(0)
+            sa.pitch_buf.append(0)
+            sa.dur_buf.append(kDur_One)
 
     def queue_command(ctrl_type: int, ctrl_data: int) -> None:
         """QueueCommand (BackEnd.c:3592): park the command in the queue and
@@ -925,6 +941,25 @@ def collect_fe_tokens(
         opcodes = tok.phon_str[1:] if tok.phon_str and tok.phon_str[0] == _Word_ else tok.phon_str
 
         for cur_phon in opcodes:
+            # The four opcodes that step this phoneme's own duration and pitch
+            # (BackEnd.c:4013-4027). Written `>`, `<`, `/` and `\\` in raw
+            # phoneme input.
+            if cur_phon == _dInc_ and durCmdStep:
+                ensure(in_index)
+                sa.dur_buf[in_index] = (sa.dur_buf[in_index] * durCmdStep) >> kDurStepRes
+                continue
+            if cur_phon == _dDec_ and durCmdStep:
+                ensure(in_index)
+                sa.dur_buf[in_index] = (sa.dur_buf[in_index] << kDurStepRes) // durCmdStep
+                continue
+            if cur_phon == _pRise_ and pitchCmdStep:
+                ensure(in_index)
+                sa.pitch_buf[in_index] += pitchCmdStep
+                continue
+            if cur_phon == _pFall_ and pitchCmdStep:
+                ensure(in_index)
+                sa.pitch_buf[in_index] -= pitchCmdStep
+                continue
             if cur_phon == _Comp_:
                 sa.is_compound_noun = True
                 flag_current(kCompoundNoun)

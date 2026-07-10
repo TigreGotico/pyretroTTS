@@ -48,6 +48,11 @@ TEXTS = {
     # the start of the clause, so this must differ from `embedded_leading`.
     "embedded_mid": "hello [[pbas60]]world",
     "embedded_leading": "[[pbas60]]hello world",
+    # A dictionary entry carrying the kDictComp opcode, which aliases _pRise_
+    # and steps this phoneme's pitch.
+    "compound_noun": "the chickenpox.",
+    # The four phoneme-stream opcodes that step duration and pitch.
+    "phoneme_steps": "[[mode PHON]]/hxEHl>OW<[[mode TEXT]]",
 }
 
 
