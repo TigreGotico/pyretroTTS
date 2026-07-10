@@ -28,9 +28,10 @@ counterpart is checked out locally as `lintalker-c`).
 | Per-phoneme duration assignment | `BackEnd.c` (`Mod_Duration`) | Ported (`lintalker/_moduration.py`), verified bit-exact against the C reference across voices/sentences (`test/test_assembly_pipeline.py`) |
 | Pitch buffer assembly into a synthesizable phoneme plan | `BackEnd.c` (`Fill_Pitch_Buf`, `Store_F0_and_Time`) | Ported (`lintalker/_pitchbuf.py`), verified bit-exact against the C reference across voices/sentences (`test/test_pitchbuf.py`) |
 | Pronunciation dictionary lookup | `english_lex.c`/`English.lex` | Ported (`lintalker/_lexicon.py`), verified bit-exact for 249 test words (`test/test_lexicon.py`) |
-| Sentence-internal phrase boundaries (content-word/function-word transitions) | `Morph.c` (`PlacePhrasing`, SEP6 rule only) | Approximated with a fixed POS-set check, not full context disambiguation (`lintalker/_assembly.py`) |
-| WH-question vs. yes/no-question intonation | `Morph.c` (`PlacePhrasing`, `YesNo_Phrase`) | Approximated with a fixed WH-word set (`lintalker/_assembly.py`) |
-| Full POS disambiguation (compound words, prefix/suffix stripping, context-dependent word class) | `Morph.c` (`ResolvePOS`, `DoMorph`) | Not ported |
+| Word-by-word POS disambiguation (context-dependent word class) | `Morph.c` (`ResolvePOS`) | Ported (`lintalker/_morph.py`), verified bit-exact via the SEP6/WH-question tests it feeds (`test/test_synthesize_text.py`) |
+| Sentence-internal phrase boundaries (content-word/function-word transitions) | `Morph.c` (`PlacePhrasing`, SEP6 rule only) | Approximated with a POS-set check (SEP1-5 not ported) (`lintalker/_assembly.py`) |
+| WH-question vs. yes/no-question intonation | `Morph.c` (`PlacePhrasing`, `YesNo_Phrase`) | Ported using real `ResolvePOS` POS tags (`lintalker/_assembly.py`) |
+| Compound-word/suffix-stripping decomposition | `Morph.c` (`DoMorph`, `Zap_POS`, `SetPOS_FromSuffix`) | Not ported |
 
 **What this means today:** `lintalker.api.synthesize_text(voice_dict, text)`
 synthesizes English text end-to-end, verified frame-for-frame bit-exact
@@ -41,9 +42,11 @@ multi-clause text (input is split on `. , ! ?`, since a comma ends a
 sentence-assembly cycle in the real engine too; all clauses of one call
 share a single synthesis session the same way the real engine's `Talk()`
 does, so clause-to-clause continuity is preserved, not just each clause's
-own correctness). Remaining known gaps: no `Morph.c` (compound-word
-decomposition, prefix/suffix stripping, full POS disambiguation for
-context-dependent words), no number/abbreviation expansion, no embedded
+own correctness). Word-by-word part-of-speech disambiguation
+(`Morph.c`'s `ResolvePOS`) is ported, driving both phrase-boundary
+placement and question intonation from real POS tags rather than
+word lists. Remaining known gaps: no `Morph.c` compound-word/suffix-
+stripping decomposition, no number/abbreviation expansion, no embedded
 commands — see `docs/architecture.md` for specifics. You can still
 synthesize from an already-built phoneme plan directly via
 `lintalker.api.synthesize_phonemes()`, and there's a lower-level

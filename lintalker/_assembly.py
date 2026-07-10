@@ -171,7 +171,7 @@ from typing import Optional
 
 from ._consts import (
     kUndefPOS, kNoun, kVerb, kAdj, kAdv, kInterr, kInterj, kVPart, kQuant,
-    kIPron, kRPron, kPrep,
+    kIPron, kRPron, kPrep, kConj, kRelPro,
     kPrimaryStress, kSecondaryStress, kEmphaticStress, kStressField,
     kContent_Word, kWord_Start, kWord_Initial_Consonant, kCompoundNoun,
     kTerm_Bound, kPrep_Start, kVerb_Start, kSilenceTypeShift, kSilenceTypeField,
@@ -208,13 +208,6 @@ _PUNCT_TO_BND = {
     '?': kBND_Quest,
 }
 
-# Approximates Morph.c's kInterr POS tag for the WH-question downgrade
-# above -- no dictionary POS lookup is ported, so this is a fixed word list
-# rather than a real tag check.
-_WH_WORDS = {
-    'HOW', 'WHAT', 'WHY', 'WHO', 'WHOM', 'WHOSE', 'WHICH', 'WHEN', 'WHERE',
-}
-
 
 @dataclass
 class FEWordToken:
@@ -236,7 +229,8 @@ class FEWordToken:
     phon_hold: Optional[list] = None
     pos_code2: Optional[list] = None
     comp_pos2: int = 0
-    pos_choice: int = kUndefPOS        # documented placeholder for Set_POS (Morph.c, unported) -- see docstring
+    pos_choice: int = kUndefPOS        # resolved by _morph.resolve_pos() (Morph.c's ResolvePOS)
+    alt_choice: int = kUndefPOS        # tok->altChoice -- see _morph.py; unused downstream so far
     is_content_word: bool = False      # BackEnd.c:3971-3980
     word_emphasis: str = "none"        # documented default: no emphasis-markup source ported
     trailing_punct: Optional[str] = None   # one of '.', ',', '!', '?', or None
@@ -265,25 +259,12 @@ def make_fe_word_token(word: str, punct: Optional[str]) -> FEWordToken:
             pos_code2=list(entry.pos_code2) if entry.pos_code2 is not None else None,
             comp_pos2=entry.comp_pos2,
         )
-        # Documented placeholder for Set_POS (Morph.c:830-991, unported):
-        # take the first non-undefined POS code. This is NOT the real
-        # disambiguation algorithm -- see module docstring.
-        first_pos = tok.pos_code1[0] if tok.pos_code1 else kUndefPOS
-        tok.pos_choice = first_pos if first_pos != kUndefPOS else kUndefPOS
-        # Narrow bias, NOT real Set_POS disambiguation: when kPrep is among
-        # the candidates but isn't pos_code1[0] (e.g. "to" lists kAdv=11
-        # first, pos_code1=[11,12,3,-1]), prefer kPrep. Confirmed via direct
-        # instrumentation of the C reference that "to" resolves to a
-        # preposition in ordinary sentences ("welcome to the show."); this
-        # port's placeholder was picking kAdv, which fed the SEP6
-        # phrase-boundary approximation below the WRONG POS (an ambiguous
-        # function word wrongly classified as a SEP6-content POS), placing
-        # the boundary one word later than the real engine. This bias is a
-        # frequency heuristic (prepositional use vastly dominates adverbial
-        # use for the closed-class words affected), not context resolution
-        # -- a real Set_POS port would replace it. See docs/architecture.md.
-        if tok.pos_choice != kPrep and kPrep in tok.pos_code1:
-            tok.pos_choice = kPrep
+        # pos_choice is intentionally left at its kUndefPOS default here --
+        # it's resolved for the WHOLE clause at once by _morph.resolve_pos()
+        # (a real port of Morph.c's ResolvePOS), called from
+        # collect_fe_tokens() once all of a clause's tokens are built, since
+        # disambiguating one word can require looking at neighboring words'
+        # own candidate POS sets.
     else:
         # No dictionary entry -> _engtop.engtop() rule-engine fallback.
         # FrontEnd.c:1650 calls SetPOStoVal(t, kNoun) right after EngToP(),
@@ -307,7 +288,9 @@ def make_fe_word_token(word: str, punct: Optional[str]) -> FEWordToken:
             pos_choice=kNoun,
         )
 
-    tok.is_content_word = tok.pos_choice in _CONTENT_POS
+    # is_content_word is set after _morph.resolve_pos() finalizes pos_choice
+    # for the whole clause (see collect_fe_tokens) -- NOT here, since a
+    # word's own dictionary candidates alone don't determine it.
     tok.trailing_punct = punct
     tok.phrase_bnd = _PUNCT_TO_BND.get(punct, kBND_None) if punct else kBND_None
     return tok
@@ -422,8 +405,19 @@ def collect_fe_tokens(text: str) -> SentenceAssembly:
             sa.ctrl_buf[temp_index] &= ~kStressField
             sa.ctrl_buf[temp_index] |= kEmphaticStress
 
-    for word, punct in tokenize(text):
-        tok = make_fe_word_token(word, punct)
+    # Build every clause word up front (not one-at-a-time inside the main
+    # loop below): _morph.resolve_pos() needs the whole clause's tokens at
+    # once (it looks at next/next2/next3 word's OWN candidate POS sets to
+    # disambiguate the current word, mirroring Morph.c's ResolvePOS being a
+    # separate pass over the whole token buffer before Collect_FE_Tokens
+    # ever consumes it).
+    from ._morph import resolve_pos
+    _clause_tokens = [make_fe_word_token(word, punct) for word, punct in tokenize(text)]
+    resolve_pos(_clause_tokens)
+    for _tok in _clause_tokens:
+        _tok.is_content_word = _tok.pos_choice in _CONTENT_POS
+
+    for tok in _clause_tokens:
         sa.words.append(tok)
 
         # --- _Word_ opcode case (BackEnd.c:3903-3982) ---
@@ -503,24 +497,30 @@ def collect_fe_tokens(text: str) -> SentenceAssembly:
             store(cur_phon)
 
         # --- end-of-word punctuation (BackEnd.c:3992-4007) ---
+        punct = tok.trailing_punct
         if punct is not None and punct in _PUNCT_TO_PHON:
             phon = _PUNCT_TO_PHON[punct]
             bnd = tok.phrase_bnd
-            # WH-question downgrade (Morph.c:PlacePhrasing:307-353): a
-            # trailing "?" only keeps rising-question intonation
-            # (_Quest_/kBND_Quest) for a yes/no question. The real engine
-            # tracks this via YesNo_Phrase, set false when the CLAUSE-FIRST
-            # word is tagged kInterr (a WH-word: how/what/why/who/whose/
-            # which/when/where) -- confirmed by direct instrumentation of
-            # the C reference (Fill_Pitch_Buf produced 3 pitch-buffer
-            # entries for "how are you today?", not the 5 this port
-            # produced before this fix, because the real engine silently
-            # rewrites the terminal mark to _Period_/kBND_Decl for WH
-            # questions). No POS dictionary lookup is ported here, so this
-            # approximates YesNo_Phrase with a fixed WH-word set rather
-            # than Morph.c's full kInterr/kPrep+kRelPro/kConj+kInterr
-            # sequence -- see docs/architecture.md "Known gaps".
-            if phon == _Quest_ and sa.words and sa.words[0].word in _WH_WORDS:
+            # WH-question downgrade (Morph.c:PlacePhrasing:139-144/307-353):
+            # a trailing "?" only keeps rising-question intonation
+            # (_Quest_/kBND_Quest) for a genuine yes/no question. The real
+            # engine tracks this via YesNo_Phrase (true by default, set
+            # false when the clause-first word is kInterr -- a WH-word --
+            # or when the first word is kPrep/kConj and the SECOND is
+            # kInterr/kRelPro, e.g. "in what way..."). Confirmed by direct
+            # instrumentation of the C reference: "how are you today?"
+            # produces 3 pitch-buffer entries in the real engine, not 5 --
+            # a straight _Quest_ mapping's count. Uses resolve_pos()'s real
+            # POS resolution (kInterr comes from the dictionary, e.g. "how"/
+            # "what"), not a fixed word list.
+            yes_no_phrase = True
+            if sa.words:
+                if sa.words[0].pos_choice == kInterr:
+                    yes_no_phrase = False
+                elif sa.words[0].pos_choice in (kPrep, kConj) and len(sa.words) > 1:
+                    if sa.words[1].pos_choice in (kInterr, kRelPro):
+                        yes_no_phrase = False
+            if phon == _Quest_ and not yes_no_phrase:
                 phon = _Period_
                 bnd = kBND_Decl
             written = store(_SIL_)

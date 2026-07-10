@@ -31,6 +31,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from lintalker._assembly import make_fe_word_token, collect_fe_tokens
+from lintalker._morph import resolve_pos
 from lintalker._consts import (
     kUndefPOS, kNoun, kArt, kPrimaryStress, kSecondaryStress,
     kEmphaticStress, kContent_Word, kWord_Start, kCompoundNoun,
@@ -46,9 +47,14 @@ from lintalker._phonemes import _Word_, _Period_, _Comma_, _Quest_, _Exclam_
 def test_dictionary_hit_carries_real_pos_and_content_word_flag():
     """THE is a dictionary hit with pos1=[19 (kArt), -1, -1, -1]
     (test_lexicon.py:59, bit-exact vs C). Articles are not in the
-    content-word POS set (BackEnd.c:3971-3973), so is_content_word is False
-    and pos_choice takes the documented placeholder value pos_code1[0]."""
+    content-word POS set (BackEnd.c:3971-3973), so is_content_word is
+    False. pos_choice is resolved by _morph.resolve_pos() (a real port of
+    Morph.c's ResolvePOS), called once per clause -- make_fe_word_token()
+    alone only builds the candidate data (pos_code1/comp_pos1/...), so a
+    single-token clause is resolved here to match collect_fe_tokens()'s
+    real two-stage flow."""
     tok = make_fe_word_token("THE", None)
+    resolve_pos([tok])
     assert tok.from_dictionary is True
     assert tok.pos_code1[0] == kArt
     assert tok.pos_choice == kArt
@@ -60,6 +66,7 @@ def test_dictionary_hit_noun_is_content_word():
     """CHICKENPOX: pos1=[0 (kNoun), -1, -1, -1] (test_lexicon.py:82,
     bit-exact vs C) and is a compound-noun-flagged entry."""
     tok = make_fe_word_token("CHICKENPOX", None)
+    resolve_pos([tok])
     assert tok.from_dictionary is True
     assert tok.pos_code1[0] == kNoun
     assert tok.pos_choice == kNoun
@@ -74,8 +81,11 @@ def test_dictionary_miss_falls_back_to_engtop_with_noun_pos():
     confirmed against a real C oracle dump (a rule-fallback word came back
     from the compiled engine with kContent_Word set, only possible with a
     content-word POS). So rule-fallback words get pos_choice = kNoun and
-    ARE content words."""
+    ARE content words -- resolve_pos() confirms the same default via its
+    own (pos_count1+pos_count2)==1 short-circuit, since a fallback word's
+    only candidate is kNoun."""
     tok = make_fe_word_token("CROMULENT", None)
+    resolve_pos([tok])
     assert tok.from_dictionary is False
     assert tok.pos_choice == kNoun
     assert tok.is_content_word is True

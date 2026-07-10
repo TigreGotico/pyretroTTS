@@ -195,9 +195,10 @@ def test_wh_question_vs_yesno_question_frame_exact():
     direct instrumentation of the C reference: "how are you today?" produces
     only 3 pitch-buffer entries in the real engine (matching a period-ended
     sentence), not 5 (what a straight _Quest_ mapping produces). Fixed in
-    `_assembly.collect_fe_tokens` via a fixed WH-word set (no POS dictionary
-    lookup is ported, so this approximates Morph.c's kInterr tag check --
-    see docs/architecture.md "Known gaps").
+    `_assembly.collect_fe_tokens` using `_morph.resolve_pos()`'s real
+    `kInterr` tag resolution (a real port of `Morph.c`'s `ResolvePOS`),
+    matching the C reference's own `YesNo_Phrase` logic
+    (`Morph.c:139-144`) rather than a fixed WH-word list.
 
     Both "how are you today?" and "are you happy?" (a genuine yes/no
     question, correctly keeping _Quest_/kBND_Quest) are asserted
@@ -247,11 +248,13 @@ def test_sep6_phrase_boundary_frame_exact():
     Noun/Verb/Adj/Adv -> anything else, unless the current word is
     clause-final) -- see that code's docstring and docs/architecture.md.
     Exercising this also required fixing a second, compounding bug: the
-    POS-choice placeholder (`pos_code1[0]`) picked kAdv over kPrep for
-    "to" (`pos_code1=[11,12,3,-1]`), wrongly classifying it as a SEP6
-    "content" POS and placing the boundary one word later than the real
-    engine -- fixed with a narrow bias toward kPrep when it's among the
-    candidates (see `make_fe_word_token`'s docstring)."""
+    original placeholder POS selection (`pos_code1[0]`) picked kAdv over
+    kPrep for "to" (`pos_code1=[11,12,3,-1]`), wrongly classifying it as a
+    SEP6 "content" POS and placing the boundary one word later than the
+    real engine. `_morph.resolve_pos()` (a real port of Morph.c's
+    `ResolvePOS`) has since replaced that placeholder entirely and
+    resolves "to" to kPrep correctly via real context rules, not a
+    frequency bias."""
     _check("the quick brown fox jumps over the lazy dog.", "Fred")
     _check("testing one two three", "Fred")
     _check("welcome to the show.", "Fred")

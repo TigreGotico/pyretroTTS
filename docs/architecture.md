@@ -117,17 +117,22 @@ single-sentence text is.
   count — see that file's module docstring for the full history.
 - Two remaining `test/test_voices.py --all` sample-level mismatches:
   Princess on `"testing one two three"`/`"I am."` (not `"hello"`/
-  `"goodbye"`). Localized (not yet fixed) to `Calc_Pole_Coefficients`'s
-  F1-F4 cascade filter coefficient computation (`Say.c:110-129`) for
-  specific `f1`+`f1_Offset`/`bw1` combinations reached partway through
-  longer utterances — confirmed the divergence is NOT `hfEmph` or reverb
-  related (both already match at the point of divergence), and IS
-  entirely within the cascade branch (`SampV`; the parallel branch
-  contributes 0 at the point checked). Princess has nonzero `f1_Offset`/
-  `f2_Offset`/`f3_Offset` (10/20/50) where Fred/Cellos/other spot-checked
-  voices have 0 — worth checking `CosTblPtr`/`BcoeffTblPtr`/
-  `CcoeffTblPtr` table content or indexing at the specific `pitch`/
-  `bandWidth` values this hits next.
+  `"goodbye"`). Narrowed further than previously documented: the
+  divergence is NOT `Calc_Pole_Coefficients` itself — direct
+  instrumentation confirmed the C reference's `CosTbl`/`BcoeffTbl`/
+  `CcoeffTbl` table VALUES at the exact indices hit (`pitch=1095`
+  `=f1(1085)+f1_Offset(10)`, `bw=336` → `bwIndex=57`) match this port's
+  tables exactly, and calling `_backend.calc_pole_coefficients(zz, 1095,
+  336)` directly reproduces the C reference's exact `Acoeff`/`Bcoeff`/
+  `Ccoeff` (2245/12727/-6780). The prior sample (last sample of the
+  preceding frame) also matches exactly, so the F1 filter's carried-over
+  memory (`Na1`/`Nb1`) entering the diverging frame should be identical
+  too. That leaves the SOURCE feeding the F1 filter that frame (the
+  nasal zero/pole stage immediately before it, or `sourceC` itself --
+  aspiration/wavesample/buzz) as the next place to check; not yet
+  isolated further. Princess has nonzero `f1_Offset`/`f2_Offset`/
+  `f3_Offset` (10/20/50) where Fred/Cellos/other spot-checked voices have
+  0, which is the one confirmed difference correlated with this bug.
 - (Fixed) What was tracked here as an unexplained `f0` drift over long
   sentences was actually TWO separate, real bugs, both confirmed via
   direct instrumentation of the C reference and now fixed:
@@ -153,52 +158,34 @@ single-sentence text is.
      is most sentences longer than a few words. Fixed with a `Morph.c`
      `PlacePhrasing` SEP6 approximation in `_assembly.py` (content-word ->
      function-word POS transition, unless clause-final) — see
-     `test/test_synthesize_text.py::test_sep6_phrase_boundary_frame_exact`
-     and that fix's own docstring in `_assembly.py` for the POS-choice
-     bias (kPrep over kAdv) it also required for words like "to".
+     `test/test_synthesize_text.py::test_sep6_phrase_boundary_frame_exact`.
   A broader multi-sentence, multi-voice sweep after both fixes went from
-  71/105 to 79/105 exact combinations (the remaining ones are the
-  cross-clause `VoiceVar`-reset gap below, the still-open "once upon a
-  time..." gap below, and the `GoodNews`/`BadNews`/`PipeOrgan`/`Cellos`
-  note-driven voices, not yet investigated for this specific sentence).
-- Root cause found (not yet fixed) for `"once upon a time there was a
-  princess."`: `ctrl_buf` diverges starting at "ONCE" (index 1), which
-  this port classifies as a content word (`kAdv`, `is_content_word=True`,
-  driven by the `pos_code1[0]` placeholder picking `pos_code1=[11(kAdv),
-  7(kConj), -1, -1]`'s first entry) while the C reference does NOT mark it
-  as content there. Confirmed via `Morph.c`'s real `ResolvePOS`
-  (`Morph.c:358-1009`): "once" at the start of the idiomatic "once upon a
-  time" functions as a subordinating conjunction (`kConj`), not a plain
-  adverb -- real disambiguation depends on context (what follows the
-  word), using `compPOS1`/`compPOS2` bitfields (`FEWordToken.comp_pos1`/
-  `comp_pos2`, already captured but unused for this) across ~650 lines of
-  rules. The SEP6 boundary also ends up on the wrong word here (index 5
-  instead of C's index 13) but that's downstream of this earlier
-  divergence, not a separate bug. Unlike the WH-word/kPrep biases already
-  applied, this ISN'T fixable with a small frequency-based heuristic:
-  "once" is a genuine adverb in other contexts ("I've been there once"),
-  so picking kConj unconditionally would just move the bug. A real fix
-  needs an actual (partial) `ResolvePOS` port using the existing
-  `comp_pos1`/`comp_pos2` data -- see task #8.
-- (Fixed) WH-question vs. yes/no-question intonation: a trailing `?` was
-  unconditionally mapped to `_Quest_`/`kBND_Quest` (rising question
-  intonation). Direct instrumentation of the C reference
-  (`lintalker-c/src/Morph.c:307-353`, `PlacePhrasing`'s `YesNo_Phrase`
-  flag) showed the real engine only keeps that rising intonation for a
-  genuine yes/no question — a WH-question (clause starts with a word
-  tagged `kInterr`: how/what/why/who/whose/which/when/where) has its
-  terminal mark silently rewritten to `_Period_`/`kBND_Decl` (falling/
-  declarative intonation) before `Fill_Pitch_Buf` ever runs. Confirmed via
-  a throwaway, fully-reverted instrumentation pass on `lintalker-c`
-  (`git status` clean afterward): `"how are you today?"` produces exactly
-  3 pitch-buffer entries in the real engine, not 5 — what a straight
-  `_Quest_` mapping produces. `_assembly.collect_fe_tokens` now
-  approximates `YesNo_Phrase` with a fixed WH-word set (no POS dictionary
-  lookup is ported, so this isn't the real `kInterr`/`kPrep`+`kRelPro`/
-  `kConj`+`kInterr` tag sequence from `Morph.c:139-144`) — see
-  `test/test_synthesize_text.py::test_wh_question_vs_yesno_question_frame_exact`.
-  A full `Morph.c` port would replace this approximation with the real
-  POS-driven check.
+  71/105 to 79/105 exact combinations at the time (see below for the two
+  gaps this uncovered, both since fixed).
+- (Fixed) `_morph.py` now ports `Morph.c`'s `ResolvePOS` (`Morph.c:358-1006`)
+  in full: the real word-by-word POS disambiguation cascade, using each
+  word's dictionary candidate POS codes/composite bitmasks
+  (`pos_code1`/`pos_code2`/`comp_pos1`/`comp_pos2`, already captured) plus
+  the previous word's resolved POS and the next/next2/next3 words' own
+  candidates. `_assembly.collect_fe_tokens` now builds a clause's whole
+  word list up front and calls `resolve_pos()` on it before the main
+  per-phoneme loop runs (mirroring the real engine calling `ResolvePOS` as
+  a separate pass over the whole token buffer before `Collect_FE_Tokens`
+  ever consumes it), replacing the old `pos_code1[0]` placeholder
+  entirely. This fixed two things that were previously worked around with
+  narrow heuristics, now removed: the SEP6 phrase-boundary fix's `kPrep`-
+  over-`kAdv` bias for ambiguous function words like "to", and the
+  WH-question/yes/no-question intonation fix's fixed WH-word list (both
+  now resolve correctly via real `kInterr`/`kPrep`/`kConj` tags, matching
+  `YesNo_Phrase`'s real logic at `Morph.c:139-144`). It also fixed the
+  previously-documented `"once upon a time there was a princess."`
+  divergence: "once" now resolves to `kConj` (matching the C reference)
+  instead of `kAdv`, since it's the first word of an idiomatic clause
+  opener, not a plain adverb — confirmed frame-exact
+  (`test/test_synthesize_text.py`). NOT ported: `Zap_POS`/
+  `SetPOS_FromSuffix`/`DoMorph` (compound-word/suffix-stripping
+  decomposition, `Morph.c:1010-2373`) and the rest of `PlacePhrasing`'s
+  rules (SEP1-5, `Morph.c:148-271`) — see the entry below and task #8.
 - (Fixed) Multi-clause synthesis used to give each clause of
   `api.synthesize_text` an independently-reset `VoiceVar`, rather than the
   real engine's single continuous `Talk()` session (`BackEnd.c:4264-4298`:
