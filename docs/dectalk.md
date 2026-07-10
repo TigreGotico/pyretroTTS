@@ -171,6 +171,32 @@ The tables in `tables.py` are regenerated from the C by
 `tools/dump_dectalk_vtm.py`, which compiles a small program including the real
 `vtm/vtmtable.h` -- the values are guaranteed identical, not retyped.
 
+
+## Reproducing the oracle
+
+The documented build produces `say` under
+`src/samplosf/build/dtsamples/<uname -r>/us/release/`, not under `src/dist/`.
+Running it needs both the generic and the US library on the loader path, and
+`DECTALK_DIR` pointing at the directory holding `dtalk_us.dic`:
+
+```bash
+cd ~/AgentWorkspaces/ovos/dectalk-c/src && ./autogen.sh && ./configure && make -j
+GEN=$(dirname $(find . -name libtts.so | head -1))
+DIC=$(dirname $(find . -name dtalk_us.dic | head -1))
+cd samplosf/build/dtsamples/*/us/release
+LD_LIBRARY_PATH="$GEN" DECTALK_DIR="$DIC" ./say -fo out.wav -a "hello world"
+```
+
+That invocation has not yet been made to work from a clean checkout:
+`TextToSpeechStartup` fails with code 1. The bit-exact result reported for the
+ten voices was obtained from an instrumented build whose exact configuration is
+not yet reproduced here. Until it is, the golden digests in
+`test/dectalk_golden.json` are a regression gate over the ported code, not an
+independent confirmation that the port matches the C reference.
+
+The gate does bite: mutating `frac4mul`'s shift from `>> 12` to `>> 11` fails
+ten of the twelve golden cases.
+
 ## Limitations
 
 - **No text input.** The whole `cmd/` -> `lts/` -> `ph/` chain that turns text
