@@ -23,7 +23,7 @@ from ._backend import (
     start_talk,
 )
 from ._consts import SamplingRate, kNoMarker, kSpeakLastFrame, kSpeakNewPhon
-from ._embeddedcmd import do_ctrl, scan_bracket_commands
+from ._embeddedcmd import scan_bracket_commands
 from ._engine import e_set_tempo
 from ._frontend import split_clauses
 from ._moduration import mod_duration
@@ -52,10 +52,9 @@ def new_voice(voice_dict: Voice) -> VoiceVar:
     # (BackEnd.c:4364-4368). A no-op for voices that do not sing.
     e_set_tempo(vv, vv.tempo)
 
-    # Bells and Hysterical time their syllables against marker points in a
-    # sampled source (InsertSample, Say.c:1471-1499). The sample audio itself
-    # is never played here, but Mod_Duration's sync_On_Marker branch needs the
-    # marker times to compute the same vowel durations.
+    # Bells and Hysterical sync their syllables to marker points in their
+    # sampled glottal source (InsertSample, Say.c:1471-1499). Mod_Duration's
+    # sync_On_Marker branch reads these times to compute vowel durations.
     markers = voice_dict.get('markers')
     if markers:
         vv.markerBuf[:len(markers)] = markers
@@ -200,24 +199,19 @@ def build_phoneme_plan(
     _reset_for_clause(vv)
 
     commands = scan_bracket_commands(text, initial_rate=vv.speech_Rate)
-    if commands.queued:
-        # The real engine positions each command's effect at a specific
-        # phoneme, via an opcode embedded in phon_Buf_1 (StuffBECommand/
-        # Parse_Embedded_Command). This pipeline has no equivalent slot, so
-        # the command applies at the start of the clause instead of before
-        # the word it was written in front of.
-        idx = vv.cmdBufCount + vv.ctrlCount
-        for _word_index, ctrl_type, ctrl_data in commands.queued:
-            vv.CMDQueue[idx] = (ctrl_type, ctrl_data)
-            idx += 1
-            vv.ctrlCount += 1
-        do_ctrl(vv)
     if commands.final_rate is not None:
         # vv->lastRate is a single persistent field, not reset per clause, so
         # a later clause's rate/ratr resolves against this baseline.
         vv.speech_Rate = commands.final_rate
 
     sa = collect_fe_tokens(commands.text, commands)
+    # collect_fe_tokens counted each queued command against the phoneme it was
+    # written in front of (QueueCommand, BackEnd.c:3592-3599). Load the queue
+    # itself; fill_phon_buf_2 carries the per-phoneme counts into
+    # user_Cmd_Buf2, and start_new_phon drains them through do_ctrl.
+    for idx, (ctrl_type, ctrl_data) in enumerate(sa.queued_commands):
+        vv.CMDQueue[idx] = (ctrl_type, ctrl_data)
+
     fill_phon_buf_2(vv, sa)
     vv.end_Punctuation = sa.end_punctuation
     pitch_raise_and_fall(vv)

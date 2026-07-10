@@ -235,22 +235,52 @@ def test_scan_bracket_commands_dlim_changes_subsequent_delimiters():
     assert bc.queued == ()
 
 
-def test_scan_bracket_commands_applied_end_to_end_via_build_phoneme_plan():
-    """Regression test for the api.build_phoneme_plan integration: a
-    bracketed pbas command actually changes vv.voiceNaturalPitch, and
-    the resulting phoneme plan is the same length as the equivalent
-    plain text (the command itself contributes no phonemes)."""
+def test_pbas_is_queued_against_the_phoneme_it_precedes():
+    """QueueCommand (BackEnd.c:3592-3599) counts a command against the phoneme
+    slot it was written in front of, and DoCtrl applies it when synthesis
+    reaches that phoneme -- not when the plan is built."""
     from pylintalker._data import Fred_Voice
     from pylintalker.api import build_phoneme_plan, new_voice
 
     vv_plain = new_voice(Fred_Voice)
-    plan_plain = build_phoneme_plan(Fred_Voice, "hello", vv_plain)
+    plan_plain = build_phoneme_plan(Fred_Voice, "hello world", vv_plain)
 
-    vv_cmd = new_voice(Fred_Voice)
-    plan_cmd = build_phoneme_plan(Fred_Voice, "[[pbas60]]hello", vv_cmd)
+    vv_first = new_voice(Fred_Voice)
+    plan_first = build_phoneme_plan(Fred_Voice, "[[pbas60]]hello world", vv_first)
 
-    assert vv_cmd.voiceNaturalPitch != vv_plain.voiceNaturalPitch
-    assert len(plan_cmd.phonemes) == len(plan_plain.phonemes)
+    vv_second = new_voice(Fred_Voice)
+    plan_second = build_phoneme_plan(Fred_Voice, "hello [[pbas60]]world", vv_second)
+
+    # The command contributes no phonemes, wherever it sits.
+    assert len(plan_first.phonemes) == len(plan_plain.phonemes)
+    assert len(plan_second.phonemes) == len(plan_plain.phonemes)
+
+    def command_slots(vv, plan):
+        return [i for i in range(len(plan.phonemes)) if vv.user_Cmd_Buf2[i]]
+
+    # Each lands on a different phoneme, and later in the buffer for the later word.
+    first_slots = command_slots(vv_first, plan_first)
+    second_slots = command_slots(vv_second, plan_second)
+    assert len(first_slots) == 1 and len(second_slots) == 1
+    assert first_slots[0] < second_slots[0]
+    assert command_slots(vv_plain, plan_plain) == []
+
+    # Building the plan queues the command; it does not apply it.
+    assert vv_first.voiceNaturalPitch == vv_plain.voiceNaturalPitch
+
+
+def test_pbas_position_changes_the_audio():
+    """Moving a pbas command to a different word must change the output."""
+    from pylintalker._data import Fred_Voice
+    from pylintalker.api import synthesize_text
+
+    at_first = synthesize_text(Fred_Voice, "[[pbas60]]hello world")
+    at_second = synthesize_text(Fred_Voice, "hello [[pbas60]]world")
+    plain = synthesize_text(Fred_Voice, "hello world")
+
+    assert at_first != plain
+    assert at_second != plain
+    assert at_first != at_second
 
 
 def test_scan_bracket_commands_emph():

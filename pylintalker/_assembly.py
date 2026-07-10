@@ -387,8 +387,11 @@ class SentenceAssembly:
 
     phon_buf: list = field(default_factory=lambda: [_SIL_])
     ctrl_buf: list = field(default_factory=lambda: [0])
-    note_buf: list = field(default_factory=lambda: [0])   # phon_Buf_1-side user_Note_Buf1 equivalent (EC_slnc durations)
-    rate_buf: list = field(default_factory=lambda: [0])   # phon_Buf_1-side user_Rate_Buf1 equivalent (EC_rate/EC_ratr)
+    note_buf: list = field(default_factory=lambda: [0])   # user_Note_Buf1: EC_slnc durations
+    rate_buf: list = field(default_factory=lambda: [0])   # user_Rate_Buf1: EC_rate/EC_ratr
+    cmd_buf: list = field(default_factory=lambda: [0])    # user_Cmd_Buf1: commands queued at each phoneme
+    #: (ctrl_type, ctrl_data) in queue order, the CMDQueue `cmd_buf` counts into
+    queued_commands: list = field(default_factory=list)
     word_count: int = 0
     stress_counter: int = 0
     end_punctuation: int = 0
@@ -728,6 +731,14 @@ def collect_fe_tokens(
             sa.ctrl_buf.append(0)
             sa.note_buf.append(0)
             sa.rate_buf.append(0)
+            sa.cmd_buf.append(0)
+
+    def queue_command(ctrl_type: int, ctrl_data: int) -> None:
+        """QueueCommand (BackEnd.c:3592): park the command in the queue and
+        count it against the phoneme slot it was written in front of."""
+        ensure(in_index)
+        sa.queued_commands.append((ctrl_type, ctrl_data))
+        sa.cmd_buf[in_index] += 1
 
     def flag_current(flag: int) -> None:
         ensure(in_index)
@@ -873,6 +884,12 @@ def collect_fe_tokens(
         if rate_overrides and _wi in rate_overrides:
             ensure(in_index)
             sa.rate_buf[in_index] = rate_overrides[_wi]
+        # --- pbas/pmod/volm/rset/sync: queued against this word's own start
+        # slot, exactly as QueueCommand counts them against
+        # phonBuf_1_In_Index (BackEnd.c:3598).
+        for _cmd_wi, _ctrl_type, _ctrl_data in commands.queued:
+            if _cmd_wi == _wi:
+                queue_command(_ctrl_type, _ctrl_data)
         word_initial = True
         sa.is_compound_noun = False
         sa.last_word_index = in_index

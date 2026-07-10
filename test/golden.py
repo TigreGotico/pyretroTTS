@@ -44,6 +44,10 @@ TEXTS = {
     "currency": "$5.25",
     "clock": "the meeting is at 3:45.",
     "embedded": "[[rate240]]fast [[char LTRL]]DEC",
+    # A queued command mid-clause: it must act at the word it precedes, not at
+    # the start of the clause, so this must differ from `embedded_leading`.
+    "embedded_mid": "hello [[pbas60]]world",
+    "embedded_leading": "[[pbas60]]hello world",
 }
 
 

@@ -9,9 +9,9 @@ of the pipeline: once a phoneme plan is built, some phonemes carry a count of
 queued control words in `user_Cmd_Buf2`, and `say_frame` calls `do_ctrl` once
 per frame to apply that phoneme's share of them.
 
-`C_reset` and `C_voice` raise NotImplementedError. `C_reset` needs ResetVoice
-(fsynth.c), which is not ported; `C_voice`'s case is commented out in the C
-source, and raising is louder than repeating a silent no-op.
+`C_reset` raises NotImplementedError: it needs `ResetVoice`, which is not
+ported. `C_voice` is a no-op, as in the C source, whose case body is commented
+out.
 """
 from __future__ import annotations
 
