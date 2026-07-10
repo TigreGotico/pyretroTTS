@@ -105,6 +105,51 @@ back as 375.
 coarser — no `yu`, no distinct r-coloured vowels, one `t` where DECtalk also has
 `tx` — so `DECTALK_TO_SAM` collapses several. Notes land within a semitone.
 
+## Which is the most intelligible
+
+`tools/intelligibility.py` renders ten phonetically varied sentences in every
+voice, runs them through the Parakeet speech recognizer, and reports word error
+rate. That is a proxy, not a verdict: the recognizer was trained on human speech
+and penalizes a voice for being synthetic as well as for being unclear. The
+ranking is worth more than the numbers.
+
+Only MacinTalk and SAM appear below. DECtalk's voices are MacinTalk voices
+standing in for them, so each scores identically to its substitute -- `Perfect
+Paul` and `Fred` both land at 24.9%, `Frail Frank` and `Junior` both at 14.9%.
+That the pairs agree exactly is a useful check that the harness measures the
+voice and not the noise.
+
+| WER | voice | |
+|---:|---|---|
+| 14.9% | Junior | the clearest voice here |
+| 19.7% | Cellos | |
+| 20.9% | Ralph | |
+| 21.2% | Bad News | |
+| 22.7% | Whisper, Trinoids | |
+| 22.8% | Kathy, Princess | |
+| 24.9% | **Fred** | the default, and middling |
+| 25.6% | Boing | |
+| 26.3% | Zarvox | |
+| 32.5% | Pipe Organ | |
+| 35.6% | Good News | |
+| 41.9% | Deranged | |
+| 52.2% | Bells | |
+| 55.3% | SAM, Little Old Lady | the best SAM manages |
+| 57.0% | SAM, Sam | the default SAM voice |
+| 67-70% | SAM, the other four presets | |
+| 74.9% | Bubbles | |
+| 87.0% | Hysterical | barely words at all |
+
+Two things stand out. `Fred`, the voice everyone remembers, is not
+MacinTalk's clearest -- `Junior` beats it by ten points, and even the singing
+`Cellos` is easier to transcribe. And **the whole of SAM sits below the worst
+ordinary MacinTalk voice.** Nine years and a filter bank are the difference
+between 25% and 57%.
+
+The novelty voices deserve their scores. `Bubbles` and `Hysterical` are the two
+that drive the formant model from a sampled glottal source; the recognizer hears
+gurgling and laughter, and so do you.
+
 ## Which one to use
 
 Use **MacinTalk** for anything you want to be intelligible. It has the
