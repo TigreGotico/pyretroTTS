@@ -4,18 +4,32 @@ Smoke test for the DoCtrl port (lintalker._embeddedcmd.do_ctrl).
 DoCtrl (BackEnd.c) drains vv.ctrlCount queued (type, data) commands from
 vv.CMDQueue, applying pitch/mod/volume/reset/voice changes to vv. The queue
 is normally filled by QueueCommand (BackEnd.c), itself driven by
-FrontEnd.c's embedded backtick-command parser (EmbeddedCmd.c) -- neither of
-which is ported here (see _embeddedcmd.py's module docstring). That means:
+FrontEnd.c's embedded bracket-command parser (EmbeddedCmd.c) -- see
+_embeddedcmd.py's scan_bracket_commands for the ported subset (pbas/pmod/
+volm) and its module docstring for the rest. That means:
 
-  * There is no way to reach do_ctrl through test_harness's plain-text CLI
-    in this port: feeding `` `pbas +100` hello `` (verified empirically
-    against ./lintalker-c/bin/Debug/test_harness -- the C reference *does*
-    react to it, shifting f1/f2/f3 on frame 0 relative to plain "hello")
-    only exercises FrontEnd.c's PendingCommands path, which is a different,
-    unported mechanism from CMDQueue/DoCtrl. There is no committed harness
-    invocation that fills CMDQueue directly (it requires text tokenization
-    machinery this port doesn't have), so there is no bit-exact reference
-    trace to pin here the way test_voices.py/test_engtop.py do.
+  * There is no way to verify do_ctrl (or scan_bracket_commands) frame-exact
+    through test_harness's plain-text CLI in this port. A PRIOR pass of this
+    file claimed feeding `` `pbas +100` hello `` (backtick-delimited)
+    "verified empirically" that the C reference reacts to it -- that claim
+    was a misreading. Direct phoneme decoding of the C reference's output
+    for that exact text proved the backtick span was never recognized as a
+    command at all: "PBAS" isn't a dictionary word, so the reference spoke
+    the bracketed text LITERALLY (spelled letter-by-letter, then "100" read
+    as individual digits), producing a real (but irrelevant) f0 difference
+    from speaking different words, not from an applied pitch change. Trying
+    `[[pbas100]]hello`/`[pbas100]hello` (the delimiters `mt4.h`'s
+    defaultCmdBeginDelim/defaultCmdEndDelim source constants actually
+    specify) showed no such literal-reading artifact, but also no
+    detectable effect on "hello" itself -- this compiled test_harness
+    binary shows no evidence of implementing embedded-command recognition
+    at all, for any delimiter, via its `-v <voice> <text>` CLI. This is the
+    same class of reference-verification blocker documented for the
+    Symbols dictionary investigation (docs/architecture.md). There is no
+    committed harness invocation that fills CMDQueue directly (it requires
+    text tokenization machinery this port doesn't have), so there is no
+    bit-exact reference trace to pin here the way test_voices.py/
+    test_engtop.py do.
   * This test therefore drives do_ctrl directly with hand-built CMDQueue
     entries and asserts against the arithmetic pinned in BackEnd.c's DoCtrl
     (lines ~272-328), not against a captured C trace.
@@ -157,6 +171,58 @@ def test_regression_voice_set_never_queues_commands():
     68 voice x text comparisons."""
     vv = _new_vv()
     assert vv.user_Cmd_Buf2 == [0] * len(vv.user_Cmd_Buf2)
+
+
+def test_scan_bracket_commands_strips_and_parses_pbas():
+    from lintalker._embeddedcmd import scan_bracket_commands
+
+    clean, cmds = scan_bracket_commands("[[pbas300]]hello world")
+    assert clean == "hello world"
+    assert cmds == [(0, C_absPitch, 300 << 16)]
+
+
+def test_scan_bracket_commands_word_index_tracks_preceding_words():
+    from lintalker._embeddedcmd import scan_bracket_commands
+
+    clean, cmds = scan_bracket_commands("hello [[volm50]] world")
+    assert clean == "hello  world"
+    assert cmds == [(1, C_absVol, 50 << 16)]
+
+
+def test_scan_bracket_commands_relative_sign():
+    from lintalker._embeddedcmd import scan_bracket_commands
+
+    clean, cmds = scan_bracket_commands("[[pbas+50]]hello")
+    assert cmds == [(0, C_relPitch, 50 << 16)]
+
+    clean, cmds = scan_bracket_commands("[[pbas-50]]hello")
+    assert cmds == [(0, C_relPitch, -(50 << 16))]
+
+
+def test_scan_bracket_commands_unrecognized_keyword_left_untouched():
+    from lintalker._embeddedcmd import scan_bracket_commands
+
+    clean, cmds = scan_bracket_commands("[[bogus123]]hello")
+    assert clean == "[[bogus123]]hello"
+    assert cmds == []
+
+
+def test_scan_bracket_commands_applied_end_to_end_via_build_phoneme_plan():
+    """Regression test for the api.build_phoneme_plan integration: a
+    bracketed pbas command actually changes vv.voiceNaturalPitch, and
+    the resulting phoneme plan is the same length as the equivalent
+    plain text (the command itself contributes no phonemes)."""
+    from lintalker.api import build_phoneme_plan, new_voice
+    from lintalker._data import Fred_Voice
+
+    vv_plain = new_voice(Fred_Voice)
+    plan_plain = build_phoneme_plan(Fred_Voice, "hello", vv_plain)
+
+    vv_cmd = new_voice(Fred_Voice)
+    plan_cmd = build_phoneme_plan(Fred_Voice, "[[pbas60]]hello", vv_cmd)
+
+    assert vv_cmd.voiceNaturalPitch != vv_plain.voiceNaturalPitch
+    assert len(plan_cmd[0]) == len(plan_plain[0])
 
 
 if __name__ == "__main__":

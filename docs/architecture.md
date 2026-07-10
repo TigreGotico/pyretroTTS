@@ -17,7 +17,7 @@
 | `BackEnd.c` (`Fill_Pitch_Buf`, `Store_F0_and_Time`) | `lintalker/_pitchbuf.py` | Turns the ctrl-bit pitch contour into `pitch_Buf_Freq`/`pitch_Buf_Time`/`pitch_Buf_Flags`, verified bit-exact against the C reference across voices/sentences (`test/test_pitchbuf.py`). |
 | `Engine.c` | `lintalker/_engine.py` | Top-level init/speak/reset/rate/pitch/volume API, built on `_backend.py`. `e_speak_buffer` (the text-in entry point) and a few fsynth-dependent setters (`e_reset_params`, `e_use_voice`, `e_reinit_voice`) raise `NotImplementedError` naming the specific unported upstream C function they need. |
 | `BackEnd.c` (`DoCtrl`, the per-phoneme `CMDQueue` dispatcher: absolute/relative pitch, volume, mod) | `lintalker/_embeddedcmd.py` | Ported (see `test/test_embeddedcmd.py`); `C_reset`/`C_voice` are unimplemented/no-op the same way upstream leaves them, pending `ResetVoice`/`NewVoice` |
-| `EmbeddedCmd.c` (the FrontEnd bracket-delimited text-command parser, e.g. `[[pbas200]]` -- `[[`/`]]` are the default delimiters, `mt4.h`'s `defaultCmdBeginDelim`/`defaultCmdEndDelim`, a distinct mechanism from `DoCtrl` above — it sets `PendingCommands` bits that `FrontEnd.c` later turns into `CMDQueue` entries via `QueueCommand`) | not ported | Depends on the unported `FrontEnd.c` tokenizer |
+| `EmbeddedCmd.c` (the FrontEnd bracket-delimited text-command parser, e.g. `[[pbas200]]` -- `[[`/`]]` are the default delimiters, `mt4.h`'s `defaultCmdBeginDelim`/`defaultCmdEndDelim`, a distinct mechanism from `DoCtrl` above — it sets `PendingCommands` bits that `FrontEnd.c` later turns into `CMDQueue` entries via `QueueCommand`) | `lintalker/_embeddedcmd.py`'s `scan_bracket_commands` | Ported for `pbas`/`pbar`/`pmod`/`pmor`/`volm`/`volr` (applied as an immediate state change at clause start, not true per-phoneme positioning); `rate`/`rset`/`vers`/`xtnd`/`char`/`cmnt`/`dlim`/`mode`/`nmbr`/`emph`/`slnc`/`sync` not ported; cannot be verified frame-exact against `lintalker-c`'s compiled `test_harness` -- see "Known gaps" |
 | `Morph.c` (`ResolvePOS`, `PlacePhrasing` SEP1-6, `DoMorph`'s common suffix functions) | `lintalker/_morph.py` (suffix decomposition) + `lintalker/_assembly.py` (`resolve_pos`/`_place_phrasing`) | Word-by-word POS disambiguation, mid-clause phrase boundaries, and plural/3rd-person/`-LY`/`-EST`/`-ER`/`-ED`/`-ING`/`-MENT`/`-ABLE`/`-NESS`/`-ISM`/`-OR`/`-IZE`-family suffix decomposition all ported; true compound-noun decomposition and `PlacePhrasing`'s SEP7/parenthesized-clause handling not ported |
 | `english_lex.c`/`English.lex` | `lintalker/_lexicon.py` | Dictionary lookup (`lookup(word)`), verified bit-exact against the real engine for 249 words spanning common/rare/compound-noun/abbreviation entries (`test/test_lexicon.py`). |
 | `Sounds.c` | not ported | Embedded sound effects (bells, etc.) — raw PCM blobs, not logic |
@@ -447,33 +447,57 @@ single-sentence text is.
   `SpeakTokenAsNumber`/`GetNextToken` tokenizer state machine (decimals,
   currency, years, phone numbers) is larger still and out of scope for
   a first pass regardless.
-- No embedded commands (`EmbeddedCmd.c`'s bracket-delimited text-command
-  parser -- e.g. `[[pbas200]]`, `[[`/`]]` being `mt4.h`'s
-  `defaultCmdBeginDelim`/`defaultCmdEndDelim` -- is unported; `DoCtrl`,
-  the per-phoneme dispatcher it would feed via `StuffBECommand`
-  embedding a `BE_ECmd` opcode into `phonStr` that `Parse_Embedded_
-  Command` later turns into a `QueueCommand` call, is ported and tested
-  independently via `test/test_embeddedcmd.py`). Direct instrumentation
-  confirmed the mechanism's WIRING (`ChangeDelimiters`/`ChangePitchBase`/
-  etc. setting `PendingCommands` bits and `New*` fields,
-  `ProcessPendingCommands` converting them to `phonStr` opcodes,
-  `Parse_Embedded_Command` converting those to `CMDQueue` entries) is
-  all real, documented C source -- but feeding `lintalker-c`'s compiled
-  `test_harness` CLI text like `"[[pbas300]]hello"` or
-  `"[[slnc500]]hello"` produced NO observable frame-count or `f0`
-  difference versus the same text without the bracketed command,
-  across several commands tried. This means either `test_harness`'s
-  entry point doesn't route through the full `FrontEnd.c` tokenizer
-  path that recognizes bracketed commands at all, or some enabling
-  mode/flag is off by default that the CLI never sets -- either way,
-  this specific compiled `test_harness` binary cannot currently be used
-  to verify an embedded-command port frame-exact, the same class of
-  problem documented above for the `Symbols` dictionary. Porting the
-  bracket-parser itself (argument scanning, the ~15 individual `Parse_
-  *_Command` routines, Fixed-point value parsing) is mechanical and
-  independent of this blocker, but confirming it bit-exact against a
-  real reference is not, until a working invocation path (or a second,
-  independent reference) is found.
+- (Partially fixed) `EmbeddedCmd.c`'s bracket-delimited text-command
+  parser (e.g. `[[pbas200]]`, `[[`/`]]` being `mt4.h`'s
+  `defaultCmdBeginDelim`/`defaultCmdEndDelim`) is now ported for the
+  three commands that resolve to a `CMDQueue` entry `DoCtrl` can apply
+  -- `pbas`/`pbar` (baseline pitch, absolute/relative), `pmod`/`pmor`
+  (pitch modulation depth), `volm`/`volr` (volume) --
+  `_embeddedcmd.scan_bracket_commands`, including the shared
+  Fixed-point value grammar (`Get32BitFixedValue`, `Data.c:3844`'s
+  `Divisors[]` table) and the relative-vs-absolute tagging/resolution
+  (`Parse_pbas_Command`/`ChangePitchBase`/`ProcessPendingCommands`'s
+  `0xC000<<16`-tagged-bits scheme). Wired into `api.build_phoneme_plan`:
+  a clause's bracketed commands are stripped from its text and applied
+  as an IMMEDIATE state change via `do_ctrl` at the start of that
+  clause's synthesis -- a documented simplification of the real
+  mechanism's per-PHONEME positioning (`StuffBECommand` embeds a
+  `BE_ECmd` opcode directly in `phon_Buf_1` at the exact point the
+  command appeared in the token stream; this port's pipeline has no
+  equivalent opcode-in-phon-stream slot, so a command anywhere within
+  one clause takes effect at that whole clause's start instead of
+  precisely before the word it preceded).
+
+  Direct instrumentation confirmed the WIRING this reuses (`ChangeDelim
+  iters`/`ChangePitchBase`/etc. setting `PendingCommands` bits and
+  `New*` fields, `ProcessPendingCommands` converting them to `phonStr`
+  opcodes, `Parse_Embedded_Command` converting those to `CMDQueue`
+  entries) is all real, documented C source -- but this port cannot
+  verify it frame-exact against `lintalker-c`'s compiled `test_harness`:
+  feeding it `"[[pbas300]]hello"` produced no observable `f0` difference
+  from plain `"hello"`, and a follow-up attempt with backtick delimiters
+  (`` `pbas60`hello ``) that INITIALLY looked like it worked (a real
+  `f0` shift) turned out, on direct phoneme decoding, to be the
+  reference simply SPEAKING THE LITERAL BRACKETED TEXT -- "PBAS" isn't
+  a dictionary word, so it got spelled letter-by-letter followed by
+  "60" read as individual digits, producing a real but irrelevant
+  difference from speaking different words, not from an applied pitch
+  change. No delimiter tried produces evidence that this compiled
+  `test_harness` binary recognizes embedded commands at all via its
+  `-v <voice> <text>` CLI -- the same class of problem documented above
+  for the `Symbols` dictionary. `test/test_embeddedcmd.py`'s docstring
+  previously asserted the backtick form was "verified empirically";
+  that was this same misreading and has been corrected. `[[`/`]]` is
+  used in this port's implementation because it's what the C source
+  documents as the default, not because either delimiter was confirmed
+  against a working reference.
+
+  NOT ported: `rate`/`ratr` (routes through `vv->lastRate`/
+  `user_Rate_Buf1`, not `CMDQueue`, and `e_set_speech_rate`'s
+  non-singing branch already isn't ported, see `_engine.py`),
+  `rset`/`vers`/`xtnd`/`char`/`cmnt`/`dlim`/`mode`/`nmbr`/`emph`/
+  `slnc`/`sync` (each a separate parser/side-effect not reachable via
+  `CMDQueue`), and true per-phoneme positioning (see above).
 - Primary/secondary stress placement is gated on POS tagging. For
   dictionary hits, `_lexicon.py:lookup(word)` provides real POS codes.
   For a successful `DoMorph` (`try_s_morph`/`try_do_morph`), the

@@ -203,6 +203,24 @@ def build_phoneme_plan(voice_dict: dict, text: str, vv: Optional[VoiceVar] = Non
         vv = new_voice(voice_dict)
     _reset_for_clause(vv)
 
+    from ._embeddedcmd import scan_bracket_commands, do_ctrl
+    text, _bracket_cmds = scan_bracket_commands(text)
+    if _bracket_cmds:
+        # Simplified integration (see _embeddedcmd.scan_bracket_commands'
+        # docstring "NOT ported" note): the real engine positions each
+        # command's effect at a specific PHONEME via an opcode embedded
+        # in phon_Buf_1 (StuffBECommand/Parse_Embedded_Command), which
+        # this port's pipeline has no equivalent slot for. Applied here
+        # instead as an immediate state change at the START of this
+        # clause, regardless of which word in the clause the bracketed
+        # command actually appeared before.
+        idx = vv.cmdBufCount + vv.ctrlCount
+        for _word_index, ctrl_type, ctrl_data in _bracket_cmds:
+            vv.CMDQueue[idx] = (ctrl_type, ctrl_data)
+            idx += 1
+            vv.ctrlCount += 1
+        do_ctrl(vv)
+
     sa = collect_fe_tokens(text)
     fill_phon_buf_2(vv, sa)
     vv.end_Punctuation = sa.end_punctuation

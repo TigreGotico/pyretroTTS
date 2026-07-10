@@ -42,7 +42,204 @@ from __future__ import annotations
 from ._consts import *
 from ._backend import VoiceVar, e_midi_to_pitch, set_volume
 
-__all__ = ["do_ctrl"]
+__all__ = ["do_ctrl", "scan_bracket_commands"]
+
+# Divisors[] (Data.c:3844), used by Get32BitFixedValue's fractional-digit
+# scaling (EmbeddedCmd.c:203-251).
+_FIXED_DIVISORS = [10, 100, 1000, 10000, 50000]
+
+
+def _parse_fixed_value(text: str, i: int):
+    """Port of `Get32BitFixedValue` (`EmbeddedCmd.c:203-251`): parses an
+    unsigned unsigned-Fixed-point value (`digits[.digits]`) starting at
+    `text[i]`. Returns `(value, next_i)`, `value` being `(msb << 16) |
+    lsb` exactly as the C source constructs it."""
+    n = len(text)
+    msb = 0
+    while i < n and text[i].isdigit():
+        msb = msb * 10 + int(text[i])
+        i += 1
+    lsb = 0
+    if i < n and text[i] == '.':
+        i += 1
+        k = 0
+        while i < n and text[i].isdigit() and k < 5:
+            d = int(text[i])
+            amt = ((d << 16) + _FIXED_DIVISORS[k] // 2) // _FIXED_DIVISORS[k]
+            if k == 4:
+                amt >>= 1
+            lsb += amt
+            i += 1
+            k += 1
+        while i < n and text[i].isdigit():  # skip insignificant remaining digits
+            i += 1
+    return (msb << 16) | lsb, i
+
+
+def _parse_signed_command_value(text: str, i: int):
+    """Port of the common preamble shared by `Parse_pbas_Command`/
+    `Parse_pmod_Command`/`Parse_volm_Command` (`EmbeddedCmd.c:625-716`,
+    `806-813`): an optional leading `+`/`-` (marking a RELATIVE change),
+    then a Fixed value, clamped to `0x3FFFFFFF` if too large, with the
+    relative direction tagged into bits 30-31 (`0x40000000` for `+`,
+    `0xC0000000` for `-`) exactly as `ChangePitchBase`/`ChangePitchModula
+    tion`/`ChangeVolume`'s callers do before storing it. Returns
+    `(tagged_value, next_i)`."""
+    n = len(text)
+    relative = None
+    if i < n and text[i] in '+-':
+        relative = text[i]
+        i += 1
+        while i < n and text[i] in ' \t':
+            i += 1
+    value, i = _parse_fixed_value(text, i)
+    if value & (0xC000 << 16):          # value is greater than our allowed max
+        value = 0x3FFFFFFF               # limit to our max
+    if relative == '+':
+        value |= 0x40000000              # means relative addition
+    elif relative == '-':
+        value |= 0xC0000000              # means relative subtraction
+    return value, i
+
+
+def _resolve_tagged_value(tagged: int):
+    """Port of `ProcessPendingCommands`'s per-command relative/absolute
+    resolution (`FrontEnd.c:735-805`, identical shape for pitch-base/
+    pitch-mod/volume): checks the `0xC000<<16` tag bits set by
+    `_parse_signed_command_value`, and if set, sign-extends the tagged
+    32-bit value and recovers the signed magnitude (`-(tagged &
+    0x3FFFFFFF)` if the sign bit was set, else `tagged & 0x3FFFFFFF`).
+    Returns `(is_relative, resolved_value)` -- `resolved_value` is
+    exactly the `embedData` `Parse_Embedded_Command` (`BackEnd.c:3600
+    -3660`) would see."""
+    if tagged & (0xC000 << 16):
+        signed = tagged - (1 << 32) if tagged & 0x80000000 else tagged
+        magnitude = -(tagged & 0x3FFFFFFF) if signed < 0 else (tagged & 0x3FFFFFFF)
+        return True, magnitude
+    return False, tagged
+
+
+# Commands ported here (scoped subset -- see module docstring's "What's
+# NOT ported" note below): the four-letter keyword recognized inside
+# `[[...]]`, mapped to (absolute ctrl_type, relative ctrl_type). `pmod`'s
+# relative form (`C_relMod`) has no case in the real `DoCtrl` switch
+# (`BackEnd.c:272-322` falls through to `default: break;` for it) -- a
+# genuine no-op in the upstream engine, not a gap in this port -- so
+# it's included here for completeness but never actually changes state.
+_BRACKET_COMMANDS = {
+    'PBAS': (C_absPitch, C_relPitch),
+    'PMOD': (C_absMod, C_relMod),
+    'VOLM': (C_absVol, C_relVol),
+}
+
+
+def scan_bracket_commands(text: str):
+    """Port of `EmbeddedCmd.c`'s bracket-delimited text-command scanner
+    (`ProcessEmbeddedCommands` and the `pbas`/`pmod`/`volm` members of
+    its command dispatch, `EmbeddedCmd.c:990-1010`), scoped to the three
+    commands that resolve to a `CMDQueue` entry `do_ctrl` can actually
+    apply (`C_absPitch`/`C_relPitch`, `C_absMod`/`C_relMod`, `C_absVol`/
+    `C_relVol`) -- see module docstring for what's NOT covered.
+
+    Default delimiters are `[[`/`]]` (`mt4.h`'s `defaultCmdBeginDelim`/
+    `defaultCmdEndDelim`; the `dlim` command that changes them at
+    runtime is not ported). CAUTION for whoever next touches this:
+    an earlier pass of this same investigation tried `` `pbas60`hello ``
+    (single backtick) against the compiled `lintalker-c` `test_harness`
+    and initially misread a genuine `f0` shift as confirmation that
+    backtick was the real delimiter -- direct phoneme decoding proved
+    otherwise: "PBAS" isn't a dictionary word, so the text between the
+    backticks was being SPOKEN LITERALLY (spelled letter-by-letter, then
+    "60" read as separate digits "SIX"/"ZERO"), not silently consumed as
+    a command. `[[pbas60]]hello`/`[pbas60]hello` produced no such
+    literal-reading artifact but ALSO no detectable pitch change on
+    "hello" itself -- the compiled `test_harness` binary shows no
+    evidence of recognizing EITHER delimiter as a real embedded command,
+    for either given only a `-v <voice> <text>` CLI text argument. This
+    is the same class of blocker as the `Symbols` dictionary
+    investigation: this port cannot verify a bracket-command
+    implementation frame-exact against THIS specific compiled reference
+    (see docs/architecture.md), so `[[`/`]]` is used here because it's
+    what the C SOURCE documents as the default, not because it was
+    empirically confirmed to work. Returns `(clean_text, commands)`:
+    `clean_text` is `text` with every recognized bracketed command
+    span removed, and `commands` is a list of `(word_index, ctrl_type,
+    ctrl_data)` -- `word_index` is how many words (per
+    `_frontend.tokenize`) of `clean_text` PRECEDE that command, i.e. the
+    command should be applied before that word's own phonemes are
+    spoken, matching where `ProcessPendingCommands` embeds its `BE_ECmd`
+    opcode in the real token stream (right before the next real word
+    token). An unrecognized keyword, or a span with no `]]` before the
+    end of `text`, is left in `clean_text` untouched (matches
+    `LogParseError`'s effect of leaving `PendingCommands` unset for
+    that command -- this port simply doesn't strip what it can't
+    parse, rather than raising).
+
+    NOT ported: `rate` (routes through `vv->lastRate`/
+    `user_Rate_Buf1`, not `CMDQueue`, and `e_set_speech_rate`'s
+    non-singing branch already isn't ported -- see `_engine.py`),
+    `rset`/`vers`/`xtnd`/`char`/`cmnt`/`dlim`/`mode`/`nmbr`/`emph`/
+    `slnc`/`sync` (each its own separate parser/side-effect, not
+    reachable via `CMDQueue`), and mid-clause phoneme-accurate
+    positioning (a command found after the Nth word of ONE clause is
+    applied before that clause's Nth word, but this port has no
+    opcode-in-phon_str pipeline the way the real engine's `StuffBE
+    Command`/`Parse_Embedded_Command` do -- see module docstring).
+    """
+    from ._frontend import tokenize
+
+    commands = []
+    out_parts = []
+    word_count = 0
+    i = 0
+    n = len(text)
+    BEGIN, END = '[[', ']]'
+    while i < n:
+        start = text.find(BEGIN, i)
+        if start == -1:
+            segment = text[i:]
+            out_parts.append(segment)
+            word_count += len(list(tokenize(segment)))
+            break
+        segment = text[i:start]
+        out_parts.append(segment)
+        word_count += len(list(tokenize(segment)))
+
+        end = text.find(END, start + len(BEGIN))
+        if end == -1:
+            # Unterminated command -- leave the rest of the text as-is
+            # (matches DoneWithCommand/GetNextCh hitting EOF; no clean
+            # way to recover the intended command).
+            out_parts.append(text[start:])
+            i = n
+            break
+
+        inner = text[start + len(BEGIN):end]
+        keyword = inner[:4].upper()
+        entry = _BRACKET_COMMANDS.get(keyword)
+        if entry is None:
+            # Unrecognized keyword -- leave this span untouched (not
+            # stripped), matching LogParseError's effect of not
+            # applying any state change for it.
+            out_parts.append(text[start:end + len(END)])
+            i = end + len(END)
+            continue
+
+        tagged, _ = _parse_signed_command_value(inner, 4)
+        is_relative, resolved = _resolve_tagged_value(tagged)
+        abs_type, rel_type = entry
+        ctrl_type = rel_type if is_relative else abs_type
+        ctrl_data = resolved
+        if keyword == 'PMOD' and is_relative:
+            # EC_pmor's embedData is >>16 relative to EC_pbar/EC_volr
+            # (BackEnd.c:3628 vs 3620/3652) -- ported for completeness
+            # even though C_relMod is a no-op in do_ctrl (see above).
+            ctrl_data = resolved >> 16
+        commands.append((word_count, ctrl_type, ctrl_data))
+
+        i = end + len(END)
+
+    return ''.join(out_parts), commands
 
 
 def do_ctrl(vv: VoiceVar) -> None:
