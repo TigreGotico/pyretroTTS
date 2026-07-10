@@ -61,6 +61,7 @@ def tokenize(
     _dollar_out: list | None = None,
     _decimal_frac_out: list | None = None,
     _cent_out: list | None = None,
+    _clock_out: list | None = None,
 ) -> list[tuple[str, str | None]]:
     """Split raw text into (WORD, trailing_punct_or_None) pairs.
 
@@ -115,6 +116,20 @@ def tokenize(
     "cent"/"cents" appended (`kAddCent`, `_numbers.cent_phonemes`) --
     NOT digit-by-digit -- e.g. `"$5.25"` -> "five dollars AND twenty
     five cents", not "five dollars point two five".
+
+    `_clock_out`, if given a list, gets the output-token INDEX of the
+    MINUTES half of every `H:MM`-shaped token (e.g. `"3:45"` splits
+    into `"3"` and `"45"`, only the latter's index recorded). Ports
+    `GetNextToken`'s `:`-between-digits handling (`FrontEnd.c:1003
+    -1011`, `kClockSpecial`): the hour is an ORDINARY numeric token
+    (plain cardinal reading, no special treatment), and the minutes
+    (exactly 2 digits -- `PartialNumberToPhonemes`'s `kClockSpecial`
+    branch only fires when `tok->tokStr[0] == 2`) get `_numbers.clock_
+    phonemes` instead (e.g. "3:45" -> "three forty five", "3:05" ->
+    "three oh five", "3:00" -> "three o'clock"). Requires exactly 2
+    minute digits, matching the real engine's own length check --
+    `"3:5"` (1 minute digit) isn't recognized as clock-shaped here
+    either, the same narrow scope the C source itself has.
     """
     tokens: list[tuple[str, str | None]] = []
     for raw in text.split():
@@ -128,6 +143,14 @@ def tokenize(
         if len(w) > 1 and w[0] == '$' and (w[1:].isdigit() or (w[1:].count('.') == 1 and all(p.isdigit() for p in w[1:].split('.') if p))):
             w = w[1:]
             is_dollar = True
+        if not is_dollar and w.count(':') == 1:
+            _hour_part, _minute_part = w.split(':')
+            if _hour_part.isdigit() and len(_minute_part) == 2 and _minute_part.isdigit():
+                tokens.append((_hour_part, None))
+                if _clock_out is not None:
+                    _clock_out.append(len(tokens))
+                tokens.append((_minute_part, punct))
+                continue
         if is_dollar and w.count('.') == 1:
             # $5.25 -- kPeriodTok's SEPARATE branch for a dollar-flagged
             # token (FrontEnd.c:2096-2101): the "." becomes the word

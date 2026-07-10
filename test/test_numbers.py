@@ -320,6 +320,44 @@ def test_cent_amount_reads_as_cardinal_not_digit_by_digit():
     assert sa.words[4].phon_str != digit_by_digit_phonemes("25")
 
 
+def test_tokenize_clock_splits_hour_and_minutes():
+    from lintalker._frontend import tokenize
+
+    clock_indices = []
+    tokens = tokenize("it is 3:45 now.", _clock_out=clock_indices)
+    assert tokens == [("IT", None), ("IS", None), ("3", None), ("45", None), ("NOW", ".")]
+    assert clock_indices == [3]
+
+
+def test_tokenize_clock_requires_exactly_two_minute_digits():
+    from lintalker._frontend import tokenize
+
+    # "3:5" (one minute digit) isn't clock-shaped -- matches the real
+    # engine's own tok->tokStr[0] == 2 length check.
+    clock_indices = []
+    tokens = tokenize("it is 3:5 now.", _clock_out=clock_indices)
+    assert clock_indices == []
+
+
+def test_clock_phonemes_normal_oh_and_oclock():
+    from lintalker._numbers import clock_phonemes, _two_digit_phonemes, _OH, _CLOCK
+
+    assert clock_phonemes("45") == [_Word_] + _two_digit_phonemes(4, 5)
+    assert clock_phonemes("05") == [_Word_] + _OH + _two_digit_phonemes(0, 5)
+    assert clock_phonemes("00") == [_Word_] + _CLOCK
+
+
+def test_clock_time_reaches_word_tokens_end_to_end():
+    from lintalker._assembly import collect_fe_tokens
+    from lintalker._numbers import number_to_phonemes, clock_phonemes
+
+    sa = collect_fe_tokens("it is 3:45 now.")
+    assert sa.words[2].word == "3"
+    assert sa.words[2].phon_str == number_to_phonemes("3")  # hour: plain cardinal
+    assert sa.words[3].word == "45"
+    assert sa.words[3].phon_str == clock_phonemes("45")
+
+
 if __name__ == "__main__":
     tests = [v for k, v in list(globals().items()) if k.startswith("test_")]
     for t in tests:

@@ -114,6 +114,12 @@ _OH = [56, 14]
 _DOLLAR = [47, 56, 4, 31, 9, 41]
 _CENT = [40, 56, 2, 34, 46, 40]
 
+# Same direct, bit-exact transcription as `_OH`/`_DOLLAR`/`_CENT` above --
+# `Data.c:3839`'s literal `ClockPhonStr[] = {7, _Word_, _AX_, _k_, _l_,
+# _Stress1_, _AA_, _k_}` compile-time constant ("o'clock"), leading
+# `_Word_` dropped for the same reason.
+_CLOCK = [8, 48, 31, 56, 4, 48]
+
 
 def _two_digit_phonemes(tens: int, units: int) -> list:
     """Port of `AppendTwoDigitPhonemes` (`FrontEnd.c:1708-1738`)."""
@@ -272,6 +278,33 @@ def cent_phonemes(digits: str):
     body = number_to_phonemes(digits)[1:]  # strip its own leading _Word_
     suffix = list(_CENT) if int(digits) != 1 else _CENT[:-1]
     return [_Word_] + body + suffix
+
+
+def clock_phonemes(minutes: str):
+    """Port of `PartialNumberToPhonemes`'s `kClockSpecial` branch
+    (`FrontEnd.c:1805-1822`): a `:` between two digit runs
+    (`GetNextToken`'s `:`-between-digits handling, `FrontEnd.c:1003
+    -1011`) splits the HOUR (an ordinary `kNumericTok`, read as a plain
+    cardinal via `number_to_phonemes` -- no special treatment at all,
+    e.g. "3:45"'s hour reads as plain "three") from the MINUTES, which
+    become their OWN token carrying `kClockSpecial` -- ONLY when that
+    token is exactly 2 digits (`tok->tokStr[0] == 2`, matched here by
+    requiring `minutes` to be a 2-character string): a nonzero tens
+    digit reads as a normal 2-digit number ("45" -> "forty five"); a
+    zero tens digit with nonzero units gets an "oh" inserted (`_OH`,
+    same as `year_to_phonemes`'s "oh" case) before the units digit
+    ("05" -> "oh five"); "00" reads as `_CLOCK` ("o'clock") instead of
+    any digits at all ("3:00" -> "three o'clock"). `minutes` must be
+    exactly 2 digit characters.
+    """
+    tens, units = int(minutes[0]), int(minutes[1])
+    if tens != 0:
+        body = _two_digit_phonemes(tens, units)
+    elif units != 0:
+        body = _OH + _two_digit_phonemes(0, units)
+    else:
+        body = list(_CLOCK)
+    return [_Word_] + body
 
 
 def digit_by_digit_phonemes(digits: str):

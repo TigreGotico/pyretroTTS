@@ -627,15 +627,38 @@ single-sentence text is.
   decomposition"/`PlacePhrasing`'s SEP7 documented earlier in this
   file.
 
-  NOT ported: `ProcessNumberString`'s clock-time (`kClockSpecial`,
-  a `:` between two digits, `FrontEnd.c:1003-1010`; a genuinely
-  incremental, multi-token-spanning mechanism that wasn't fully traced
-  through this compiled build's `GetNextToken`/`PartialNumberToPhonemes`
-  interaction and wasn't ported without that confidence) and cent-only
-  currency (`¢`, no realistic ASCII-keyboard input path, unlike `$`) --
-  both requiring either more tokenizer-context-detection scope or
-  additional confidence in the real engine's exact incremental
-  token-splitting behavior than this port currently has.
+  (Fixed) Clock-time reading: `GetNextToken`'s `:`-between-digits
+  handling (`FrontEnd.c:1003-1011`, `kClockSpecial`) splits `H:MM` into
+  an ORDINARY hour token (plain cardinal reading, no special treatment
+  at all -- "3:45"'s hour reads as plain "three") and a SEPARATE
+  minutes token that only gets `kClockSpecial` treatment when it's
+  EXACTLY 2 digits (`PartialNumberToPhonemes`'s `tok->tokStr[0] == 2`
+  check, `FrontEnd.c:1805-1822`): a nonzero tens digit reads as a
+  normal 2-digit number ("45" -> "forty five"); a zero tens digit with
+  nonzero units gets an "oh" inserted before the units digit (`_OH`,
+  the same direct compile-time-constant transcription `year_to_
+  phonemes`'s "oh" case uses -- "05" -> "oh five"); "00" reads as
+  `_CLOCK` ("o'clock", `Data.c:3839`'s literal `ClockPhonStr[]`
+  constant, decoded the same bit-exact way as `_OH`/`_DOLLAR`/`_CENT`)
+  instead of any digits at all ("3:00" -> "three o'clock").
+
+  `_frontend.tokenize()` gained a fourth side-channel parameter,
+  `_clock_out`, splitting an `H:MM`-shaped raw token (requiring EXACTLY
+  2 minute digits, matching the real engine's own length check -- a
+  malformed clock-looking string like `"3:5"` isn't recognized as
+  clock-shaped here either) into two output tokens (`"H"`, `"MM"`
+  recorded in `_clock_out`). `_assembly.make_fe_word_token` gained a
+  matching `is_clock` parameter routing to `_numbers.clock_phonemes`.
+
+  Verified: `test/test_numbers.py`'s `test_tokenize_clock_splits_hour_
+  and_minutes`/`test_tokenize_clock_requires_exactly_two_minute_
+  digits`/`test_clock_phonemes_normal_oh_and_oclock`/`test_clock_time_
+  reaches_word_tokens_end_to_end`.
+
+  NOT ported: cent-only currency (`¢`, no realistic ASCII-keyboard
+  input path, unlike `$` -- there is no equivalent single-keystroke
+  way to type a bare cent amount the way `$5` types naturally, so this
+  remains out of scope for a text-in port).
 - (Fixed) Abbreviation-period handling: `GetNextToken` doesn't treat a
   `.` right after a known dictionary abbreviation (e.g. "MR.", "DR.",
   "ST.", looked up WITH the period as part of its key, `is_abbrev=True`

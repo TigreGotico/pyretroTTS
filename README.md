@@ -91,9 +91,11 @@ two numbers (e.g. "3.14") reads as the word "point" followed by the
 fractional digits read one at a time ("three point one four"). A `.`
 between a `$`-prefixed amount and cents (e.g. "$5.25") instead reads
 as "AND" followed by the cents amount plus "cent"/"cents" ("five
-dollars and twenty five cents"). Remaining known gaps:
-`char`/`mode` embedded commands and clock-time/cent-only-currency
-(no leading `$`) reading modes — see
+dollars and twenty five cents"). A `:` between an hour and exactly two
+minute digits (e.g. "3:45") reads as clock time ("three forty five",
+"3:05" -> "three oh five", "3:00" -> "three o'clock"). Remaining known
+gaps: `char`/`mode` embedded commands and cent-only-currency
+(no leading `$`) reading — see
 `docs/architecture.md` for
 specifics. You can still synthesize from an
 already-built phoneme plan directly via

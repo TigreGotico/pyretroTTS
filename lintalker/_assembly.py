@@ -244,7 +244,7 @@ class FEWordToken:
 
 def make_fe_word_token(
     word: str, punct: Optional[str], digit_by_digit: bool = False,
-    is_dollar: bool = False, is_cent: bool = False,
+    is_dollar: bool = False, is_cent: bool = False, is_clock: bool = False,
 ) -> FEWordToken:
     """Build one `FEWordToken` for `word` (already uppercased by
     `_frontend.tokenize()`), consulting `_lexicon.lookup()` first and
@@ -278,11 +278,15 @@ def make_fe_word_token(
     this word as the cents half of a `$N.M` token) routes to
     `_numbers.cent_phonemes` instead, appending "cent"/"cents" and
     likewise bypassing year detection (`kAddCent`'s exclusion).
+    `is_clock` (set when `_frontend.tokenize()`'s `_clock_out` recorded
+    this word as the minutes half of an `H:MM` token) routes to
+    `_numbers.clock_phonemes` instead, matching `kClockSpecial`'s "oh"/
+    "o'clock" insertion rules.
     """
     if word.isdigit():
         from ._numbers import (
             number_to_phonemes, digit_by_digit_phonemes, is_year_number,
-            year_to_phonemes, dollar_phonemes, cent_phonemes,
+            year_to_phonemes, dollar_phonemes, cent_phonemes, clock_phonemes,
         )
 
         if digit_by_digit:
@@ -291,6 +295,8 @@ def make_fe_word_token(
             _digits_phon_str = dollar_phonemes(word)
         elif is_cent:
             _digits_phon_str = cent_phonemes(word)
+        elif is_clock:
+            _digits_phon_str = clock_phonemes(word)
         elif is_year_number(word):
             _digits_phon_str = year_to_phonemes(word)
         else:
@@ -779,9 +785,10 @@ def collect_fe_tokens(
     _dollar_indices: list = []
     _decimal_frac_indices: list = []
     _cent_indices: list = []
+    _clock_indices: list = []
     for _wi, (word, punct) in enumerate(tokenize(
         text, _dollar_out=_dollar_indices, _decimal_frac_out=_decimal_frac_indices,
-        _cent_out=_cent_indices,
+        _cent_out=_cent_indices, _clock_out=_clock_indices,
     )):
         if nmbr_overrides and _wi in nmbr_overrides:
             _digit_mode = nmbr_overrides[_wi]
@@ -790,6 +797,7 @@ def collect_fe_tokens(
             digit_by_digit=_digit_mode or _wi in _decimal_frac_indices,
             is_dollar=_wi in _dollar_indices,
             is_cent=_wi in _cent_indices,
+            is_clock=_wi in _clock_indices,
         ))
     if emphasis_overrides:
         for _wi, _emph in emphasis_overrides.items():
