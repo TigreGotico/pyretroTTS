@@ -35,7 +35,9 @@ build `phdraw`'s input) is not ported, so there is still no text-to-speech;
 | Locus/burst/inherent-dur ROM, `lineartilt`, `divtab` | `targets_transitions.py` | read verbatim from `libtts_us.so` |
 | `phsettar` transition setup (`ph_setar.c`, `p_us_st0.c`, `ph_sttr2.c`) | `phsettar.py` | bit-exact vs C (10 voices) |
 | `phdraw` per-frame state advance + `send_pars` | `ph.py` (`advance_frame`, `finalize_av`, `send_pars`) | bit-exact vs C (10 voices) |
-| `ph/` allophone selection / duration / F0 | — | **not ported** (Phase 5+) |
+| `ph/` duration rules (`us_phtiming`, `p_us_tim0.c`) | `timing.py` | bit-exact vs C (10 voices) |
+| `ph/` allophone selection (`phsort`/`phalloph`) | — | **not ported** (Phase 5+) |
+| `ph/` F0 / intonation (`phinton`, `pht0draw`) | — | **not ported** (Phase 5+) |
 | `cmd/` markup, `lts/` letter-to-sound | — | **not ported** (Phase 5+) |
 
 ## The oracle
@@ -431,6 +433,57 @@ frame already carried voicing. The synthetic `dectalk_golden` vector never
 reproduced that ramp, so it stayed green -- a false green. The two real-capture
 goldens above are the gate that catches it.
 
+## What the duration stage (`us_phtiming`) is
+
+`phclause` runs `phsort -> phalloph -> us_phtiming -> phinton` before the
+per-frame loop. `us_phtiming` (`p_us_tim0.c:90`) is the third of those: it takes
+the allophone stream `phalloph` produced (`allophons[]`, `allofeats[]`,
+`nallotot`) and assigns each allophone a duration `allodurs[nphon]` in 6.4 ms
+frames. It applies the numbered duration rules -- pause syntax, clause-final rime
+lengthening, polysyllabic and consonant-cluster shortening, postvocalic-consonant
+effects, cluster and function-word special cases -- to the per-phone inherent and
+minimum inherent durations (`inh_timing`/`min_timing`, reading the US voice ROM),
+scales them by the speaking-rate factors `init_timing` (`ph_timng.c:174`)
+resolves (`sprat0`/`sprat1`/`sprat2`/`timeref`), and runs a syllable-level
+time-alignment pass. All arithmetic is the reference's fixed point.
+
+### What is ported: `us_phtiming`
+
+`pyretrotts/dectalk/timing.py` ports `us_phtiming`, `init_timing`, `inh_timing`,
+and `min_timing` for the compiled US path (`ENGLISH_US`,
+`OLD_INTONATION_AND_TIMING`; none of `GERMAN`/`FRENCH`/`SPANISH`/`ENGLISH_UK`/
+`HLSYN`/`CHANGES_AFTER_V43`/`SLOWTALK`/`CHANGES_FOR_V44`, and `bInTypingMode`
+FALSE). The minimum inherent durations `us_mindur` are read verbatim from the
+compiled voice ROM `p_us_rom_dectalk_1996m_43f.c`; the inherent durations reuse
+`targets_transitions.US_INHDR`. The `[n]->[d]` postvocalic-cluster stream
+mutation (Rule 9) is implemented but is not exercised by any test utterance (no
+`nt` postvocalic cluster occurs). `TYPING_MODE`/`NEWTYPING_MODE` and the
+`NSAMP_FRAME == 128` half-sample path are out of the compiled 11025 Hz path.
+
+Its input -- the allophone/feature stream, `user_durs`, and the speaking rate --
+is captured from the oracle at the exact `us_phtiming` boundary (the instrumented
+`p_us_tim0.c` writes an `I` line of the input arrays and rate factors before the
+rules run and an `O` line of `allodurs` after; `tools/dump_dectalk_aloph.py`
+reads them). This boundary matters: `phinton` inserts further phones after
+`us_phtiming`, so the post-`phinton` `allophons`/`allodurs` (the `phsettar`
+`A`-line) has more entries than the timing stage ever saw.
+
+### Verification
+
+- **`test/test_dectalk_aloph.py`** -- duration-for-duration diff of Python
+  `us_phtiming` against the instrumented C, for all ten voices over four
+  utterances, replaying the port over the captured stage input. `init_timing` is
+  checked to reproduce the speaking-rate factors the C resolved. Result: **40/40
+  cases captured, 760/760 durations frame-exact, `init_timing` exact on 40/40
+  clauses**. Skipped when the instrumented binary is absent.
+- **`test/dectalk_aloph_golden.py` + `dectalk_aloph_golden.json` +
+  `test_dectalk_aloph_golden.py`** -- a deterministic sha256 gate over
+  `us_phtiming` on `dectalk_aloph_vectors.json`, twenty **real** allophone-stage
+  inputs captured from the oracle across all ten voices. It runs in CI without
+  the C. `--write` refuses to regenerate the digest unless the port first matches
+  the oracle `allodurs` field for field for all ten voices; the gate is verified
+  to bite on a rule-constant mutation.
+
 ## Limitations
 
 - **`divtab` out-of-range.** `phsettar` indexes `divtab` (50 entries) by
@@ -439,11 +492,15 @@ goldens above are the gate that catches it.
   duration >= 50 the C would read runtime-mutable memory past the array
   (non-reproducible); `phsettar.py` would read zero there. No test utterance hits
   this.
-- **`ph/` front end above `phsettar`.** Allophone selection (`ph_aloph1.c`),
-  duration rules
-  (`p_us_tim0.c`), and the F0 contour and `pht0draw` (`ph_inton0.c`,
-  `ph_drwt01.c`) remain unported; `draw_frame` consumes the interpolation state
-  they produce, captured from the oracle.
+- **`ph/` front end above `phsettar`.** The duration rules (`us_phtiming`,
+  `p_us_tim0.c`) are ported (`timing.py`, bit-exact, ten voices). Allophone
+  selection (`phsort`/`phalloph`, `ph_sort.c`/`ph_aloph1.c`) and the F0 contour
+  and `pht0draw` (`phinton`, `ph_inton0.c`/`ph_drwt01.c`) remain unported. Because
+  those two are not yet ported, there is **no phoneme -> PCM composition**: the
+  chain still starts from the captured allophone stream and borrows the F0
+  contour from the oracle. The single biggest remaining obstacle is allophone
+  selection (`phalloph`), which produces the `allophons[]`/`allofeats[]` stream
+  every downstream stage -- including `timing.py` -- consumes.
 - **No text input.** The whole `cmd/` -> `lts/` -> `ph/` chain that turns text
   and `[: ]` markup into parameter frames is unported. `engine.py` takes frames,
   not text. Driving it therefore requires porting the rest of the front end
