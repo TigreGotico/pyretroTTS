@@ -7,3 +7,6 @@ dist/
 
 # Rendered song demos are committed on purpose.
 !songs/wav/*.wav
+
+# agent worktrees
+.claude/
