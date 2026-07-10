@@ -175,7 +175,10 @@ are captured from the C oracle and `vtm.py` is replayed over them, so no prosody
   `test/dectalk_golden.json`** -- a deterministic sha256 gate over `vtm.py` for
   the ten voices on a fixed synthetic frame vector. It runs in CI without the C.
   `--write` **refuses to regenerate** the digests unless the engine first matches
-  the C oracle sample for sample on real utterances, for all ten voices.
+  the C oracle sample for sample on real utterances, for all ten voices. This
+  synthetic vector is a weak tripwire -- it did not exercise the `ldspdef` silence
+  ramp (see the vtm defect note below); the primary synthesizer gates are the
+  real-capture goldens `dectalk_vtm_pcm_golden` and `dectalk_endtoend_golden`.
 
 The tables in `tables.py` are regenerated from the C by
 `tools/dump_dectalk_vtm.py`, which compiles a small program including the real
@@ -394,22 +397,42 @@ between it and the vocal tract model. `ph.py` ports all three:
   utterances. Result: **the ported front end reproduces the synthesizer input
   bit-for-bit, 12310 / 12310 frames, 40/40 cases**. Only the F0 contour and phone
   durations (Phase 5) are borrowed from the oracle. Running those frames through
-  `vtm.py` reproduces the oracle WAV sample-for-sample for the voices where the
-  vocal tract model itself is exact (see the vtm limitation below).
+  `vtm.py` reproduces the oracle WAV **sample-for-sample for all ten voices**
+  (40/40 cases).
+
+## The allophone -> PCM chain is sample-exact
+
+`phsettar -> advance_frame / draw_frame -> finalize_av -> send_pars -> vtm`
+reproduces the oracle WAV sample-for-sample for all ten voices over four
+utterances (`test/test_dectalk_endtoend.py`), borrowing only the F0 contour and
+phone durations from the oracle. Two oracle-anchored CI gates lock this in from
+committed real captures, needing no oracle binary:
+
+- **`test/dectalk_vtm_pcm_golden` + `test/test_dectalk_vtm_pcm_golden.py`** --
+  the real `parambuff` frames the C ships to its vocal tract model and the samples
+  it returns, per voice; `vtm.py` must reproduce them.
+- **`test/dectalk_endtoend_golden` + `test/test_dectalk_endtoend_golden.py`** --
+  a real allophone stream per voice (plus F0/durations), gated end to end against
+  the oracle PCM.
+
+Both would have caught the `vtm.py` defect described next; the older synthetic
+`dectalk_golden` vector did not.
+
+### The vtm defect that hid behind an insufficient golden
+
+`vtm.py` silenced only the first two frames after a speaker definition; the C
+silences three. `ldspdef` is a C `BOOL`, which is `unsigned char` in this build
+(`api/tts.h:237`), so the reference's `ldspdef = -1` wraps to 255 and the
+following frame's `ldspdef >= 1` test is still true -- silencing a third frame.
+The Python `int` kept `-1`, so `-1 >= 1` was false and the third frame slipped
+through, latching the voicing amplitude `avlin` one frame early. That made
+`vtm.py` diverge, mid-utterance and speaker-dependent, on every voice whose third
+frame already carried voicing. The synthetic `dectalk_golden` vector never
+reproduced that ramp, so it stayed green -- a false green. The two real-capture
+goldens above are the gate that catches it.
 
 ## Limitations
 
-- **`vtm.py` (Phase 1) diverges on some speaker configs.** With a frame-exact
-  vocal-tract-model input (proven above for all ten voices), `synthesize_frames`
-  reproduces the oracle WAV sample-for-sample for Perfect Paul, Beautiful Betty,
-  Huge Harry, Doctor Dennis, and Rough Rita on some utterances, but diverges for
-  others (e.g. Frail Frank, Kit the Kid, Uppity Ursula, Whispering Wendy, Variable
-  Val). The divergence is localized (it appears mid-utterance and recovers) and
-  depends on the `SpeakerState`, so it is a `vtm.py` code path the Phase-1
-  utterances did not exercise -- an in-frame parameter handling the C
-  `speech_waveform_generator` applies that the port does not. This is the sole
-  remaining blocker to a fully sample-exact allophone->PCM chain; it is in the
-  synthesizer, not the ported front end.
 - **`divtab` out-of-range.** `phsettar` indexes `divtab` (50 entries) by
   transition duration; the forward/backward rules clamp that duration to
   `NF130MS` (20 frames), so the index stays in range. For any phone that reached a

@@ -12,6 +12,13 @@ oracle sample for sample, for all ten voices, over real utterances (see
 only the deterministic regression tripwire; the proof of correctness is the
 oracle match this refuses to skip.
 
+This synthetic vector is a weak tripwire: because its frames never reproduce the
+post-speaker-definition ramp a real utterance drives, it does not exercise the
+`ldspdef` silence path and is insensitive to a regression there. The primary
+oracle-anchored CI gates over the synthesizer are the real captured-frame
+goldens `dectalk_vtm_pcm_golden` (parambuff -> samples) and
+`dectalk_endtoend_golden` (allophone stream -> PCM), which do exercise it.
+
 Regenerate only alongside a fresh C comparison:
 
     DECTALK_SAY=.../dist/say DECTALK_DIR=.../dist python3 test/dectalk_golden.py --write
