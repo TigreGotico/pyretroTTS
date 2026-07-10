@@ -202,6 +202,8 @@ class PhsettarState:
     tvvbacktr: int = 0
     bvvtran: int = 0
     dbvvtran: int = 0
+    breathyah: int = 0
+    breathytilt: int = 0
     # dipspec[] scratch buffer shared by all parameters; make_dip writes
     # (time, delta) pairs here and stores each parameter's start offset in
     # Parameter.ndip_off. Non-diphthong phones keep the previous offset, so a

@@ -28,7 +28,38 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .consts import (
+    OUT_A2,
+    OUT_A3,
+    OUT_A4,
+    OUT_A5,
+    OUT_A6,
+    OUT_AB,
+    OUT_AP,
+    OUT_AV,
+    OUT_B1,
+    OUT_B2,
+    OUT_B3,
+    OUT_DU,
+    OUT_F1,
+    OUT_F2,
+    OUT_F3,
+    OUT_FZ,
+    OUT_PH,
+    OUT_PH2,
+    OUT_T0,
+    OUT_TLT,
+)
+from .targets_transitions import LINEARTILT
 from .vtm import frac4mul, s16
+
+# send_pars delays every parameter except AV, TILT, and T0 by one frame
+# (`ph_claus.c:701`).
+_DELAYED_SLOTS = (
+    OUT_F1, OUT_B1, OUT_F2, OUT_B2, OUT_F3, OUT_B3, OUT_FZ,
+    OUT_A2, OUT_A3, OUT_A4, OUT_A5, OUT_A6, OUT_AB, OUT_AP,
+    OUT_PH, OUT_DU, OUT_PH2,
+)
 
 # German affricate allophone code (`p_all_ph.h`: (PFGR<<PSFONT)|GR_KSX =
 # (0x1C<<8)|55). Never appears in the US-English allophone stream; present so the
@@ -197,3 +228,93 @@ def draw_frame(frame: DrawFrame) -> list[int]:
         out[_J_TILT] = 0
 
     return out
+
+
+def finalize_av(out: list[int]) -> None:
+    """Apply phdraw's final AV boost (`ph_draw.c:4344`, run before the compiled
+    build's return at 4355, i.e. after the point the Phase-2 X-dump captures).
+
+    Raises the voicing amplitude by a tilt-dependent amount so the value shipped
+    to the vocal tract model is `AV + max(0, (TILT >> 2) - 4)` for AV > 3."""
+    if out[_J_AV] > 3:
+        temptilt = (out[_J_TILT] >> 2) - 4
+        if temptilt < 0:
+            temptilt = 0
+        out[_J_AV] = s16(out[_J_AV] + temptilt)
+
+
+def advance_frame(params, dipspec: list[int], tcum: int, out: list[int],
+                  fls) -> None:
+    """Advance the per-frame interpolation state one frame (`ph_draw.c:345-731`).
+
+    `draw_frame` computes the output for the current `tcum` without mutating; this
+    applies the state changes `phdraw` makes each frame so the next `draw_frame`
+    sees the updated state: the diphthong-line step (`durlin`/`deldip`/`tarcur`/
+    `dipcum` and the `ndip` pointer), the forward/backward transition decays
+    (`ftran -= dftran`, `btran += dbtran`), the F2 vowel-vowel decays, and the
+    breathy-voice `breathyah`/`breathytilt` ramps.
+
+    `params` is the sixteen mutable `Parameter` structs (`settar`-style, with
+    `ndip_off` into the shared `dipspec` buffer); `out` is the frame `draw_frame`
+    just produced (read for `AV`); `fls` carries the F2 vowel-vowel and breathy
+    scalars (`fvvtran`, `dfvvtran`, `tvvbacktr`, `bvvtran`, `dbvvtran`,
+    `breathysw`, `breathyah`, `breathytilt`)."""
+    # First loop: F[1,2,3], FZ, B[1,2,3] (`ph_draw.c:361-398`).
+    for j in range(7):
+        q = params[j]
+        if tcum > q.durlin and tcum > 0 and q.durlin >= 0:
+            q.durlin = dipspec[q.ndip_off]
+            q.deldip = dipspec[q.ndip_off + 1]
+            q.ndip_off += 2
+            q.tarcur = s16(q.tarcur + (q.dipcum >> 3))
+            q.dipcum = 0
+        q.dipcum = s16(q.dipcum + q.deldip)
+        if q.ftran != 0:
+            q.ftran = s16(q.ftran - q.dftran)
+        if tcum >= q.tbacktr:
+            q.btran = s16(q.btran + q.dbtran)
+        if j == _J_F2:
+            if fls.fvvtran != 0:
+                fls.fvvtran = s16(fls.fvvtran - fls.dfvvtran)
+            if tcum >= fls.tvvbacktr:
+                fls.bvvtran = s16(fls.bvvtran + fls.dbvvtran)
+
+    # Second loop: AV, AP, A[2..6], AB, TILT (`ph_draw.c:436-447`).
+    for j in range(7, 16):
+        q = params[j]
+        if q.ftran != 0:
+            q.ftran = s16(q.ftran - q.dftran)
+        if tcum >= q.tbacktr:
+            q.btran = s16(q.btran + q.dbtran)
+
+    # Breathy-voice ramps (`ph_draw.c:687-731`).
+    if fls.breathysw == 1:
+        if out[_J_AV] > 40:
+            if fls.breathyah < 27:
+                fls.breathyah = s16(fls.breathyah + 2)
+            if fls.breathytilt < 16:
+                fls.breathytilt = s16(fls.breathytilt + 1)
+    else:
+        fls.breathyah = 0
+        fls.breathytilt = 0
+
+
+def send_pars(parstochip: list[int], delayed: dict[int, int] | None):
+    """One `send_pars` step (`ph_claus.c:694`): assemble the vocal-tract-model
+    frame from `parstochip`, delaying every parameter except AV, TILT, and T0 by
+    one frame and remapping TILT through `LINEARTILT`.
+
+    `parstochip` is a 20-slot `consts.OUT_*` frame (the AV..TILT slots from
+    `draw_frame`, plus T0/PH/DU/PH2). `delayed` carries the previous frame's
+    delayed slots; pass ``None`` for the first frame, which only primes the delay
+    buffer and emits nothing (so N drawn frames yield N-1 synthesized frames).
+    Returns ``(frame_or_None, new_delayed)``."""
+    if delayed is None:
+        return None, {s: parstochip[s] for s in _DELAYED_SLOTS}
+    frame = [0] * 20
+    frame[OUT_AV] = parstochip[OUT_AV]
+    frame[OUT_TLT] = LINEARTILT[parstochip[OUT_TLT]]
+    frame[OUT_T0] = parstochip[OUT_T0]
+    for s in _DELAYED_SLOTS:
+        frame[s] = delayed[s]
+    return frame, {s: parstochip[s] for s in _DELAYED_SLOTS}
