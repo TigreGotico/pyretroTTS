@@ -1,0 +1,40 @@
+{
+  "dictionary": {
+    "cat": "us_k ' us_aeus_t . \n",
+    "hello world": "us_hxus_axus_ll' us_ow  us_w ' us_rrus_llus_d . \n",
+    "computer": "us_k us_axus_m us_p ' us_yuus_t us_rr. \n",
+    "the quick brown fox": "us_dhus_ax  us_k us_w ' us_ihus_k   us_b us_r ' us_awus_n   us_f ' us_aaus_k us_s . \n",
+    "dog": "us_d ' us_aous_g . \n",
+    "house": "* us_hx' us_awus_s . \n",
+    "water": "us_w ' us_aous_t us_rr. \n",
+    "people": "us_p ' us_iyus_p us_el. \n"
+  },
+  "rules_ood": {
+    "abcdefg": "us_axus_b us_k us_d ' us_ehus_f us_g . \n",
+    "zorph": "us_z ' us_aous_r us_f . \n",
+    "blornt": "us_b us_ll' us_aous_r us_n us_t . \n",
+    "quizzle": "us_k us_w ' us_ihus_z us_el. \n"
+  },
+  "numbers": {
+    "123": "us_w ' us_ahus_n   us_hx' us_ahus_n us_d us_r us_axus_d ) us_ehus_n us_d   us_t us_w ' us_ehus_n us_t us_iy  us_thus_r ' us_iy. \n",
+    "42 dogs": "us_f ' us_orus_t us_iy  us_t ' us_uw  us_d ' us_aous_g us_z . \n",
+    "one hundred": "us_w ' us_ahus_n   us_hx' us_ahus_n us_d us_r us_axus_d . \n",
+    "3.14": "us_thus_r ' us_iy  us_p ' us_oyus_n us_t   us_w ' us_ahus_n   us_f ' us_or. \n"
+  },
+  "abbreviations": {
+    "Dr. Smith lives on Main St.": "us_d us_aaus_k us_t us_rr  . \n",
+    "Mr. Jones": "us_m us_ihus_s us_t us_rr  us_jh' us_owus_n us_z . \n",
+    "etc.": "us_ixus_t us_s ' us_ehus_t us_rrus_ax. \n"
+  },
+  "homographs": {
+    "read": ") us_r ' us_iyus_d . \n",
+    "I read the book": "` us_ay) us_r ' us_iyus_d   us_dhus_ax  us_b ' us_uhus_k . \n",
+    "wind": "us_w ' us_ihus_n us_d . \n",
+    "the wind blows": "us_dhus_ax  us_w ' us_ihus_n us_d   us_b us_ll' us_owus_z . \n"
+  },
+  "commands": {
+    "[:rate 200]testing": ":ra 200\nus_t ' us_ehus_s us_t us_ixus_nx. \n",
+    "[:nb]hello": ":nb\nus_hxus_axus_ll' us_ow. \n",
+    "[:np]hello": ":np\nus_hxus_axus_ll' us_ow. \n"
+  }
+}

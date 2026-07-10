@@ -36,7 +36,10 @@ build `phdraw`'s input) is not ported, so there is still no text-to-speech;
 | `phsettar` transition setup (`ph_setar.c`, `p_us_st0.c`, `ph_sttr2.c`) | `phsettar.py` | bit-exact vs C (10 voices) |
 | `phdraw` per-frame state advance + `send_pars` | `ph.py` (`advance_frame`, `finalize_av`, `send_pars`) | bit-exact vs C (10 voices) |
 | `ph/` allophone selection / duration / F0 | — | **not ported** (Phase 5+) |
-| `cmd/` markup, `lts/` letter-to-sound | — | **not ported** (Phase 5+) |
+| Phoneme+stress alphabet, `LOG_PHONEMES` renderer | `lts.py` | bit-exact vs oracle over the capture corpus |
+| US main-dictionary load + lookup (`ls_dict.c`) | `dictionary.py` | payload bit-exact for unique-grapheme words |
+| `[: ]` command tokenizer (voice/rate/mode) | `cmd.py` | tokenization + control state |
+| `lts/` rules, numbers, abbreviations, homograph POS | — | **not ported** |
 
 ## The oracle
 
@@ -430,6 +433,86 @@ through, latching the voicing amplitude `avlin` one frame early. That made
 frame already carried voicing. The synthetic `dectalk_golden` vector never
 reproduced that ramp, so it stayed green -- a false green. The two real-capture
 goldens above are the gate that catches it.
+
+## What the text front end is
+
+`cmd/` and `lts/` are the top layer: they turn written text and `[: ]` markup
+into the phoneme+stress stream the `ph/` allophone stage consumes. `cmd/`
+(`cmd/cm_pars.c`, US command table `cmd/c_us_cde.h:390-485`) scans the input into
+plain-text runs and inline commands (voice select `[:n?]`, `[:rate]`,
+`[:phoneme on/off]`, `[:dv]`, ...). `lts/` looks each word up in the compiled
+dictionary (`lts/ls_dict.c`, `dtalk_us.dic`) and, on a miss, runs the
+letter-to-sound rules (`lts/l_us_*`, `ls_rule*.c`) plus number/abbreviation
+expansion and homograph disambiguation.
+
+### The oracle exposes the stream directly
+
+`[:log phonemes on]` / `TextToSpeechOpenLogFile(h, path, LOG_PHONEMES)`
+(`ph/phlog.c`) makes the oracle print the phoneme+stress stream as text: per
+phoneme, the `us_<ARPABET>` name (`PrintLangBit` + `usa_arpa`,
+`include/usa_phon.tab`) plus the stress and boundary marks. `tools/dump_dectalk_lts.py`
+drives the built US library through a tiny public-API harness (no source
+instrumentation) and records this text per input; `test/dectalk_lts_golden.json`
+is the committed real capture. Letter-to-sound is voice-independent, so one
+capture per input suffices.
+
+### What is ported
+
+- **`lts.py`** — the phoneme+stress alphabet: the phoneme codes (`l_us_ph.h`),
+  the control/prosody codes (`l_com_ph.h`), the `usa_arpa` render table, the
+  `usa_ascky` input alphabet, and `render_stream` reproducing the `LOG_PHONEMES`
+  text (`phlog.c`). `phoneme_spans` decodes an oracle log back to codes.
+- **`dictionary.py`** — the flat `dtalk_us.dic` loader (`loaddict.c`) and the
+  `ls_dict_find_word` / `ls_dict_dlook` / `ls_dict_where_to_look` binary search
+  (`ls_dict.c`), returning the raw phoneme+stress payload bytes for a hit.
+- **`cmd.py`** — the `[: ]` command tokenizer and the US command table, resolving
+  voice / rate / phoneme-mode control state per text run.
+
+### Verification (`test/test_dectalk_lts.py`, 33 tests)
+
+- **Render round-trip.** Every `us_<name>` token across all 26 committed oracle
+  captures decodes through `phoneme_spans` and re-renders byte-identically
+  (runs in CI without the oracle). Mutating one ARPABET render entry fails 7 of
+  the captures.
+- **Dictionary payload vs oracle.** For a curated set of unique-grapheme
+  dictionary hits (single words and phrases), the phoneme code sequence
+  `Dictionary.lookup` returns equals the phonemes the oracle emitted. Skipped
+  without `dtalk_us.dic`.
+- Over a 143-word common-English probe: **137 identical, 3 downstream-rule
+  differences, 3 misses**. The differences are not dictionary errors — the port
+  returns the exact stored payload:
+  - `just` has two records; the oracle uses the `jh ah s t` variant, the search
+    lands on `jh ix s t` (the duplicate-grapheme / homograph selection needs the
+    part-of-speech stage);
+  - `and` (`eh n d` stored, `ae n d` emitted) and `will` (`w ih ll` stored,
+    `w ih lx` emitted) differ by the downstream function-word reduction and
+    allophone substitution (`allorules.c`), which live in `ph/`, below this
+    layer.
+  - the 3 misses are words absent from the main dictionary (function words the
+    engine handles elsewhere).
+
+### What is stubbed (US)
+
+- **Letter-to-sound rules.** Out-of-dictionary words (`ls_rule*.c`, `l_us_*`)
+  are a dictionary miss here; no phonemes are produced for them.
+- **Number and abbreviation expansion.** `123 -> "one hundred twenty three"`,
+  `Dr. -> "doctor"` etc. (`lts/`) are not ported; the oracle captures show the
+  expected expansions for the future work.
+- **Homograph / duplicate-grapheme selection.** Needs the part-of-speech pass;
+  a hit returns the record the search lands on.
+- **`[:phoneme on]` phonetic-input decoding** (`cmd/cm_phon.c`) and `[:dv]`,
+  `[:pitch]`, `[:tone]`, DTMF command *effects* — `cmd.py` tokenizes and carries
+  voice/rate/mode but does not decode phonetic input or resolve these.
+- **Other languages** (uk/fr/gr/sp/la). US only.
+
+### Full text-to-PCM
+
+The middle layer (`ph/` allophone selection, duration, F0 above `phsettar`) is
+not yet on `dev`, so `dictionary.lookup` output cannot be run end to end to PCM
+inside the port. The dictionary payload is proven against the oracle phoneme
+stream; the allophone -> PCM chain below it is separately proven sample-exact
+(`test_dectalk_endtoend.py`). Composing text -> phonemes -> PCM awaits the
+middle layer.
 
 ## Limitations
 
