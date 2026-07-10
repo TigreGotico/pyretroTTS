@@ -997,3 +997,48 @@ def _store_ed(phon_str: list) -> list:
         out.append(_d_)
     return out
 
+
+
+# --- Search_Suffix ---------------------------------------------------------
+
+#: `SuffixTab` (`Data.c:3848`), in the order the reference scans it. Each entry
+#: is stored reversed there, NUL-terminated, and the table ends with 0xFF.
+#: The scan matches a word from its last letter backwards and takes the first
+#: entry that consumes cleanly, so the order is the tie-break, not the length.
+SUFFIX_TABLE: tuple[tuple[str, int], ...] = (
+    ("IZING", kIZING_suffix), ("IZINGS", kIZINGS_suffix), ("IZES", kIZES_suffix),
+    ("IZER", kIZER_suffix), ("IZERS", kIZERS_suffix), ("IES", kIES_suffix),
+    ("IERS", kIERS_suffix), ("IER", kIER_suffix), ("IED", kIED_suffix),
+    ("IEST", kIEST_suffix), ("ERS", kERS_suffix), ("ER", kER_suffix),
+    ("EST", kEST_suffix), ("INGS", kINGS_suffix), ("ING", kING_suffix),
+    ("ABLE", kABLE_suffix), ("BLY", kBLY_suffix), ("CALLY", kCALLY_suffix),
+    ("LY", kLY_suffix), ("IMENTS", kIMENTS_suffix), ("IMENT", kIMENT_suffix),
+    ("MENTS", kMENTS_suffix), ("MENT", kMENT_suffix), ("ORS", kORS_suffix),
+    ("OR", kOR_suffix), ("INESS", kINESS_suffix), ("INESSES", kINESSES_suffix),
+    ("NESS", kNESS_suffix), ("NESSES", kNESSES_suffix), ("IZED", kIZED_suffix),
+    ("IZE", kIZE_suffix), ("ISMS", kISMS_suffix), ("ISM", kISM_suffix),
+    ("ED", kED_suffix), ("ES", kES_suffix), ("'S", kS_suffix), ("S", kS_suffix),
+)
+
+
+def search_suffix(word: str) -> tuple[int, int]:
+    """Port of `Search_Suffix` (`Morph.c`): find `word`'s suffix in `SuffixTab`.
+
+    Returns `(suffix_type, root_length)`, or `(0, len(word))` when no entry
+    matches. A trailing apostrophe is skipped before the scan, and the root
+    must keep at least one letter, as the reference's `len > 1` guard requires.
+    """
+    length = original = len(word.rstrip("'")) if word.endswith("'") else len(word)
+
+    for suffix, suffix_type in SUFFIX_TABLE:
+        length = original
+        matched = True
+        for letter in reversed(suffix):
+            if length > 1 and word[length - 1] == letter:
+                length -= 1
+            else:
+                matched = False
+                break
+        if matched:
+            return suffix_type, length
+    return 0, len(word)

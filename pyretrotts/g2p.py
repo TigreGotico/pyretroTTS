@@ -10,7 +10,7 @@ front ends on their own, so they can be used without producing any audio.
     phonemize("photograph", engine="sam")
 
 The three front ends do not agree, and they are not meant to. MacinTalk and
-DECtalk share one: a 15,000-word pronunciation dictionary, a suffix-stripping
+DECtalk share one: a 7,173-word pronunciation dictionary, a suffix-stripping
 morphology pass, and a set of letter-to-sound rules for whatever is left. SAM's
 reciter is a single rule engine with no dictionary at all, which is why it is
 smaller, faster, and wronger.
