@@ -431,6 +431,31 @@ def test_do_morph_suffix_frame_exact():
     _check("several itemizers helped.", "Fred")
 
 
+def test_do_morph_pos_from_suffix():
+    """Regression test for `_morph.pos_select_for_suffix` (`Morph.c`'s
+    `SetPOS_FromSuffix`, `Morph.c:1027-1189`): a word's dictionary root
+    can have an AMBIGUOUS POS (e.g. "time" is noun/adj/verb), but most
+    suffixes unambiguously force a specific POS on the MORPHED word
+    regardless of the root's own candidates (e.g. "-ED" always means
+    kVerb: "timed" cannot be a noun even though "time" can be). Before
+    this was ported, `_assembly.make_fe_word_token` used the ROOT's own
+    (possibly ambiguous) POS codes for every morphed word, which is only
+    correct for the two suffix codes that really do leave the root's POS
+    untouched (`kS_suffix`, and several suffix fallback codes with no
+    `SetPOS_FromSuffix` case, e.g. plain `-IZER`/`-IZING`). Verifies
+    `make_fe_word_token("TIMED", None).pos_code1` resolves to `[kVerb,
+    kUndefPOS, kUndefPOS, kUndefPOS]`, not the root "TIME"'s own
+    (ambiguous) candidate list."""
+    from lintalker._assembly import make_fe_word_token
+    from lintalker._consts import kVerb, kUndefPOS
+
+    tok = make_fe_word_token("TIMED", None)
+    assert tok.pos_code1 == [kVerb, kUndefPOS, kUndefPOS, kUndefPOS], tok.pos_code1
+    assert tok.comp_pos1 == (1 << kVerb)
+
+    _check("he timed it perfectly.", "Fred")
+
+
 if __name__ == "__main__":
     import inspect
     mod = sys.modules[__name__]

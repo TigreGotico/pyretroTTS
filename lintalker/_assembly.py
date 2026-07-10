@@ -187,7 +187,7 @@ from ._phonemes import (
 from ._frontend import tokenize
 from ._lexicon import lookup, LexEntry
 from ._engtop import engtop
-from ._morph import try_s_morph, try_do_morph
+from ._morph import try_s_morph, try_do_morph, pos_select_for_suffix
 
 # BackEnd.c:3971-3973 -- the POS set that marks a word a "content word"
 # (`kContent_Word`, gates primary-vs-secondary stress at 3869-3877).
@@ -277,16 +277,30 @@ def make_fe_word_token(word: str, punct: Optional[str]) -> FEWordToken:
         # docstring for exactly which). WordToPhonemes does NOT default a
         # morphed word's POS to kNoun the way it does for the true
         # EngToP fallback below (FrontEnd.c:1628-1648): SearchAllDicts
-        # already populated the token's POS fields from the ROOT it
-        # found, so this uses the root's real pos_code1/comp_pos1, not a
-        # placeholder.
-        morphed_phon_str, root_entry = morphed
+        # populates the token's POS fields from the ROOT it found, which
+        # `SetPOS_FromSuffix` (`Morph.c:1027-1189`) then either leaves
+        # alone (kS_suffix and several fallback suffix codes with no
+        # switch case) or overrides entirely with a suffix-derived POS
+        # (most suffixes -- e.g. -ED always forces kVerb regardless of
+        # the root's own dictionary POS, matching a real English
+        # zero-derivation pattern: "time" is kNoun/kVerb, but "timed" is
+        # unambiguously kVerb). `has_alt` is always False here (see
+        # `pos_select_for_suffix`'s docstring), so only the simpler
+        # `!hasAlt` override branch applies.
+        morphed_phon_str, root_entry, suffix_type = morphed
+        pos_code1 = list(root_entry.pos_code1)
+        comp_pos1 = root_entry.comp_pos1
+        _pc1, _pc2, _ = _pos_count_and_hi_rank(root_entry.pos_code1, root_entry.pos_code2)
+        pos_select = pos_select_for_suffix(suffix_type, _pc1, comp_pos1)
+        if pos_select is not None:
+            pos_code1 = [pos_select, kUndefPOS, kUndefPOS, kUndefPOS]
+            comp_pos1 = 1 << pos_select
         tok = FEWordToken(
             word=word,
             phon_str=morphed_phon_str,
             from_dictionary=True,
-            pos_code1=list(root_entry.pos_code1),
-            comp_pos1=root_entry.comp_pos1,
+            pos_code1=pos_code1,
+            comp_pos1=comp_pos1,
             is_abbrev=root_entry.is_abbrev,
             is_compound_hint=root_entry.is_compound,
             has_alt=False,

@@ -287,10 +287,40 @@ single-sentence text is.
   COUNT, since a missing/extra SIL phoneme shows up as a frame-count
   mismatch, not just a wrong flag bit) — see
   `test/test_synthesize_text.py::test_sep1_to_sep5_phrase_boundary_frame_exact`.
-- NOT ported: `Zap_POS`/`SetPOS_FromSuffix`, true compound-noun
-  decomposition (`Morph.c:1010-2373`), and `PlacePhrasing`'s SEP7 /
-  parenthesized-clause handling (this port has no parenthesis tracking)
-  — see task #8.
+- (Fixed) `_morph.pos_select_for_suffix` ports `SetPOS_FromSuffix`
+  (`Morph.c:1027-1189`, the `!tok->hasAlt` branch only -- `has_alt` is
+  always `False` for morphed words in this port, so the `hasAlt`-true
+  branch, which instead re-`Zap_POS`'s the token and picks between
+  `POScode1`/`POScode2` for homograph-style alternate-pronunciation
+  entries, isn't reachable and isn't ported). Most suffixes force a
+  FIXED POS on the morphed word regardless of the root's own (possibly
+  ambiguous) dictionary POS candidates -- e.g. `-ED` always means
+  `kVerb` ("time" is noun/adj/verb, but "timed" cannot be anything but a
+  verb), `-ABLE`/`-EST`/`-IEST` always mean `kAdj`, `-LY`/`-BLY` always
+  mean `kAdv`, most noun-forming suffixes (`-MENT(S)`, `-NESS(ES)`,
+  `-ISM(S)`, `-OR(S)`, `-ER`/`-ERS`, ...) always mean `kNoun`. Two
+  suffixes have condition-dependent overrides (`kES_suffix`: `kVerb`
+  only if the root has exactly one candidate POS and it's `kVerb`, else
+  `kNoun`; `kIER_suffix`: `kNoun` if the root has a verb candidate, else
+  `kAdj` -- the C source's `compPOS1 & kNoun` sub-condition is dead code
+  since `kNoun == 0` makes that bitwise-AND always `0`, ported
+  bug-for-bug as a no-op). `kNo_suffix`/`kS_suffix`, and several suffix
+  FALLBACK codes with no `SetPOS_FromSuffix` switch case at all
+  (`kIZER`/`kIZERS`/`kIZING`/`kIZINGS`/`kIZED`/`kCALLY`, since `DoMorph`'s
+  own dispatch only reassigns `sufType` to the plain suffix's code on
+  the DECOMPOSE-SUCCEEDS path, not the IZE-family-specific fallback path
+  -- `_morph.py`'s `try_do_morph` tags each return with the EXACT
+  suffix code the real engine's `sufType` would hold at that point, not
+  just "which suffix pattern the word matched"), leave the root's own
+  POS untouched, matching `Do_S_Morph`'s case exactly. Before this was
+  ported, `_assembly.make_fe_word_token` used the root's own POS codes
+  for EVERY morphed word (only correct for the untouched cases above) --
+  see `test/test_synthesize_text.py::test_do_morph_pos_from_suffix`.
+- NOT ported: `Zap_POS` (only reachable via `SetPOS_FromSuffix`'s
+  `hasAlt`-true branch, itself not ported -- see above), true
+  compound-noun decomposition (`Morph.c:1010-2373`), and
+  `PlacePhrasing`'s SEP7 / parenthesized-clause handling (this port has
+  no parenthesis tracking) — see task #8.
 - (Fixed) Multi-clause synthesis used to give each clause of
   `api.synthesize_text` an independently-reset `VoiceVar`, rather than the
   real engine's single continuous `Talk()` session (`BackEnd.c:4264-4298`:
@@ -371,11 +401,21 @@ single-sentence text is.
   ported and tested independently via `test/test_embeddedcmd.py`).
 - Primary/secondary stress placement is gated on POS tagging. For
   dictionary hits, `_lexicon.py:lookup(word)` provides real POS codes.
-  For rule-fallback words (no dictionary entry), `FrontEnd.c:1650` calls
-  `SetPOStoVal(t, kNoun)` right after `EngToP()`, then refines via
-  `SetPOS_FromSuffix` (`Morph.c:1027`, a suffix heuristic, not ported) —
-  `_assembly.py` applies the `kNoun` default (confirmed against a real C
-  oracle capture). Compound-noun detection (`_Comp_` opcode) is populated
+  For a successful `DoMorph` (`try_s_morph`/`try_do_morph`), the
+  suffix-derived POS override is ported (`pos_select_for_suffix`, see
+  above). For rule-fallback words (no dictionary entry AND no `DoMorph`
+  match), `FrontEnd.c:1650` calls `SetPOStoVal(t, kNoun)` right after
+  `EngToP()`, then calls `SetPOS_FromSuffix(t)` a SECOND time using
+  whatever `tok->suffix` a FAILED `DoMorph` attempt happened to leave
+  set (`DoMorph` sets `tok->suffix`/calls `SetPOS_FromSuffix` once
+  itself at its `GOT_IT` label whenever `Search_Suffix` found ANY
+  suffix-table match, even if the subsequent root lookup failed and
+  `DoMorph` returned false overall) — this port does not have
+  `Search_Suffix`'s real `SuffixTab` trie data (see `try_do_morph`'s
+  module docstring), so it cannot reproduce this specific "failed suffix
+  match still leaves stale POS-override state" behavior; rule-fallback
+  words simply keep the plain `kNoun` default (confirmed as the common
+  case against a real C oracle capture). Compound-noun detection (`_Comp_` opcode) is populated
   only from the dictionary decode; `_lexicon.py`'s `LexEntry.phon_str`/
   `phon_hold` carry raw opcodes that `_phonbuf2.py` still needs to scan
   for the literal `_Comp_` marker itself, not a shortcut through

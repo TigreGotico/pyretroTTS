@@ -45,6 +45,14 @@ from ._consts import (
     kHas_Interj, kHas_Conj, kHas_CConj, kHas_Interr, kHas_Art, kHas_Det,
     kHas_Inf, kHas_Gen, kHas_Contr, kHas_Quant, kHas_VPart,
     kHas_SubjPron, kHas_ObjPron,
+    kNo_suffix, kS_suffix, kES_suffix, kIES_suffix, kED_suffix, kER_suffix,
+    kERS_suffix, kEST_suffix, kIED_suffix, kIER_suffix, kIERS_suffix,
+    kIEST_suffix, kING_suffix, kINGS_suffix, kMENT_suffix, kMENTS_suffix,
+    kIMENT_suffix, kIMENTS_suffix, kBLY_suffix, kLY_suffix, kCALLY_suffix,
+    kOR_suffix, kORS_suffix, kIZE_suffix, kIZED_suffix, kIZES_suffix,
+    kIZING_suffix, kIZINGS_suffix, kIZER_suffix, kIZERS_suffix,
+    kNESS_suffix, kNESSES_suffix, kINESS_suffix, kINESSES_suffix,
+    kISM_suffix, kISMS_suffix, kABLE_suffix,
 )
 from ._phonemes import (
     _l_, _IY_, _IX_, _s_, _t_, _d_, _ER_, _NG_, _z_, _m_, _AX_, _n_, _b_, _EL_,
@@ -365,19 +373,18 @@ def try_s_morph(word: str):
     """Port of `Do_S_Morph` (`Morph.c:2306-2322`), called when `word` (as
     typed, e.g. "DOGS") has no direct dictionary entry: if `word` ends in
     "S" and the root (word minus "S") IS a dictionary entry, returns
-    `(phon_str, entry)` -- the root's `_Word_`-prefixed phoneme string
-    with the correct `/s/`/`/z/`/`/ɪz/` suffix appended (`Store_S_or_Z`),
-    and the root's `LexEntry` (so the caller can use the ROOT's real POS
-    codes, matching `SearchAllDicts` populating `tok`'s POS fields from
-    the root when `Do_S_Morph` looks it up -- `WordToPhonemes` does NOT
-    default a morphed word's POS to `kNoun` the way it does for a true
-    `EngToP` rule-fallback, `FrontEnd.c:1628-1648`). Returns `None` if
-    there's no root hit, so the caller falls back to `_engtop.engtop()`
-    exactly as `WordToPhonemes` does when `DoMorph` itself fails.
-
-    Only this one suffix pattern is ported -- `DoMorph`'s other ~30
-    suffix functions (-ING, -ED, -LY, -ER, -EST, -MENT, -NESS, -ABLE,
-    -IZE, -ISM, -OR, ...) are not. See module docstring.
+    `(phon_str, entry, suffix_type)` -- the root's `_Word_`-prefixed
+    phoneme string with the correct `/s/`/`/z/`/`/ɪz/` suffix appended
+    (`Store_S_or_Z`), the root's `LexEntry`, and `kS_suffix` (see
+    `pos_select_for_suffix` -- `kS_suffix` is one of the two suffix types
+    `SetPOS_FromSuffix` does NOT override the POS for, so the caller uses
+    the ROOT's real POS codes as-is, matching `SearchAllDicts` populating
+    `tok`'s POS fields from the root when `Do_S_Morph` looks it up --
+    `WordToPhonemes` does NOT default a morphed word's POS to `kNoun` the
+    way it does for a true `EngToP` rule-fallback, `FrontEnd.c:1628-1648`).
+    Returns `None` if there's no root hit, so the caller falls back to
+    `_engtop.engtop()` exactly as `WordToPhonemes` does when `DoMorph`
+    itself fails.
     """
     from ._lexicon import lookup
 
@@ -387,7 +394,67 @@ def try_s_morph(word: str):
     entry = lookup(root)
     if entry is None:
         return None
-    return _store_s_or_z(list(entry.phon_str)), entry
+    return _store_s_or_z(list(entry.phon_str)), entry, kS_suffix
+
+
+# SetPOS_FromSuffix (Morph.c:1027-1189, `!tok->hasAlt` branch only --
+# `has_alt` is always False for morphed words in this port, see
+# _assembly.make_fe_word_token, so the `hasAlt`-true branch, which
+# instead re-Zap_POS's the token and picks between POScode1/POScode2 for
+# homograph-style alternate-pronunciation entries, is not reachable and
+# not ported). Suffix types with no entry here (kNo_suffix, kS_suffix,
+# and the kIZING/kIZINGS/kIZER/kIZERS/kCALLY/kINESS/kINESSES fallback
+# codes, which have no `case` in the real switch either) leave the
+# root's own dictionary POS untouched.
+_POS_FROM_SUFFIX = {
+    kIES_suffix: kNoun,
+    kED_suffix: kVerb,
+    kER_suffix: kNoun,
+    kERS_suffix: kNoun,
+    kEST_suffix: kAdj,
+    kIED_suffix: kVerb,
+    kIERS_suffix: kNoun,
+    kIEST_suffix: kAdj,
+    kING_suffix: kVerb,
+    kINGS_suffix: kNoun,
+    kMENT_suffix: kNoun,
+    kMENTS_suffix: kNoun,
+    kIMENT_suffix: kNoun,
+    kIMENTS_suffix: kNoun,
+    kBLY_suffix: kAdv,
+    kLY_suffix: kAdv,
+    kOR_suffix: kNoun,
+    kORS_suffix: kNoun,
+    kIZE_suffix: kVerb,
+    kIZED_suffix: kVerb,
+    kIZES_suffix: kVerb,
+    kNESS_suffix: kNoun,
+    kNESSES_suffix: kNoun,
+    kISM_suffix: kNoun,
+    kISMS_suffix: kNoun,
+    kABLE_suffix: kAdj,
+}
+
+
+def pos_select_for_suffix(suffix: int, pos_count1: int, comp_pos1: int):
+    """Returns the POS `SetPOS_FromSuffix` forces for `suffix` (or `None`
+    if that suffix doesn't override the root's own POS). Two suffixes
+    have condition-dependent overrides instead of a fixed one:
+    - `kES_suffix`: `kVerb` if the root has EXACTLY one dictionary POS
+      candidate and it's `kVerb` (e.g. a root that's unambiguously a
+      verb, like "fix" -> "fixes"), else `kNoun`.
+    - `kIER_suffix`: the C source's first branch
+      (`compPOS1 & kHas_Verb) && (compPOS1 & kNoun)`) is dead code --
+      `kNoun == 0`, so `compPOS1 & kNoun` is always `0`/false, matching
+      `Morph.c:1077`'s literal (and never-true) condition -- so this
+      only ever resolves to `kNoun` (root has a verb candidate, e.g.
+      "carry" -> "carrier") or `kAdj` (else, e.g. "happy" -> "happier").
+    """
+    if suffix == kES_suffix:
+        return kVerb if (pos_count1 == 1 and (comp_pos1 & kHas_Verb)) else kNoun
+    if suffix == kIER_suffix:
+        return kNoun if (comp_pos1 & kHas_Verb) else kAdj
+    return _POS_FROM_SUFFIX.get(suffix)
 
 
 # ---------------------------------------------------------------------------
@@ -482,9 +549,18 @@ def try_do_morph(word: str):
     minus the `Do_S_Morph` special-case already handled by `try_s_morph`)
     for the highest-frequency suffixes. Tried longest-suffix-first (see
     module note above for why this doesn't need the real `SuffixTab`
-    data). Returns `(phon_str, entry)` like `try_s_morph`, or `None` if no
-    suffix matched and had a dictionary hit for its decomposed root --
-    the caller falls back to `_engtop.engtop()`.
+    data). Returns `(phon_str, entry, suffix_type)` like `try_s_morph`
+    (`suffix_type` for `pos_select_for_suffix` -- chosen to match exactly
+    which suffix-dispatch branch the real engine's `sufType` variable
+    would hold at that point, INCLUDING the cases where a fallback path
+    does NOT get its own suffix-table entry and `sufType` stays at the
+    outer, more-specific code that has no `SetPOS_FromSuffix` case --
+    e.g. the `-IZER`/`-IZERS`/`-IZING`/`-IZINGS`/`-IZED`/`-CALLY`(both
+    branches) fallbacks below all keep their OWN suffix code rather than
+    "becoming" the plain suffix they resemble, so none of them override
+    the root's POS), or `None` if no suffix matched and had a dictionary
+    hit for its decomposed root -- the caller falls back to
+    `_engtop.engtop()`.
 
     Ported: -CALLY, -BLY, -LY (`Do_CALLY_Morph`/`Do_BLY_Morph`/
     `Do_LY_Morph`, adds /li/), -IEST/-EST (adds /ɪst/), -IER/-ERS/-ER
@@ -520,119 +596,129 @@ def try_do_morph(word: str):
         # only "ALLY" (4 chars) keeps it: magically -> magic.
         entry = lookup(w[:-4])
         if entry is not None:
-            return _append(entry.phon_str, [_l_, _IY_]), entry
+            return _append(entry.phon_str, [_l_, _IY_]), entry, kCALLY_suffix
         # else fall through to plain -LY (Morph.c:2669-2672: "orig word
         # minus LY" -- e.g. "musically" -> "musical", if that's an entry).
+        # sufType stays kCALLY_suffix even on this fallback (Morph.c never
+        # reassigns it to kLY_suffix here) -- no case for kCALLY_suffix in
+        # SetPOS_FromSuffix, so neither branch overrides the root's POS.
         entry = lookup(w[:-2])
         if entry is not None:
-            return _append(entry.phon_str, [_l_, _IY_]), entry
+            return _append(entry.phon_str, [_l_, _IY_]), entry, kCALLY_suffix
     if w.endswith('BLY') and len(w) > 3:
         # Do_BLY_Morph: "possibly" -> root + "ble" (possible)
         entry = lookup(w[:-1] + 'E')
         if entry is not None:
-            return _append(entry.phon_str, [_l_, _IY_]), entry
+            return _append(entry.phon_str, [_l_, _IY_]), entry, kBLY_suffix
         # else "superbly" -> "superb" + LY
         entry = lookup(w[:-2])
         if entry is not None:
-            return _append(entry.phon_str, [_l_, _IY_]), entry
+            return _append(entry.phon_str, [_l_, _IY_]), entry, kBLY_suffix
     if w.endswith('LY') and len(w) > 2:
         entry = lookup(w[:-2])
         if entry is not None:
-            return _append(entry.phon_str, [_l_, _IY_]), entry
+            return _append(entry.phon_str, [_l_, _IY_]), entry, kLY_suffix
 
     # --- -IEST / -EST (Morph.c:2006-2070, dispatch 2538-2585) ---
     if w.endswith('IEST') and len(w) > 4:
         entry = _decompose_i_common(w[:-4])
         if entry is not None:
-            return _append(entry.phon_str, [_IX_, _s_, _t_]), entry
+            return _append(entry.phon_str, [_IX_, _s_, _t_]), entry, kIEST_suffix
         stripped = w[:-4]
         # Root + LY + EST: "loneliest" -> strip "IEST" -> "lonel" -> strip
         # the trailing "L" -> "lone" (Morph.c:2047-2064).
         if stripped.endswith('L'):
             entry = lookup(stripped[:-1])
             if entry is not None:
-                return _append(entry.phon_str, [_l_, _IY_, _IX_, _s_, _t_]), entry
+                return _append(entry.phon_str, [_l_, _IY_, _IX_, _s_, _t_]), entry, kIEST_suffix
     if w.endswith('EST') and len(w) > 3:
         entry = _decompose_e_common(w[:-3])
         if entry is not None:
-            return _append(entry.phon_str, [_IX_, _s_, _t_]), entry
+            return _append(entry.phon_str, [_IX_, _s_, _t_]), entry, kEST_suffix
 
     # --- -IERS / -IER / -ERS / -ER (Morph.c:1995-2027, dispatch 2512-2578) ---
     if w.endswith('IERS') and len(w) > 4:
         entry = _decompose_i_common(w[:-4])
         if entry is not None:
-            return _append(entry.phon_str, [_ER_, _z_]), entry
+            return _append(entry.phon_str, [_ER_, _z_]), entry, kIERS_suffix
     if w.endswith('IER') and len(w) > 3:
         entry = _decompose_i_common(w[:-3])
         if entry is not None:
-            return _append(entry.phon_str, [_ER_]), entry
+            return _append(entry.phon_str, [_ER_]), entry, kIER_suffix
     if w.endswith('ERS') and len(w) > 3:
         entry = _decompose_e_common(w[:-3])
         if entry is not None:
-            return _append(entry.phon_str, [_ER_, _z_]), entry
+            return _append(entry.phon_str, [_ER_, _z_]), entry, kERS_suffix
         # Do_IZERS_Morph fallback (Morph.c:1462-1489, dispatch
         # 2568-2578): "organizers" -> "organ" (no root+"IZE" hit).
+        # sufType stays kIZERS_suffix (no case in SetPOS_FromSuffix, so
+        # no POS override -- only the kERS_suffix success path above
+        # gets reassigned to kERS_suffix/kNoun).
         if w.endswith('IZERS') and len(w) > 5:
             entry = lookup(w[:-5])
             if entry is not None:
-                return _append(entry.phon_str, [_AY_, _z_, _ER_, _z_]), entry
+                return _append(entry.phon_str, [_AY_, _z_, _ER_, _z_]), entry, kIZERS_suffix
     if w.endswith('ER') and len(w) > 2:
         entry = _decompose_e_common(w[:-2])
         if entry is not None:
-            return _append(entry.phon_str, [_ER_]), entry
+            return _append(entry.phon_str, [_ER_]), entry, kER_suffix
         # Do_IZER_Morph fallback (Morph.c:1437-1461, dispatch 2555-2566):
-        # "organizer" -> "organ".
+        # "organizer" -> "organ". sufType stays kIZER_suffix (no case, no
+        # override).
         if w.endswith('IZER') and len(w) > 4:
             entry = lookup(w[:-4])
             if entry is not None:
-                return _append(entry.phon_str, [_AY_, _z_, _ER_]), entry
+                return _append(entry.phon_str, [_AY_, _z_, _ER_]), entry, kIZER_suffix
 
     # --- -IED / -ED (Morph.c:1960-1990, dispatch 2504-2552) ---
     if w.endswith('IED') and len(w) > 3:
         entry = _decompose_i_common(w[:-3])
         if entry is not None:
-            return _append(entry.phon_str, [_d_]), entry
+            return _append(entry.phon_str, [_d_]), entry, kIED_suffix
     if w.endswith('ED') and len(w) > 2:
         entry = _decompose_e_common(w[:-2])
         if entry is not None:
-            return _store_ed(list(entry.phon_str)), entry
+            return _store_ed(list(entry.phon_str)), entry, kED_suffix
         # Do_IZED_Morph fallback (Morph.c:1515-1539, dispatch 2705-2718):
-        # "organized" -> "organ".
+        # "organized" -> "organ". sufType stays kIZED_suffix (no case, no
+        # override).
         if w.endswith('IZED') and len(w) > 4:
             entry = lookup(w[:-4])
             if entry is not None:
-                return _append(entry.phon_str, [_AY_, _z_, _d_]), entry
+                return _append(entry.phon_str, [_AY_, _z_, _d_]), entry, kIZED_suffix
 
     # --- -INGS / -ING (Morph.c:2073-2084, dispatch 2587-2601) ---
     if w.endswith('INGS') and len(w) > 4:
         entry = _decompose_e_common(w[:-4])
         if entry is not None:
-            return _append(entry.phon_str, [_IX_, _NG_, _z_]), entry
+            return _append(entry.phon_str, [_IX_, _NG_, _z_]), entry, kINGS_suffix
         # Do_IZINGS_Morph fallback (Morph.c:1410-1436, dispatch
-        # 2418-2432): "organizings" -> "organ".
+        # 2418-2432): "organizings" -> "organ". sufType stays
+        # kIZINGS_suffix (no case, no override).
         if w.endswith('IZINGS') and len(w) > 6:
             entry = lookup(w[:-6])
             if entry is not None:
-                return _append(entry.phon_str, [_AY_, _z_, _IH_, _NG_, _z_]), entry
+                return _append(entry.phon_str, [_AY_, _z_, _IH_, _NG_, _z_]), entry, kIZINGS_suffix
     if w.endswith('ING') and len(w) > 3:
         entry = _decompose_e_common(w[:-3])
         if entry is not None:
-            return _append(entry.phon_str, [_IX_, _NG_]), entry
+            return _append(entry.phon_str, [_IX_, _NG_]), entry, kING_suffix
         # Do_IZING_Morph fallback (Morph.c:1384-1409, dispatch 2401-2416):
-        # "organizing" -> "organ".
+        # "organizing" -> "organ". sufType stays kIZING_suffix (no case,
+        # no override).
         if w.endswith('IZING') and len(w) > 5:
             entry = lookup(w[:-5])
             if entry is not None:
-                return _append(entry.phon_str, [_AY_, _z_, _IH_, _NG_]), entry
+                return _append(entry.phon_str, [_AY_, _z_, _IH_, _NG_]), entry, kIZING_suffix
 
     # --- -IES / -ES (Morph.c:2178-2302, dispatch 2489-2501/2474-2487) ---
     if w.endswith('IES') and len(w) > 3:
         entry = lookup(w[:-3] + 'Y')  # candies -> candy
         if entry is not None:
-            return _store_s_or_z(list(entry.phon_str)), entry
+            return _store_s_or_z(list(entry.phon_str)), entry, kIES_suffix
         entry = lookup(w[:-2] + 'E')  # calories -> calorie (keep the "I", add E)
         if entry is not None:
-            return _store_s_or_z(list(entry.phon_str)), entry
+            return _store_s_or_z(list(entry.phon_str)), entry, kIES_suffix
     if w.endswith('ES') and len(w) > 2:
         # Do_ES_Morph (Morph.c:2221-2302) checks the STRIPPED ROOT's own
         # ending (word minus "ES"), not the full word's.
@@ -641,26 +727,26 @@ def try_do_morph(word: str):
             # fish -> fishES ; scratch -> scratchES
             entry = lookup(root)
             if entry is not None:
-                return _store_s_or_z(list(entry.phon_str)), entry
+                return _store_s_or_z(list(entry.phon_str)), entry, kES_suffix
         elif root.endswith('SS'):
             # stress -> stressES
             entry = lookup(root)
             if entry is not None:
-                return _store_s_or_z(list(entry.phon_str)), entry
+                return _store_s_or_z(list(entry.phon_str)), entry, kES_suffix
         elif root.endswith('X'):
             # box -> boxES
             entry = lookup(root)
             if entry is not None:
-                return _store_s_or_z(list(entry.phon_str)), entry
+                return _store_s_or_z(list(entry.phon_str)), entry, kES_suffix
         else:
             entry = lookup(w[:-1])  # keep the "E": house -> houses, name -> names
             if entry is not None:
-                return _store_s_or_z(list(entry.phon_str)), entry
+                return _store_s_or_z(list(entry.phon_str)), entry, kES_suffix
             root = w[:-2]
             if root and root[-1] in ('S', 'Z'):  # bus -> buses, waltz -> waltzes
                 entry = lookup(root)
                 if entry is not None:
-                    return _store_s_or_z(list(entry.phon_str)), entry
+                    return _store_s_or_z(list(entry.phon_str)), entry, kES_suffix
 
     # --- -IZES / -IZE (Morph.c:1490-1566, dispatch 2700-2703/2720-2732) ---
     # -IZES: Do_S_Morph (via try_s_morph, already tried before this
@@ -670,36 +756,36 @@ def try_do_morph(word: str):
     if w.endswith('IZES') and len(w) > 4:
         entry = lookup(w[:-4])
         if entry is not None:
-            return _append(entry.phon_str, [_AY_, _z_, _IX_, _z_]), entry
+            return _append(entry.phon_str, [_AY_, _z_, _IX_, _z_]), entry, kIZES_suffix
     if w.endswith('IZE') and len(w) > 3:
         entry = lookup(w[:-3])
         if entry is not None:
-            return _append(entry.phon_str, [_AY_, _z_]), entry
+            return _append(entry.phon_str, [_AY_, _z_]), entry, kIZE_suffix
 
     # --- -IMENTS / -IMENT / -MENTS / -MENT (Morph.c:2086-2177, dispatch
     # 2664-2717) ---
     if w.endswith('IMENTS') and len(w) > 6:
         entry = _decompose_i_common(w[:-6])
         if entry is not None:
-            return _append(entry.phon_str, [_m_, _AX_, _n_, _t_, _s_]), entry
+            return _append(entry.phon_str, [_m_, _AX_, _n_, _t_, _s_]), entry, kIMENTS_suffix
     if w.endswith('IMENT') and len(w) > 5:
         entry = _decompose_i_common(w[:-5])
         if entry is not None:
-            return _append(entry.phon_str, [_m_, _AX_, _n_, _t_]), entry
+            return _append(entry.phon_str, [_m_, _AX_, _n_, _t_]), entry, kIMENT_suffix
     if w.endswith('MENTS') and len(w) > 5:
         entry = lookup(w[:-5])
         if entry is not None:
-            return _append(entry.phon_str, [_m_, _AX_, _n_, _t_, _s_]), entry
+            return _append(entry.phon_str, [_m_, _AX_, _n_, _t_, _s_]), entry, kMENTS_suffix
     if w.endswith('MENT') and len(w) > 4:
         entry = lookup(w[:-4])
         if entry is not None:
-            return _append(entry.phon_str, [_m_, _AX_, _n_, _t_]), entry
+            return _append(entry.phon_str, [_m_, _AX_, _n_, _t_]), entry, kMENT_suffix
 
     # --- -ABLE (Morph.c:2104-2112, dispatch 2790-2795) ---
     if w.endswith('ABLE') and len(w) > 4:
         entry = _decompose_e_common(w[:-4])
         if entry is not None:
-            return _append(entry.phon_str, [_AX_, _b_, _EL_]), entry
+            return _append(entry.phon_str, [_AX_, _b_, _EL_]), entry, kABLE_suffix
 
     # --- -INESSES / -NESSES / -INESS / -NESS (Morph.c:1567-1728, dispatch
     # 2733-2769) ---
@@ -708,41 +794,41 @@ def try_do_morph(word: str):
         if entry is not None:
             root_entry, is_ly = entry
             extra = [_l_, _IY_, _n_, _IX_, _s_, _IX_, _z_] if is_ly else [_n_, _IX_, _s_, _IX_, _z_]
-            return _append(root_entry.phon_str, extra), root_entry
+            return _append(root_entry.phon_str, extra), root_entry, kINESSES_suffix
     if w.endswith('NESSES') and len(w) > 6:
         entry = lookup(w[:-6])
         if entry is not None:
-            return _append(entry.phon_str, [_n_, _IX_, _s_, _IX_, _z_]), entry
+            return _append(entry.phon_str, [_n_, _IX_, _s_, _IX_, _z_]), entry, kNESSES_suffix
     if w.endswith('INESS') and len(w) > 5:
         entry = _decompose_ness(w[:-5])
         if entry is not None:
             root_entry, is_ly = entry
             extra = [_l_, _IY_, _n_, _IX_, _s_] if is_ly else [_n_, _IX_, _s_]
-            return _append(root_entry.phon_str, extra), root_entry
+            return _append(root_entry.phon_str, extra), root_entry, kINESS_suffix
     if w.endswith('NESS') and len(w) > 4:
         entry = lookup(w[:-4])
         if entry is not None:
-            return _append(entry.phon_str, [_n_, _IX_, _s_]), entry
+            return _append(entry.phon_str, [_n_, _IX_, _s_]), entry, kNESS_suffix
 
     # --- -ISMS / -ISM (Morph.c:1729-1783, dispatch 2779-2789) ---
     if w.endswith('ISMS') and len(w) > 4:
         entry = lookup(w[:-4])
         if entry is not None:
-            return _append(entry.phon_str, [_IX_, _z_, _AX_, _m_, _z_]), entry
+            return _append(entry.phon_str, [_IX_, _z_, _AX_, _m_, _z_]), entry, kISMS_suffix
     if w.endswith('ISM') and len(w) > 3:
         entry = lookup(w[:-3])
         if entry is not None:
-            return _append(entry.phon_str, [_IX_, _z_, _AX_, _m_]), entry
+            return _append(entry.phon_str, [_IX_, _z_, _AX_, _m_]), entry, kISM_suffix
 
     # --- -ORS / -OR (Morph.c:1785-1878, dispatch 2680-2692) ---
     if w.endswith('ORS') and len(w) > 3:
         entry = _decompose_or(w[:-3])
         if entry is not None:
-            return _append(entry.phon_str, [_ER_, _z_]), entry
+            return _append(entry.phon_str, [_ER_, _z_]), entry, kORS_suffix
     if w.endswith('OR') and len(w) > 2:
         entry = _decompose_or(w[:-2])
         if entry is not None:
-            return _append(entry.phon_str, [_ER_]), entry
+            return _append(entry.phon_str, [_ER_]), entry, kOR_suffix
 
     return None
 

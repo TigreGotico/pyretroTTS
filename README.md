@@ -32,7 +32,8 @@ counterpart is checked out locally as `lintalker-c`).
 | Sentence-internal phrase boundaries (SEP1-6: sentence-initial adverbs, coordinating conjunctions, subject-noun-phrase/aux-verb, pre-conjunction, relative-pronoun/quantifier, content-word/function-word transitions) | `Morph.c` (`PlacePhrasing`, SEP1-6) | Ported (`lintalker/_assembly.py`'s `_place_phrasing`), verified bit-exact (`test/test_synthesize_text.py::test_sep6_phrase_boundary_frame_exact`, `::test_sep1_to_sep5_phrase_boundary_frame_exact`) |
 | WH-question vs. yes/no-question intonation | `Morph.c` (`PlacePhrasing`, `YesNo_Phrase`) | Ported using real `ResolvePOS` POS tags (`lintalker/_assembly.py`) |
 | Suffix-stripping decomposition (plural/3rd-person "-S", `-LY`, `-EST`/`-IEST`, `-ER`/`-IER`/`-ERS`/`-IERS`, `-ED`/`-IED`, `-ING`/`-INGS`, `-ES`/`-IES`, `-CALLY`/`-BLY`, `-MENT(S)`/`-IMENT(S)`, `-ABLE`, `-NESS(ES)`/`-INESS(ES)`, `-ISM(S)`, `-OR(S)`, `-IZE`/`-IZED`/`-IZES`/`-IZING(S)`/`-IZER(S)`) | `Morph.c` (`Do_S_Morph`, `Store_S_or_Z`, and the rest of `DoMorph`'s suffix dispatch) | Ported (`lintalker/_morph.py`), verified bit-exact (`test/test_synthesize_text.py::test_s_morph_frame_exact`, `::test_do_morph_suffix_frame_exact`) |
-| Remaining compound-word decomposition | `Morph.c` (true compound-noun decomposition, `Zap_POS`, `SetPOS_FromSuffix`) | Not ported |
+| Suffix-derived POS override (a morphed word's part of speech from its suffix, not its root's own dictionary POS) | `Morph.c` (`SetPOS_FromSuffix`) | Ported (`lintalker/_morph.py`'s `pos_select_for_suffix`), verified (`test/test_synthesize_text.py::test_do_morph_pos_from_suffix`) |
+| Remaining compound-word decomposition | `Morph.c` (true compound-noun decomposition, `Zap_POS`) | Not ported |
 
 **What this means today:** `lintalker.api.synthesize_text(voice_dict, text)`
 synthesizes English text end-to-end, verified frame-for-frame bit-exact
