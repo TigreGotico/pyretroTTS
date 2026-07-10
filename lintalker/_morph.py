@@ -46,6 +46,7 @@ from ._consts import (
     kHas_Inf, kHas_Gen, kHas_Contr, kHas_Quant, kHas_VPart,
     kHas_SubjPron, kHas_ObjPron,
 )
+from ._phonemes import _l_, _IY_, _IX_, _s_, _t_, _d_, _ER_, _NG_, _z_
 
 
 class _POSFlags:
@@ -384,3 +385,234 @@ def try_s_morph(word: str):
     if entry is None:
         return None
     return _store_s_or_z(list(entry.phon_str)), entry
+
+
+# ---------------------------------------------------------------------------
+# The rest of DoMorph's suffix functions (Morph.c:1272-2373). Each entry is
+# tried longest-suffix-first (an ordering choice, not a port of the real
+# engine's `SuffixTab`/`Search_Suffix` trie data, which isn't extracted --
+# see module docstring); ties are rare since these suffixes mostly don't
+# overlap. `Do_S_Morph` (`try_s_morph`, above) is ALWAYS tried first for any
+# word ending in "S", exactly matching `DoMorph`'s own unconditional
+# S-before-Search_Suffix order (`Morph.c:2384-2395`) -- the "ERS"/"IERS"/
+# "MENTS"/"ORS" cases' own redundant inner S-first-try (`Morph.c:2520-2526`
+# etc.) is therefore dead code from this port's perspective (by the time
+# suffix detection runs, that exact check has already failed) and is not
+# reproduced.
+# ---------------------------------------------------------------------------
+
+def _consonant_doubling_adjust(root: str) -> str:
+    """Port of `Consonant_Doubling_Adjust` (`Morph.c:1272-1307`): undoes a
+    doubled final consonant from the original spelling (`canned` -> `can`,
+    `slurring` -> `slur`), except for vowels and S/L/F (which double
+    without the mutation being "real", e.g. `stressing` -> `stress`,
+    `calling` -> `call`, `sniffing` -> `sniff`)."""
+    if not root:
+        return root
+    end_char = root[-1]
+    if end_char in ('A', 'E', 'I', 'O', 'U', 'S', 'L', 'F'):
+        return root
+    if len(root) > 1 and root[-2] == end_char:
+        return root[:-1]
+    return root
+
+
+def _decompose_e_common(stripped_root: str):
+    """Port of `Decompose_E_Common` (`Morph.c:1311-1352`): the root left
+    after stripping an -ED/-ER/-EST/-ING suffix may need an "E" restored
+    (`timed` -> `time`) or a doubled consonant undone (`napped` -> `nap`)
+    before it matches a dictionary entry. Returns the matching `LexEntry`
+    or `None`."""
+    from ._lexicon import lookup
+
+    entry = lookup(stripped_root + 'E')
+    if entry is not None:
+        return entry
+    return lookup(_consonant_doubling_adjust(stripped_root))
+
+
+def _decompose_i_common(stripped_root: str):
+    """Port of `Decompose_I_Common` (`Morph.c:1357-1380`): the root left
+    after stripping an -IED/-IER/-IEST suffix ends in a bare "I" that was
+    a "Y" in the original spelling (`happier` -> `happi` -> `happy`).
+    Returns the matching `LexEntry` or `None`."""
+    from ._lexicon import lookup
+
+    return lookup(stripped_root + 'Y')
+
+
+def try_do_morph(word: str):
+    """Port of the rest of `DoMorph`'s dispatch (`Morph.c:2396-2373`,
+    minus the `Do_S_Morph` special-case already handled by `try_s_morph`)
+    for the highest-frequency suffixes. Tried longest-suffix-first (see
+    module note above for why this doesn't need the real `SuffixTab`
+    data). Returns `(phon_str, entry)` like `try_s_morph`, or `None` if no
+    suffix matched and had a dictionary hit for its decomposed root --
+    the caller falls back to `_engtop.engtop()`.
+
+    Ported: -CALLY, -BLY, -LY (`Do_CALLY_Morph`/`Do_BLY_Morph`/
+    `Do_LY_Morph`, adds /li/), -IEST/-EST (adds /ɪst/), -IER/-ERS/-ER
+    (adds /ɚ/, `_ER_`, optionally + /z/), -IED/-ED (adds /d/, /t/, or
+    /ɪd/ by the root's final phoneme's voicing, same rule as
+    `Store_S_or_Z`), -INGS/-ING (adds /ɪŋ/, optionally + /z/), -IES/-ES
+    (adds the `Store_S_or_Z` suffix after a "Y"->"IE" or "E"/direct-match
+    root mutation).
+
+    NOT ported: -MENT(S), -IMENT(S), -ABLE, -OR(S), -IZE and its
+    compounds (-IZED/-IZES/-IZING/-IZER and their -S forms), -NESS/
+    -INESS, -ISM -- see module docstring.
+    """
+    from ._lexicon import lookup
+
+    w = word
+
+    # --- -CALLY / -BLY / -LY (Morph.c:1880-1955, dispatch 2653-2678) ---
+    if w.endswith('CALLY') and len(w) > 6:
+        # Do_CALLY_Morph: the suffix table entry is "CALLY" (5 chars), but
+        # the word's own root already ends in that "C" (magic -> magically
+        # splits as "magic" + "ally", not "magi" + "cally") -- stripping
+        # only "ALLY" (4 chars) keeps it: magically -> magic.
+        entry = lookup(w[:-4])
+        if entry is not None:
+            return _append(entry.phon_str, [_l_, _IY_]), entry
+        # else fall through to plain -LY (Morph.c:2669-2672: "orig word
+        # minus LY" -- e.g. "musically" -> "musical", if that's an entry).
+        entry = lookup(w[:-2])
+        if entry is not None:
+            return _append(entry.phon_str, [_l_, _IY_]), entry
+    if w.endswith('BLY') and len(w) > 3:
+        # Do_BLY_Morph: "possibly" -> root + "ble" (possible)
+        entry = lookup(w[:-1] + 'E')
+        if entry is not None:
+            return _append(entry.phon_str, [_l_, _IY_]), entry
+        # else "superbly" -> "superb" + LY
+        entry = lookup(w[:-2])
+        if entry is not None:
+            return _append(entry.phon_str, [_l_, _IY_]), entry
+    if w.endswith('LY') and len(w) > 2:
+        entry = lookup(w[:-2])
+        if entry is not None:
+            return _append(entry.phon_str, [_l_, _IY_]), entry
+
+    # --- -IEST / -EST (Morph.c:2006-2070, dispatch 2538-2585) ---
+    if w.endswith('IEST') and len(w) > 4:
+        entry = _decompose_i_common(w[:-4])
+        if entry is not None:
+            return _append(entry.phon_str, [_IX_, _s_, _t_]), entry
+        stripped = w[:-4]
+        # Root + LY + EST: "loneliest" -> strip "IEST" -> "lonel" -> strip
+        # the trailing "L" -> "lone" (Morph.c:2047-2064).
+        if stripped.endswith('L'):
+            entry = lookup(stripped[:-1])
+            if entry is not None:
+                return _append(entry.phon_str, [_l_, _IY_, _IX_, _s_, _t_]), entry
+    if w.endswith('EST') and len(w) > 3:
+        entry = _decompose_e_common(w[:-3])
+        if entry is not None:
+            return _append(entry.phon_str, [_IX_, _s_, _t_]), entry
+
+    # --- -IERS / -IER / -ERS / -ER (Morph.c:1995-2027, dispatch 2512-2578) ---
+    if w.endswith('IERS') and len(w) > 4:
+        entry = _decompose_i_common(w[:-4])
+        if entry is not None:
+            return _append(entry.phon_str, [_ER_, _z_]), entry
+    if w.endswith('IER') and len(w) > 3:
+        entry = _decompose_i_common(w[:-3])
+        if entry is not None:
+            return _append(entry.phon_str, [_ER_]), entry
+    if w.endswith('ERS') and len(w) > 3:
+        entry = _decompose_e_common(w[:-3])
+        if entry is not None:
+            return _append(entry.phon_str, [_ER_, _z_]), entry
+    if w.endswith('ER') and len(w) > 2:
+        entry = _decompose_e_common(w[:-2])
+        if entry is not None:
+            return _append(entry.phon_str, [_ER_]), entry
+
+    # --- -IED / -ED (Morph.c:1960-1990, dispatch 2504-2552) ---
+    if w.endswith('IED') and len(w) > 3:
+        entry = _decompose_i_common(w[:-3])
+        if entry is not None:
+            return _append(entry.phon_str, [_d_]), entry
+    if w.endswith('ED') and len(w) > 2:
+        entry = _decompose_e_common(w[:-2])
+        if entry is not None:
+            return _store_ed(list(entry.phon_str)), entry
+
+    # --- -INGS / -ING (Morph.c:2073-2084, dispatch 2587-2601) ---
+    if w.endswith('INGS') and len(w) > 4:
+        entry = _decompose_e_common(w[:-4])
+        if entry is not None:
+            return _append(entry.phon_str, [_IX_, _NG_, _z_]), entry
+    if w.endswith('ING') and len(w) > 3:
+        entry = _decompose_e_common(w[:-3])
+        if entry is not None:
+            return _append(entry.phon_str, [_IX_, _NG_]), entry
+
+    # --- -IES / -ES (Morph.c:2178-2302, dispatch 2489-2501/2474-2487) ---
+    if w.endswith('IES') and len(w) > 3:
+        entry = lookup(w[:-3] + 'Y')  # candies -> candy
+        if entry is not None:
+            return _store_s_or_z(list(entry.phon_str)), entry
+        entry = lookup(w[:-2] + 'E')  # calories -> calorie (keep the "I", add E)
+        if entry is not None:
+            return _store_s_or_z(list(entry.phon_str)), entry
+    if w.endswith('ES') and len(w) > 2:
+        # Do_ES_Morph (Morph.c:2221-2302) checks the STRIPPED ROOT's own
+        # ending (word minus "ES"), not the full word's.
+        root = w[:-2]
+        if root.endswith('SH') or root.endswith('CH'):
+            # fish -> fishES ; scratch -> scratchES
+            entry = lookup(root)
+            if entry is not None:
+                return _store_s_or_z(list(entry.phon_str)), entry
+        elif root.endswith('SS'):
+            # stress -> stressES
+            entry = lookup(root)
+            if entry is not None:
+                return _store_s_or_z(list(entry.phon_str)), entry
+        elif root.endswith('X'):
+            # box -> boxES
+            entry = lookup(root)
+            if entry is not None:
+                return _store_s_or_z(list(entry.phon_str)), entry
+        else:
+            entry = lookup(w[:-1])  # keep the "E": house -> houses, name -> names
+            if entry is not None:
+                return _store_s_or_z(list(entry.phon_str)), entry
+            root = w[:-2]
+            if root and root[-1] in ('S', 'Z'):  # bus -> buses, waltz -> waltzes
+                entry = lookup(root)
+                if entry is not None:
+                    return _store_s_or_z(list(entry.phon_str)), entry
+
+    return None
+
+
+def _append(phon_str, extra):
+    return list(phon_str) + list(extra)
+
+
+def _store_ed(phon_str: list) -> list:
+    """Port of `Do_ED_Morph` (`Morph.c:1960-1990`): appends the
+    phonetically-correct past-tense suffix after `phon_str`'s last
+    phoneme, based on its voicing:
+    - the root already ends in `_t_`/`_d_` -> `_IX_ _d_` (/ɪd/, e.g. "wanted")
+    - voiceless consonant -> `_t_` (e.g. "walked")
+    - everything else (vowels, voiced consonants) -> `_d_` (e.g. "jogged")
+    """
+    from ._data import PhonFlags2
+    from ._phonemes import _IX_, _t_, _d_
+
+    last_phon = phon_str[-1]
+    flags = PhonFlags2[last_phon] if 0 <= last_phon < len(PhonFlags2) else 0
+    out = list(phon_str)
+    if last_phon == _t_ or last_phon == _d_:
+        out.append(_IX_)
+        out.append(_d_)
+    elif (flags & kConsonantF) and not (flags & kVoicedF):
+        out.append(_t_)
+    else:
+        out.append(_d_)
+    return out
+

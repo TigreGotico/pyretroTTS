@@ -200,13 +200,32 @@ single-sentence text is.
   all three `Store_S_or_Z` branches (voiced/voiceless/sibilant) and
   multiple voices — see
   `test/test_synthesize_text.py::test_s_morph_frame_exact`.
-- NOT ported: `Zap_POS`/`SetPOS_FromSuffix` and `DoMorph`'s ~30 OTHER
-  suffix functions (-ING, -ED, -LY, -ER, -EST, -MENT, -NESS, -ABLE, -IZE,
-  -ISM, -OR, and compound-noun decomposition, `Morph.c:1010-2373`) and the
-  rest of `PlacePhrasing`'s rules (SEP1-5, `Morph.c:148-271`) — see task
-  #8. These are all independently-scoped, similarly-sized pieces of
-  `Morph.c` (each suffix function is its own small, testable unit, much
-  like `Do_S_Morph` above) rather than one monolithic remaining task.
+- (Fixed) `_morph.py`'s `try_do_morph` ports the rest of `DoMorph`'s
+  common suffix functions beyond plain `-S`: `-CALLY`/`-BLY`/plain `-LY`,
+  `-EST`/`-IEST` (via `Decompose_E_Common`/`Decompose_I_Common` and
+  `Consonant_Doubling_Adjust`, `Morph.c:1272-1380`), `-ER`/`-IER`/`-ERS`/
+  `-IERS`, `-ED`/`-IED` (`Do_ED_Morph`'s voicing-based `/t/`/`/d/`/`/ɪd/`
+  allomorphy, `Morph.c:1960-1990`), `-ING`/`-INGS`, and `-ES`/`-IES`
+  (`Store_S_or_Z`-based, covering sibilant roots like "house"→"houses"
+  and "bus"→"buses" as well as `-Y`→`-IES` roots like "candy"→"candies").
+  Each strips the suffix, decomposes the root (trying a trailing "E" or
+  "Y" restoration, or de-doubling a doubled final consonant, exactly as
+  the C reference's decompose helpers do), looks the root up in the
+  dictionary, and on a hit appends the phonetically-correct suffix
+  phonemes instead of falling through to `_engtop.engtop()`. Wired into
+  `_assembly.make_fe_word_token` alongside `try_s_morph`
+  (`try_s_morph(word) or try_do_morph(word)`, matching `DoMorph`'s own
+  suffix-check order). Verified frame-exact across `-CALLY`/`-ED`/`-ER`/
+  `-ING`/`-LY`/`-ES`/`-IES`/`-IEST` cases and multiple dictionary roots
+  (MAGIC, TIME, SHORT, TALK, PLAY, LOVE, LIKE, READ, OFFER) — see
+  `test/test_synthesize_text.py::test_do_morph_suffix_frame_exact`.
+- NOT ported: `Zap_POS`/`SetPOS_FromSuffix` and `DoMorph`'s remaining
+  suffix functions (`-MENT(S)`/`-IMENT(S)`, `-ABLE`, `-OR(S)`, `-IZE` and
+  its compounds, `-NESS`/`-INESS`, `-ISM`) and compound-noun decomposition
+  (`Morph.c:1010-2373`), and the rest of `PlacePhrasing`'s rules (SEP1-5,
+  `Morph.c:148-271`) — see task #8. These remain independently-scoped,
+  similarly-sized pieces of `Morph.c` rather than one monolithic
+  remaining task.
 - (Fixed) Multi-clause synthesis used to give each clause of
   `api.synthesize_text` an independently-reset `VoiceVar`, rather than the
   real engine's single continuous `Talk()` session (`BackEnd.c:4264-4298`:

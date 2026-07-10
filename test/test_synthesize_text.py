@@ -355,6 +355,29 @@ def test_s_morph_frame_exact():
     _check("buses and cars.", "Fred")
 
 
+def test_do_morph_suffix_frame_exact():
+    """Regression test for `_morph.try_do_morph` (`Morph.c`'s `DoMorph`
+    suffix functions beyond plain `-S`): a word with no direct dictionary
+    entry, ending in one of the ported suffixes, whose root IS a
+    dictionary entry, gets the root's real pronunciation plus the
+    phonetically-correct suffix phonemes instead of falling through to
+    `_engtop.engtop()`'s generic letter-to-sound rules. Covers `-CALLY`
+    ("magically", root MAGIC), `-ED`/`-IED` ("timed"/"tried", roots
+    TIME/TRY), `-ER`/`-IER` ("shorter"/"readers" via `-ERS`, roots
+    SHORT/READ), `-ING` ("timing"/"playing", roots TIME/PLAY), plain
+    `-LY` ("talked", via `-ED`, root TALK), `-ES`/`-IES` ("loves"/
+    "likes", roots LOVE/LIKE), and `-IEST` ("loveliest", root LOVE)."""
+    _check("he timed it perfectly.", "Fred")
+    _check("a good timer.", "Fred")
+    _check("good timing.", "Fred")
+    _check("a shorter path.", "Fred")
+    _check("magically appear.", "Fred")
+    _check("she talked and played.", "Fred")
+    _check("she loves and likes it.", "Fred")
+    _check("the readers and offers.", "Fred")
+    _check("the loveliest gift.", "Fred")
+
+
 if __name__ == "__main__":
     import inspect
     mod = sys.modules[__name__]

@@ -31,8 +31,8 @@ counterpart is checked out locally as `lintalker-c`).
 | Word-by-word POS disambiguation (context-dependent word class) | `Morph.c` (`ResolvePOS`) | Ported (`lintalker/_morph.py`), verified bit-exact via the SEP6/WH-question tests it feeds (`test/test_synthesize_text.py`) |
 | Sentence-internal phrase boundaries (content-word/function-word transitions) | `Morph.c` (`PlacePhrasing`, SEP6 rule only) | Approximated with a POS-set check (SEP1-5 not ported) (`lintalker/_assembly.py`) |
 | WH-question vs. yes/no-question intonation | `Morph.c` (`PlacePhrasing`, `YesNo_Phrase`) | Ported using real `ResolvePOS` POS tags (`lintalker/_assembly.py`) |
-| Suffix-stripping decomposition (plural/3rd-person "-S") | `Morph.c` (`Do_S_Morph`, `Store_S_or_Z`) | Ported (`lintalker/_morph.py`), verified bit-exact (`test/test_synthesize_text.py::test_s_morph_frame_exact`) |
-| Remaining suffix-stripping/compound-word decomposition | `Morph.c` (`DoMorph`'s ~30 other suffix functions, `Zap_POS`, `SetPOS_FromSuffix`) | Not ported |
+| Suffix-stripping decomposition (plural/3rd-person "-S", `-LY`, `-EST`/`-IEST`, `-ER`/`-IER`/`-ERS`/`-IERS`, `-ED`/`-IED`, `-ING`/`-INGS`, `-ES`/`-IES`, `-CALLY`/`-BLY`) | `Morph.c` (`Do_S_Morph`, `Store_S_or_Z`, and the rest of `DoMorph`'s suffix dispatch) | Ported (`lintalker/_morph.py`), verified bit-exact (`test/test_synthesize_text.py::test_s_morph_frame_exact`, `::test_do_morph_suffix_frame_exact`) |
+| Remaining compound-word decomposition | `Morph.c` (`-MENT(S)`/`-IMENT(S)`/`-ABLE`/`-OR(S)`/`-IZE` and its compounds/`-NESS`/`-INESS`/`-ISM`, `Zap_POS`, `SetPOS_FromSuffix`) | Not ported |
 
 **What this means today:** `lintalker.api.synthesize_text(voice_dict, text)`
 synthesizes English text end-to-end, verified frame-for-frame bit-exact
@@ -50,9 +50,13 @@ word lists. A word missing from the dictionary but ending in a plural/
 3rd-person-singular "-S" (e.g. "dogs", "cats", "wishes") whose root IS in
 the dictionary gets the root's real pronunciation plus the phonetically
 correct suffix, instead of falling through to generic letter-to-sound
-rules. Remaining known gaps: no other `Morph.c` compound-word/suffix-
-stripping decomposition (-ING, -ED, -LY, -ER, -EST, and ~25 more), no
-number/abbreviation expansion, no embedded commands — see
+rules; the same applies to `-LY`, `-EST`/`-IEST`, `-ER`/`-IER`/`-ERS`/
+`-IERS`, `-ED`/`-IED`, `-ING`/`-INGS`, `-ES`/`-IES`, and `-CALLY`/`-BLY`
+(e.g. "timed", "timer", "timing", "shorter", "magically", "talked",
+"loves", "loveliest"). Remaining known gaps: no `-MENT(S)`/`-IMENT(S)`/
+`-ABLE`/`-OR(S)`/`-IZE`-family/`-NESS`/`-INESS`/`-ISM` suffix decomposition
+or true compound-noun splitting, no number/abbreviation expansion, no
+embedded commands — see
 `docs/architecture.md` for specifics. You can still synthesize from an
 already-built phoneme plan directly via
 `lintalker.api.synthesize_phonemes()`, and there's a lower-level

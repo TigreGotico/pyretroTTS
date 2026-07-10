@@ -184,7 +184,7 @@ from ._phonemes import (
 from ._frontend import tokenize
 from ._lexicon import lookup, LexEntry
 from ._engtop import engtop
-from ._morph import try_s_morph
+from ._morph import try_s_morph, try_do_morph
 
 # BackEnd.c:3971-3973 -- the POS set that marks a word a "content word"
 # (`kContent_Word`, gates primary-vs-secondary stress at 3869-3877).
@@ -266,14 +266,17 @@ def make_fe_word_token(word: str, punct: Optional[str]) -> FEWordToken:
         # collect_fe_tokens() once all of a clause's tokens are built, since
         # disambiguating one word can require looking at neighboring words'
         # own candidate POS sets.
-    elif (morphed := try_s_morph(word)) is not None:
-        # DoMorph succeeded (Do_S_Morph/Store_S_or_Z, Morph.c:2306-2322 --
-        # the only DoMorph suffix pattern ported so far, see _morph.py).
-        # WordToPhonemes does NOT default a morphed word's POS to kNoun
-        # the way it does for the true EngToP fallback below
-        # (FrontEnd.c:1628-1648): SearchAllDicts already populated the
-        # token's POS fields from the ROOT it found, so this uses the
-        # root's real pos_code1/comp_pos1, not a placeholder.
+    elif (morphed := (try_s_morph(word) or try_do_morph(word))) is not None:
+        # DoMorph succeeded -- either Do_S_Morph/Store_S_or_Z
+        # (Morph.c:2306-2322, tried first, matching DoMorph's own
+        # unconditional S-before-Search_Suffix order) or one of the other
+        # ported suffix functions (see _morph.py's try_do_morph
+        # docstring for exactly which). WordToPhonemes does NOT default a
+        # morphed word's POS to kNoun the way it does for the true
+        # EngToP fallback below (FrontEnd.c:1628-1648): SearchAllDicts
+        # already populated the token's POS fields from the ROOT it
+        # found, so this uses the root's real pos_code1/comp_pos1, not a
+        # placeholder.
         morphed_phon_str, root_entry = morphed
         tok = FEWordToken(
             word=word,
