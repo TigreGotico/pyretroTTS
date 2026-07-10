@@ -460,30 +460,34 @@ def test_do_morph_pos_from_suffix_hasalt_zap_pos():
     """Regression test for `_morph.apply_pos_from_suffix`'s `hasAlt`-true
     branch (`SetPOS_FromSuffix`'s `Zap_POS` re-selection, `Morph.c:1027
     -1189`): a homograph root (e.g. "lead" is verb/noun, "tear" is
-    verb/noun, "bow" is noun/verb) that also gets DoMorph'd via a
-    suffix forcing a specific POS should pick whichever of the root's
-    two dictionary readings (`pos_code1`/`pos_code2`) matches that
-    forced POS, not blindly keep `pos_code1`. Before this was ported,
-    `has_alt` was hardcoded `False` for every morphed word, so this
-    branch was unreachable; it now uses the root's real `has_alt`.
-    Covers three roots where the suffix-forced POS matches `pos_code1`
-    (the common case, verified frame-exact): "leaded" (root LEAD,
-    `-ED`->kVerb, matches LEAD's own verb reading), "tears" (root TEAR,
-    `-S`->kVerb, matches TEAR's own verb reading), "bowed"/"bows" (root
-    BOW, `-ED`/`-S`->kVerb, matches one of BOW's noun/verb/noun
-    readings). A known, narrower remaining gap (NOT covered by these
-    cases, see docs/architecture.md): when the forced POS instead
-    matches `pos_code2` (the ALT reading), the real engine also
-    switches to that root's ALTERNATE pronunciation (`phon_hold`, not
-    `phon_str`) -- this port's suffix functions always build the
-    morphed word's phonemes from `phon_str`, so a case like "winded"
-    (root WIND, `-ED`->kVerb, matching WIND's `pos_code2` verb reading,
-    which uses `phon_hold`'s /waɪnd/ pronunciation, not `phon_str`'s
-    /wɪnd/) is NOT yet frame-exact."""
+    verb/noun, "bow" is noun/verb, "wind" is noun/verb) that also gets
+    DoMorph'd via a suffix forcing a specific POS should pick whichever
+    of the root's two dictionary readings (`pos_code1`/`pos_code2`)
+    matches that forced POS, not blindly keep `pos_code1`. Before this
+    was ported, `has_alt` was hardcoded `False` for every morphed word,
+    so this branch was unreachable; it now uses the root's real
+    `has_alt`. Covers roots where the suffix-forced POS matches
+    `pos_code1` (the common case): "leaded" (root LEAD, `-ED`->kVerb,
+    matches LEAD's own verb reading), "tears" (root TEAR, `-S`->kVerb,
+    matches TEAR's own verb reading), "bowed"/"bows" (root BOW,
+    `-ED`/`-S`->kVerb, matches one of BOW's noun/verb/noun readings) --
+    and the rarer case where it matches `pos_code2` (the ALT reading)
+    instead: "winded" (root WIND, `-ED`->kVerb, matching WIND's
+    `pos_code2` verb reading, NOT its `pos_code1` noun reading). That
+    ALT-reading case also exercises `_morph.try_do_morph`'s
+    `build_phon_str`-deferred-to-caller design: the real engine switches
+    to the root's ALTERNATE pronunciation (`phon_hold`'s /waɪnd/, not
+    `phon_str`'s /wɪnd/) whenever the ALT POS reading wins, which
+    `_assembly.make_fe_word_token` now does by choosing `phon_hold` vs
+    `phon_str` as `build_phon_str`'s base AFTER `apply_pos_from_suffix`
+    resolves `alt_choice` -- confirmed via direct phoneme comparison
+    against the C reference (this exact case previously mismatched on
+    the vowel phoneme distinguishing /waɪnd/ from /wɪnd/, now fixed)."""
     _check("the leaded gasoline.", "Fred")
     _check("she teared up.", "Fred")
     _check("he bowed to the crowd.", "Fred")
     _check("the archer has two bows.", "Fred")
+    _check("he winded up the toy.", "Fred")
 
 
 if __name__ == "__main__":

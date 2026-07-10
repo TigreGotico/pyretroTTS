@@ -18,7 +18,7 @@
 | `Engine.c` | `lintalker/_engine.py` | Top-level init/speak/reset/rate/pitch/volume API, built on `_backend.py`. `e_speak_buffer` (the text-in entry point) and a few fsynth-dependent setters (`e_reset_params`, `e_use_voice`, `e_reinit_voice`) raise `NotImplementedError` naming the specific unported upstream C function they need. |
 | `BackEnd.c` (`DoCtrl`, the per-phoneme `CMDQueue` dispatcher: absolute/relative pitch, volume, mod) | `lintalker/_embeddedcmd.py` | Ported (see `test/test_embeddedcmd.py`); `C_reset`/`C_voice` are unimplemented/no-op the same way upstream leaves them, pending `ResetVoice`/`NewVoice` |
 | `EmbeddedCmd.c` (the FrontEnd bracket-delimited text-command parser, e.g. `[[pbas200]]` -- `[[`/`]]` are the default delimiters, `mt4.h`'s `defaultCmdBeginDelim`/`defaultCmdEndDelim`, a distinct mechanism from `DoCtrl` above — it sets `PendingCommands` bits that `FrontEnd.c` later turns into `CMDQueue` entries via `QueueCommand`, except `emph`/`xtnd wpos` which copy straight into the next token's fields and `slnc` which inserts a real `_SIL_` phoneme) | `lintalker/_embeddedcmd.py`'s `scan_bracket_commands` | Ported for `pbas`/`pbar`/`pmod`/`pmor`/`volm`/`volr`/`rset`/`sync` (applied as an immediate state change at clause start via `do_ctrl`, not true per-phoneme positioning -- `rset` correctly raises `NotImplementedError` via `do_ctrl`'s existing stub, `sync` is a genuine no-op matching `do_ctrl` having no `C_sync` case, same as the real `DoCtrl`), `emph`/`emph-` (applied to the correct word's `word_emphasis` field via `_assembly.collect_fe_tokens`), `xtnd`'s `wpos` selector (applied to the correct word's `pos_code1`/`comp_pos1` fields, same mechanism as `emph`), `slnc` (inserts a real `_SIL_` phoneme with the requested duration at the exact word position, via `sa.note_buf`/`_moduration.mod_duration`'s `kSilenceDuration` branch), `cmnt`/`vers` (no-ops, stripped), and `dlim` (changes the begin/end delimiter used for later commands in the same text); `rate`/`char`/`mode`/`nmbr` not ported; cannot be verified frame-exact against `lintalker-c`'s compiled `test_harness` -- see "Known gaps" |
-| `Morph.c` (`ResolvePOS`, `PlacePhrasing`, `SetPOS_FromSuffix` including `Zap_POS`, `DoMorph`'s suffix functions) | `lintalker/_morph.py` (suffix decomposition) + `lintalker/_assembly.py` (`resolve_pos`/`_place_phrasing`) | Every top-level function is ported, including `Zap_POS` (`apply_pos_from_suffix`'s `hasAlt`-true branch; `PlacePhrasing`'s `inParen`/SEP7 aren't real gaps -- neither is ever exercised by the C reference itself, see "Known gaps"); `Search_Suffix`'s real `SuffixTab` trie data is approximated with an ordered `endswith()` cascade instead of extracted; a narrow remaining gap where the `hasAlt` branch picks the ALT (`pos_code2`) reading -- the morphed word's phonemes should then come from the root's alternate pronunciation (`phon_hold`), not `phon_str`, see "Known gaps" |
+| `Morph.c` (`ResolvePOS`, `PlacePhrasing`, `SetPOS_FromSuffix` including `Zap_POS`, `DoMorph`'s suffix functions) | `lintalker/_morph.py` (suffix decomposition) + `lintalker/_assembly.py` (`resolve_pos`/`_place_phrasing`) | Every top-level function is ported, including `Zap_POS` (`apply_pos_from_suffix`'s `hasAlt`-true branch, which also selects the root's alternate pronunciation `phon_hold` when the ALT `pos_code2` reading wins -- `PlacePhrasing`'s `inParen`/SEP7 aren't real gaps -- neither is ever exercised by the C reference itself, see "Known gaps"); `Search_Suffix`'s real `SuffixTab` trie data is approximated with an ordered `endswith()` cascade instead of extracted |
 | `english_lex.c`/`English.lex` | `lintalker/_lexicon.py` | Dictionary lookup (`lookup(word)`), verified bit-exact against the real engine for 249 words spanning common/rare/compound-noun/abbreviation entries (`test/test_lexicon.py`). |
 | `Sounds.c` | not ported | Embedded sound effects (bells, etc.) — raw PCM blobs, not logic |
 
@@ -301,21 +301,25 @@ single-sentence text is.
   the LOSING side, setting `alt_choice=1` when `pos_code2` wins.
   Verified via `test/test_synthesize_text.py::test_do_morph_pos_from_
   suffix_hasalt_zap_pos` (frame-exact for "leaded"/"tears"/"bowed"/
-  "bows", all cases where the forced POS matches `pos_code1`). A
-  narrower, still-open gap surfaced by this work: when the forced POS
-  instead matches `pos_code2` (the ALT reading) -- e.g. "winded" (root
-  WIND, `-ED` forces `kVerb`, matching WIND's `pos_code2` verb reading,
-  not its `pos_code1` noun reading) -- the real engine ALSO switches to
-  that root's alternate PRONUNCIATION (`phon_hold`, e.g. /waɪnd/) rather
-  than the primary one (`phon_str`, /wɪnd/) it would otherwise use, but
-  this port's suffix functions always build the morphed word's phonemes
-  from `phon_str` regardless of which POS reading won -- confirmed via
-  direct phoneme comparison against the C reference: "he winded up the
-  toy." mismatches on exactly the vowel phoneme that differs between
-  `phon_str`/`phon_hold`. Fixing this needs `try_do_morph`'s ~30 return
-  sites to defer their final `phon_str`-vs-`phon_hold` choice until
-  after `apply_pos_from_suffix` resolves `alt_choice`, a larger
-  mechanical change not attempted here. Most suffixes force a
+  "bows", all cases where the forced POS matches `pos_code1`). This work
+  surfaced (and then fixed) a related, narrower issue: when the forced
+  POS instead matches `pos_code2` (the ALT reading) -- e.g. "winded"
+  (root WIND, `-ED` forces `kVerb`, matching WIND's `pos_code2` verb
+  reading, not its `pos_code1` noun reading) -- the real engine ALSO
+  switches to that root's alternate PRONUNCIATION (`phon_hold`, e.g.
+  /waɪnd/) rather than the primary one (`phon_str`, /wɪnd/) it would
+  otherwise use. `try_do_morph`/`try_s_morph` now return a
+  `build_phon_str` CALLABLE instead of an already-built phoneme list
+  (every one of `try_do_morph`'s ~40 return sites converted from
+  e.g. `_append(entry.phon_str, EXTRA)` to `lambda base:
+  _append(base, EXTRA)`), deferring the `phon_str`-vs-`phon_hold`
+  choice to `_assembly.make_fe_word_token`, which calls it with
+  `root_entry.phon_hold` when `alt_choice == 1` and `phon_hold` is
+  available, else `root_entry.phon_str` -- confirmed via direct
+  phoneme comparison against the C reference: "he winded up the toy."
+  previously mismatched on exactly the vowel phoneme distinguishing
+  /waɪnd/ from /wɪnd/, now frame-exact (see the same test above). Most
+  suffixes force a
   FIXED POS on the morphed word regardless of the root's own (possibly
   ambiguous) dictionary POS candidates -- e.g. `-ED` always means
   `kVerb` ("time" is noun/adj/verb, but "timed" cannot be anything but a

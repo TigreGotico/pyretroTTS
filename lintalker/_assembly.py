@@ -293,7 +293,7 @@ def make_fe_word_token(word: str, punct: Optional[str]) -> FEWordToken:
         # between `pos_code1`/`pos_code2`, e.g. "close"+"-er"->"closer"
         # forces `kNoun`, found in "close"'s ALT reading, not its primary
         # verb reading).
-        morphed_phon_str, root_entry, suffix_type = morphed
+        build_phon_str, root_entry, suffix_type = morphed
         _pos_code2 = list(root_entry.pos_code2) if root_entry.pos_code2 is not None else None
         _pc1, _pc2, _ = _pos_count_and_hi_rank(root_entry.pos_code1, root_entry.pos_code2)
         pos_code1, comp_pos1, pos_code2, comp_pos2, alt_choice = apply_pos_from_suffix(
@@ -301,6 +301,13 @@ def make_fe_word_token(word: str, punct: Optional[str]) -> FEWordToken:
             _pos_code2, root_entry.comp_pos2,
             _pc1, root_entry.has_alt, suffix_type,
         )
+        # When the ALT (pos_code2) reading won, the real engine also
+        # switches to the root's ALTERNATE pronunciation (phon_hold),
+        # not just its POS -- e.g. "winded" (root WIND, -ED forces
+        # kVerb, matching WIND's pos_code2 verb reading) uses WIND's
+        # /waɪnd/ phon_hold, not its /wɪnd/ phon_str.
+        _base = root_entry.phon_hold if (alt_choice == 1 and root_entry.phon_hold is not None) else root_entry.phon_str
+        morphed_phon_str = build_phon_str(_base)
         tok = FEWordToken(
             word=word,
             phon_str=morphed_phon_str,

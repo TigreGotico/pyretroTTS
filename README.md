@@ -32,7 +32,7 @@ counterpart is checked out locally as `lintalker-c`).
 | Sentence-internal phrase boundaries (SEP1-6: sentence-initial adverbs, coordinating conjunctions, subject-noun-phrase/aux-verb, pre-conjunction, relative-pronoun/quantifier, content-word/function-word transitions) | `Morph.c` (`PlacePhrasing`, SEP1-6) | Ported (`lintalker/_assembly.py`'s `_place_phrasing`), verified bit-exact (`test/test_synthesize_text.py::test_sep6_phrase_boundary_frame_exact`, `::test_sep1_to_sep5_phrase_boundary_frame_exact`) |
 | WH-question vs. yes/no-question intonation | `Morph.c` (`PlacePhrasing`, `YesNo_Phrase`) | Ported using real `ResolvePOS` POS tags (`lintalker/_assembly.py`) |
 | Suffix-stripping decomposition (plural/3rd-person "-S", `-LY`, `-EST`/`-IEST`, `-ER`/`-IER`/`-ERS`/`-IERS`, `-ED`/`-IED`, `-ING`/`-INGS`, `-ES`/`-IES`, `-CALLY`/`-BLY`, `-MENT(S)`/`-IMENT(S)`, `-ABLE`, `-NESS(ES)`/`-INESS(ES)`, `-ISM(S)`, `-OR(S)`, `-IZE`/`-IZED`/`-IZES`/`-IZING(S)`/`-IZER(S)`) | `Morph.c` (`Do_S_Morph`, `Store_S_or_Z`, and the rest of `DoMorph`'s suffix dispatch) | Ported (`lintalker/_morph.py`), verified bit-exact (`test/test_synthesize_text.py::test_s_morph_frame_exact`, `::test_do_morph_suffix_frame_exact`) |
-| Suffix-derived POS override (a morphed word's part of speech from its suffix, not its root's own dictionary POS), including homograph alternate-reading re-selection | `Morph.c` (`SetPOS_FromSuffix` including `Zap_POS`) | Ported (`lintalker/_morph.py`'s `pos_select_for_suffix`/`apply_pos_from_suffix`), verified (`test/test_synthesize_text.py::test_do_morph_pos_from_suffix`, `::test_do_morph_pos_from_suffix_hasalt_zap_pos`) -- every top-level `Morph.c` function is now ported (`PlacePhrasing`'s `inParen`/SEP7 aren't real gaps either, neither is ever exercised by the C reference itself); one narrow remaining discrepancy where the alternate POS reading wins is documented in `docs/architecture.md` |
+| Suffix-derived POS override (a morphed word's part of speech from its suffix, not its root's own dictionary POS), including homograph alternate-reading re-selection and alternate-pronunciation (`phon_hold`) selection | `Morph.c` (`SetPOS_FromSuffix` including `Zap_POS`) | Ported (`lintalker/_morph.py`'s `pos_select_for_suffix`/`apply_pos_from_suffix`), verified (`test/test_synthesize_text.py::test_do_morph_pos_from_suffix`, `::test_do_morph_pos_from_suffix_hasalt_zap_pos`) -- every top-level `Morph.c` function is now ported (`PlacePhrasing`'s `inParen`/SEP7 aren't real gaps either, neither is ever exercised by the C reference itself) |
 
 **What this means today:** `lintalker.api.synthesize_text(voice_dict, text)`
 synthesizes English text end-to-end, verified frame-for-frame bit-exact
@@ -69,9 +69,8 @@ part-of-speech override (`[[xtnd mtk3 wpos 1]]`, at the exact word
 position) — pitch/mod/volume are applied at the start of the clause
 they appear in, not the exact phoneme position; see
 `docs/architecture.md`. Remaining known gaps: no number/abbreviation
-expansion, no `rate`/`char`/`mode`/`nmbr` embedded commands, and a
-narrow homograph-pronunciation discrepancy in `DoMorph`'s alternate-POS
-handling — see `docs/architecture.md` for
+expansion and no `rate`/`char`/`mode`/`nmbr` embedded commands — see
+`docs/architecture.md` for
 specifics. You can still synthesize from an
 already-built phoneme plan directly via
 `lintalker.api.synthesize_phonemes()`, and there's a lower-level
