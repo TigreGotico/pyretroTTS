@@ -391,11 +391,40 @@ single-sentence text is.
   `English.lex`'s does (`words_off` comes out as `0xFFFFFFFF`, and
   `index_off` lands on a value that looks like `English.lex`'s
   `words_off` instead, i.e. the field layout `parse_dict` assumes doesn't
-  match this blob). Number expansion needs that resolved first, then a
-  port of `PartialNumberToPhonemes`'s ones/tens/hundreds construction
-  logic (not yet attempted); the full `SpeakTokenAsNumber`/`GetNextToken`
-  tokenizer state machine (decimals, currency, years, phone numbers) is
-  larger still and out of scope for a first pass.
+  match this blob). A SEPARATE later investigation found a viable
+  workaround that doesn't need the `Symbols` blob decoded at all: every
+  number-word `PartialNumberToPhonemes` needs (`ZERO`-`NINETEEN`,
+  `TWENTY`-`NINETY`, `HUNDRED`, `THOUSAND`, `MILLION`, `BILLION`, `AND`,
+  `OH`, `DOLLAR(S)`, `CENT(S)`) can be extracted directly from the
+  compiled `test_harness` CLI by speaking each word in isolation and
+  capturing its `phon_Buf_2` (the same technique `test_voices.py` uses
+  throughout) -- confirmed a single digit typed alone (`"1"`) and the
+  spelled-out word (`"one."`) produce IDENTICAL phoneme sequences,
+  meaning digit-token lookup and plain word lookup resolve to the same
+  underlying dictionary content regardless of which dictionary structure
+  backs it. CAUTION for whoever extracts this: a first attempt at
+  decoding `"123"`'s phoneme output byte-for-byte against the
+  concatenation of `"ONE"`+`"HUNDRED"`+`"TWENTY"`+`"THREE"` extracted via
+  `"one."` etc found a length/content mismatch (the isolated-word
+  extraction via a trailing "." appears to include word-FINAL
+  phonological artifacts -- e.g. `"one."` carries a trailing schwa that
+  `"123"`'s internal, non-final "one" does not) -- extract each number
+  word in a mid-utterance, non-final context (e.g. as the first word of
+  a longer phrase) to avoid contaminating the captured `phon_Buf_2` with
+  sentence-final-only content. Also still unresolved: bare digit-only
+  input like `"123"` does NOT reproduce the `"and"`-inserting phoneme
+  sequence that `PartialNumberToPhonemes`'s documented algorithm would
+  predict for a plain 3-digit cardinal (confirmed by direct comparison:
+  `"123"` and `"one hundred and twenty three."` produce different-length
+  phoneme sequences) -- the real tokenizer's `SpeakTokenAsNumber`
+  trigger conditions and exactly which digit-run token type
+  (`kNumericTok` vs `kSmartNumberTok`) plain typed digits get classified
+  as needs to be pinned down (likely via direct instrumentation of
+  `GetNextToken`/`Fill_Tok_Buffer`) before the ones/tens/hundreds
+  construction logic itself can be ported and verified frame-exact. The
+  full `SpeakTokenAsNumber`/`GetNextToken` tokenizer state machine
+  (decimals, currency, years, phone numbers) is larger still and out of
+  scope for a first pass.
 - No embedded commands (`EmbeddedCmd.c`'s backtick-escape text parser is
   unported — `DoCtrl`, the per-phoneme dispatcher it would feed, is
   ported and tested independently via `test/test_embeddedcmd.py`).
