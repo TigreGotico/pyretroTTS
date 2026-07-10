@@ -77,8 +77,10 @@ twenty three") are also supported (`lintalker/_numbers.py`) -- see
 caveat. Abbreviation periods (e.g. "Mr.", "Dr.", "St.") are recognized
 via a dictionary lookup and do not end a sentence/clause
 (`lintalker/_frontend.py`'s `_is_abbreviation_period`), matching
-`FrontEnd.c`'s `tok->isAbbriv` check. Remaining known gaps:
-`char`/`mode`/`nmbr` embedded commands and
+`FrontEnd.c`'s `tok->isAbbriv` check. The `nmbr` embedded command
+(`[[nmbr LTRL]]`/`[[nmbr NORM]]`) switches digit-string tokens between
+digit-by-digit reading ("123" -> "one two three") and normal cardinal
+grouping. Remaining known gaps: `char`/`mode` embedded commands and
 ordinal/decimal/currency/year/phone-number reading modes — see
 `docs/architecture.md` for
 specifics. You can still synthesize from an

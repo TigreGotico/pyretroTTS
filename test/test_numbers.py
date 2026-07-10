@@ -99,6 +99,42 @@ def test_frontend_tokenize_preserves_digit_tokens():
     assert "123" in words
 
 
+def test_digit_by_digit_reads_each_digit_separately():
+    from lintalker._numbers import digit_by_digit_phonemes, _ONES
+
+    assert digit_by_digit_phonemes("123") == [_Word_] + _ONES[1] + _ONES[2] + _ONES[3]
+    assert digit_by_digit_phonemes("0") == [_Word_] + _ONES[0]
+
+
+def test_nmbr_embedded_command_switches_to_digit_by_digit():
+    from lintalker._embeddedcmd import scan_bracket_commands
+    from lintalker._assembly import collect_fe_tokens
+    from lintalker._numbers import digit_by_digit_phonemes, number_to_phonemes
+
+    clean, _cmds, _emph, _sil, _pos, _rates, _final_rate, nmbr = scan_bracket_commands(
+        "[[nmbr LTRL]]123"
+    )
+    assert clean == "123"
+    assert nmbr == {0: True}
+    sa = collect_fe_tokens(clean, nmbr_overrides=nmbr)
+    assert sa.words[0].phon_str == digit_by_digit_phonemes("123")
+    assert sa.words[0].phon_str != number_to_phonemes("123")
+
+
+def test_nmbr_mode_latches_until_switched_back():
+    from lintalker._embeddedcmd import scan_bracket_commands
+    from lintalker._assembly import collect_fe_tokens
+    from lintalker._numbers import digit_by_digit_phonemes, number_to_phonemes
+
+    clean, _cmds, _emph, _sil, _pos, _rates, _final_rate, nmbr = scan_bracket_commands(
+        "[[nmbr LTRL]]12 [[nmbr NORM]]34"
+    )
+    assert nmbr == {0: True, 1: False}
+    sa = collect_fe_tokens(clean, nmbr_overrides=nmbr)
+    assert sa.words[0].phon_str == digit_by_digit_phonemes("12")
+    assert sa.words[1].phon_str == number_to_phonemes("34")
+
+
 if __name__ == "__main__":
     tests = [v for k, v in list(globals().items()) if k.startswith("test_")]
     for t in tests:

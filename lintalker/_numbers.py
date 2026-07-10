@@ -171,3 +171,19 @@ def number_to_phonemes(digits: str):
                 if power in _POWERS:
                     out += _POWERS[power]
     return [_Word_] + out
+
+
+def digit_by_digit_phonemes(digits: str):
+    """Port of `SpeakTokenCharByChar`'s digit-by-digit branch
+    (`FrontEnd.c:2057-2062`, `kDigitByDigit`/`EmbeddedCmd.c`'s `nmbr LTRL`
+    command): each digit is read out on its own (e.g. "123" -> "one two
+    three") instead of being grouped into a cardinal number. Reuses the
+    same bit-exact `_ONES` words `number_to_phonemes` does -- unlike the
+    grouping algorithm, this needs no `HUNDRED`/`THOUSAND`/`AND` at all,
+    so it carries no additional verification caveat beyond the
+    already-bit-exact single-digit words themselves.
+    """
+    out = []
+    for ch in digits:
+        out += _ONES[int(ch)]
+    return [_Word_] + out

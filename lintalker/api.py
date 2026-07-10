@@ -206,7 +206,7 @@ def build_phoneme_plan(voice_dict: dict, text: str, vv: Optional[VoiceVar] = Non
     from ._embeddedcmd import scan_bracket_commands, do_ctrl
     (
         text, _bracket_cmds, _emphasis_overrides, _silence_overrides,
-        _pos_overrides, _rate_overrides, _final_rate,
+        _pos_overrides, _rate_overrides, _final_rate, _nmbr_overrides,
     ) = scan_bracket_commands(text, initial_rate=vv.speech_Rate)
     if _bracket_cmds:
         # Simplified integration (see _embeddedcmd.scan_bracket_commands'
@@ -231,7 +231,10 @@ def build_phoneme_plan(voice_dict: dict, text: str, vv: Optional[VoiceVar] = Non
         # being a single persistent field, not reset per clause.
         vv.speech_Rate = _final_rate
 
-    sa = collect_fe_tokens(text, _emphasis_overrides, _silence_overrides, _pos_overrides, _rate_overrides)
+    sa = collect_fe_tokens(
+        text, _emphasis_overrides, _silence_overrides, _pos_overrides,
+        _rate_overrides, _nmbr_overrides,
+    )
     fill_phon_buf_2(vv, sa)
     vv.end_Punctuation = sa.end_punctuation
     pitch_raise_and_fall(vv)

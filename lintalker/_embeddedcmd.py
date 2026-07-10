@@ -118,6 +118,15 @@ def _parse_selector_value(text: str, i: int):
 _MACINTALK_CREATOR = (ord('m') << 24) | (ord('t') << 16) | (ord('k') << 8) | ord('3')
 _WPOS_SELECTOR = (ord('w') << 24) | (ord('p') << 16) | (ord('o') << 8) | ord('s')
 
+# SpeechEqu.h's modeNormal ('NORM')/modeLiteral ('LTRL') mode-argument
+# constants, shared by `char`/`nmbr` (Parse_char_Command/
+# Parse_nmbr_Command mask their argument with 0xDFDFDFDF to uppercase it
+# before comparing against these -- _parse_selector_value already reads
+# raw ASCII, so the uppercasing happens by using upper() on the parsed
+# text below instead of replicating the bitmask).
+_MODE_NORMAL = (ord('N') << 24) | (ord('O') << 16) | (ord('R') << 8) | ord('M')
+_MODE_LITERAL = (ord('L') << 24) | (ord('T') << 16) | (ord('R') << 8) | ord('L')
+
 
 def _parse_signed_command_value(text: str, i: int):
     """Port of the common preamble shared by `Parse_pbas_Command`/
@@ -285,24 +294,50 @@ def scan_bracket_commands(text: str, initial_rate: int = kNormal_Speech_Rate):
     no `rate`/`ratr` command at all) is returned as `final_rate`, for the
     caller to persist onto `vv.speech_Rate` for subsequent clauses.
 
-    NOT ported: `char`/`mode`/`nmbr` (each its own
-    separate parser/side-effect, not reachable via `CMDQueue` or a
-    plain token field the way `emph`/`xtnd`/`rate` are), and mid-clause
-    phoneme-accurate positioning for `pbas`/`pmod`/`volm` (a command
-    found after the Nth word of ONE clause is applied before that
-    clause's Nth word for `emph`/`slnc`/`xtnd`/`rate`, but `pbas`/`pmod`/
-    `volm` are applied as an immediate `do_ctrl` state change at the
-    whole clause's start instead -- see `api.build_phoneme_plan`).
+    Also recognizes `nmbr` (`Parse_nmbr_Command`/`ChangeNumberMode`,
+    `EmbeddedCmd.c:604-620`): its argument is `NORM`/`LTRL` (matching
+    `modeNormal`/`modeLiteral`, `SpeechEqu.h`), toggling `kDigitByDigit`
+    mode (`FrontEnd.c:2057-2062`'s `SpeakTokenCharByChar` branch for
+    numeric tokens -- each digit read on its own, e.g. "123" -> "one two
+    three", instead of grouped into a cardinal number). Unlike `emph`/
+    `xtnd wpos`/`rate` (single-word overrides) this is a LATCHED mode
+    that stays in effect for every following numeric token until changed
+    again, matching `vv->Mode`'s persistent bit -- so it's returned
+    separately as `nmbr_overrides`, a `{word_index: is_digit_by_digit}`
+    dict applied by `_assembly.collect_fe_tokens` as a running flag
+    rather than a one-shot lookup.
+
+    NOT ported: `char`/`mode` (`Parse_char_Command`/`ChangeCharMode`'s
+    `kCharByChar` letter-by-letter speaking mode needs each letter's own
+    NAME pronunciation -- e.g. "B" -> "bee" -- which comes from the
+    `Symbols` dictionary's per-character lookup, `LiteralCharToPhonemes`
+    `EmbeddedCmd.c`/`FrontEnd.c:1664-1694`; unlike the digit words
+    `nmbr` reuses above, no bit-exact extraction of the 26 letter-name
+    pronunciations from the compiled reference exists yet, so this
+    remains unported rather than guessed via the letter-to-sound engine.
+    `Parse_mode_Command`/`ChangeInputMode`'s `TEXT`/`PHON` toggle is a
+    different kind of gap entirely: `modePhonemes` switches the FrontEnd
+    tokenizer itself into accepting raw phoneme/markup input instead of
+    English text -- a wholly separate input grammar, not a speaking
+    style, and out of scope for this port's text-in/audio-out surface),
+    and mid-clause phoneme-accurate positioning for `pbas`/`pmod`/`volm`
+    (a command found after the Nth word of ONE clause is applied before
+    that clause's Nth word for `emph`/`slnc`/`xtnd`/`rate`/`nmbr`, but
+    `pbas`/`pmod`/`volm` are applied as an immediate `do_ctrl` state
+    change at the whole clause's start instead -- see
+    `api.build_phoneme_plan`).
 
     Returns `(clean_text, commands, emphasis, silences, pos_overrides,
-    rates, final_rate)`: `clean_text` is `text` with every recognized
-    bracketed command span removed; `commands` is a list of
-    `(word_index, ctrl_type, ctrl_data)` for `pbas`/`pmod`/`volm`/
-    `rset`/`sync`; `emphasis` is a `{word_index: "emphasize"|
+    rates, final_rate, nmbr_overrides)`: `clean_text` is `text` with
+    every recognized bracketed command span removed; `commands` is a
+    list of `(word_index, ctrl_type, ctrl_data)` for `pbas`/`pmod`/
+    `volm`/`rset`/`sync`; `emphasis` is a `{word_index: "emphasize"|
     "deemphasize"}` dict for `emph`; `silences` is a `{word_index:
     duration_ms}` dict for `slnc`; `pos_overrides` is a `{word_index:
     pos_value}` dict for `xtnd wpos`; `rates` is a `{word_index: wpm}`
-    dict for `rate`/`ratr`; `final_rate` is described above. `word_index`
+    dict for `rate`/`ratr`; `final_rate` is described above;
+    `nmbr_overrides` is a `{word_index: is_digit_by_digit}` dict for
+    `nmbr`. `word_index`
     is how many words (per
     `_frontend.tokenize`) of `clean_text` PRECEDE that command, i.e. the
     command/override applies to (or right before) that word. An
@@ -319,6 +354,7 @@ def scan_bracket_commands(text: str, initial_rate: int = kNormal_Speech_Rate):
     silences = {}
     pos_overrides = {}
     rates = {}
+    nmbr_overrides = {}
     last_rate = initial_rate
     out_parts = []
     word_count = 0
@@ -415,6 +451,20 @@ def scan_bracket_commands(text: str, initial_rate: int = kNormal_Speech_Rate):
             i = end + len(END)
             continue
 
+        if keyword == 'NMBR':
+            # Parse_nmbr_Command/ChangeNumberMode (EmbeddedCmd.c:604-620):
+            # argument is a bare NORM/LTRL selector (case-insensitive --
+            # the real code masks with 0xDFDFDFDF to uppercase first,
+            # matched here by upper()-ing the parsed selector text).
+            j = _skip_spaces(inner, 4)
+            mode_val, _ = _parse_selector_value(inner.upper(), j)
+            if mode_val == _MODE_NORMAL:
+                nmbr_overrides[word_count] = False
+            elif mode_val == _MODE_LITERAL:
+                nmbr_overrides[word_count] = True
+            i = end + len(END)
+            continue
+
         if keyword == 'SYNC':
             # Parse_sync_Command (EmbeddedCmd.c:753-765): a plain LONG
             # value (not Fixed-point), queued as C_sync -- do_ctrl has
@@ -480,7 +530,7 @@ def scan_bracket_commands(text: str, initial_rate: int = kNormal_Speech_Rate):
         i = end + len(END)
 
     final_rate = last_rate if rates else None
-    return ''.join(out_parts), commands, emphasis, silences, pos_overrides, rates, final_rate
+    return ''.join(out_parts), commands, emphasis, silences, pos_overrides, rates, final_rate, nmbr_overrides
 
 
 def do_ctrl(vv: VoiceVar) -> None:

@@ -242,7 +242,7 @@ class FEWordToken:
     phrase_bnd: int = kBND_None        # kBND_Decl/Pause/Quest/Emph from trailing_punct, else kBND_None
 
 
-def make_fe_word_token(word: str, punct: Optional[str]) -> FEWordToken:
+def make_fe_word_token(word: str, punct: Optional[str], digit_by_digit: bool = False) -> FEWordToken:
     """Build one `FEWordToken` for `word` (already uppercased by
     `_frontend.tokenize()`), consulting `_lexicon.lookup()` first and
     falling back to `_engtop.engtop()` -- the same dictionary-then-rules
@@ -256,14 +256,19 @@ def make_fe_word_token(word: str, punct: Optional[str]) -> FEWordToken:
     module's docstring for its verification status), and
     `PartialNumberToPhonemes`'s own final step (`FrontEnd.c:1886-1889`:
     `tok->POScode1[0] = kAdj; tok->compPOS1 = kHas_Adj; tok->hiRank =
-    kAdj; tok->POScount1 = 1`) is matched directly.
+    kAdj; tok->POScount1 = 1`) is matched directly. `digit_by_digit`
+    (set when the `nmbr` embedded command's `LTRL` mode is active at
+    this word's position, `EmbeddedCmd.c`'s `ChangeNumberMode`/
+    `FrontEnd.c:2057-2062`'s `kDigitByDigit` check) routes to
+    `_numbers.digit_by_digit_phonemes` instead, reading each digit on
+    its own rather than grouping them into a cardinal number.
     """
     if word.isdigit():
-        from ._numbers import number_to_phonemes
+        from ._numbers import number_to_phonemes, digit_by_digit_phonemes
 
         return FEWordToken(
             word=word,
-            phon_str=number_to_phonemes(word),
+            phon_str=digit_by_digit_phonemes(word) if digit_by_digit else number_to_phonemes(word),
             from_dictionary=True,
             pos_code1=[kAdj, kUndefPOS, kUndefPOS, kUndefPOS],
             comp_pos1=kHas_Adj,
@@ -597,6 +602,7 @@ def collect_fe_tokens(
     silence_overrides: Optional[dict] = None,
     pos_overrides: Optional[dict] = None,
     rate_overrides: Optional[dict] = None,
+    nmbr_overrides: Optional[dict] = None,
 ) -> SentenceAssembly:
     """Adapted port of `Collect_FE_Tokens` (`BackEnd.c:3712-4157`).
 
@@ -622,6 +628,15 @@ def collect_fe_tokens(
     at the same point as `emphasis_overrides`, before `resolve_pos`
     runs -- mirrors `SetPOStoVal` (`FrontEnd.c:138-145`) setting
     `POScode1[0]`/`compPOS1`/`hiRank`/`POScount1` directly on the token.
+
+    `nmbr_overrides`, if given, is a `{word_index: is_digit_by_digit}`
+    dict (from `_embeddedcmd.scan_bracket_commands`'s `nmbr` support):
+    like `char`'s mode, this is a LATCHED state (`ChangeNumberMode`
+    sets `vv->Mode`'s `kDigitByDigit` bit, which stays set for every
+    following numeric token until changed again), not a single-word
+    override -- so it's applied by walking the tokens in order and
+    updating a running mode flag at each `word_index` present in the
+    dict, rather than a one-shot per-word lookup like `pos_overrides`.
 
     `silence_overrides`, if given, is a `{word_index: duration}` dict
     (from `_embeddedcmd.scan_bracket_commands`'s `slnc` support, `duration`
@@ -729,7 +744,12 @@ def collect_fe_tokens(
     # separate pass over the whole token buffer before Collect_FE_Tokens
     # ever consumes it).
     from ._morph import resolve_pos
-    _clause_tokens = [make_fe_word_token(word, punct) for word, punct in tokenize(text)]
+    _clause_tokens = []
+    _digit_mode = False
+    for _wi, (word, punct) in enumerate(tokenize(text)):
+        if nmbr_overrides and _wi in nmbr_overrides:
+            _digit_mode = nmbr_overrides[_wi]
+        _clause_tokens.append(make_fe_word_token(word, punct, digit_by_digit=_digit_mode))
     if emphasis_overrides:
         for _wi, _emph in emphasis_overrides.items():
             if 0 <= _wi < len(_clause_tokens):
