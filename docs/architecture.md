@@ -18,7 +18,7 @@
 | `Engine.c` | `lintalker/_engine.py` | Top-level init/speak/reset/rate/pitch/volume API, built on `_backend.py`. `e_speak_buffer` (the text-in entry point) and a few fsynth-dependent setters (`e_reset_params`, `e_use_voice`, `e_reinit_voice`) raise `NotImplementedError` naming the specific unported upstream C function they need. |
 | `BackEnd.c` (`DoCtrl`, the per-phoneme `CMDQueue` dispatcher: absolute/relative pitch, volume, mod) | `lintalker/_embeddedcmd.py` | Ported (see `test/test_embeddedcmd.py`); `C_reset`/`C_voice` are unimplemented/no-op the same way upstream leaves them, pending `ResetVoice`/`NewVoice` |
 | `EmbeddedCmd.c` (the FrontEnd bracket-delimited text-command parser, e.g. `[[pbas200]]` -- `[[`/`]]` are the default delimiters, `mt4.h`'s `defaultCmdBeginDelim`/`defaultCmdEndDelim`, a distinct mechanism from `DoCtrl` above — it sets `PendingCommands` bits that `FrontEnd.c` later turns into `CMDQueue` entries via `QueueCommand`, except `emph`/`xtnd wpos` which copy straight into the next token's fields and `slnc` which inserts a real `_SIL_` phoneme) | `lintalker/_embeddedcmd.py`'s `scan_bracket_commands` | Ported for `pbas`/`pbar`/`pmod`/`pmor`/`volm`/`volr`/`rset`/`sync` (applied as an immediate state change at clause start via `do_ctrl`, not true per-phoneme positioning -- `rset` correctly raises `NotImplementedError` via `do_ctrl`'s existing stub, `sync` is a genuine no-op matching `do_ctrl` having no `C_sync` case, same as the real `DoCtrl`), `emph`/`emph-` (applied to the correct word's `word_emphasis` field via `_assembly.collect_fe_tokens`), `xtnd`'s `wpos` selector (applied to the correct word's `pos_code1`/`comp_pos1` fields, same mechanism as `emph`), `slnc` (inserts a real `_SIL_` phoneme with the requested duration at the exact word position, via `sa.note_buf`/`_moduration.mod_duration`'s `kSilenceDuration` branch), `cmnt`/`vers` (no-ops, stripped), and `dlim` (changes the begin/end delimiter used for later commands in the same text); `rate`/`char`/`mode`/`nmbr` not ported; cannot be verified frame-exact against `lintalker-c`'s compiled `test_harness` -- see "Known gaps" |
-| `Morph.c` (`ResolvePOS`, `PlacePhrasing`, `SetPOS_FromSuffix`, `DoMorph`'s suffix functions) | `lintalker/_morph.py` (suffix decomposition) + `lintalker/_assembly.py` (`resolve_pos`/`_place_phrasing`) | Every top-level function is ported except `Zap_POS` (unreachable -- see "Known gaps"; `PlacePhrasing`'s `inParen`/SEP7 aren't real gaps -- neither is ever exercised by the C reference itself, see "Known gaps"); `Search_Suffix`'s real `SuffixTab` trie data is approximated with an ordered `endswith()` cascade instead of extracted |
+| `Morph.c` (`ResolvePOS`, `PlacePhrasing`, `SetPOS_FromSuffix` including `Zap_POS`, `DoMorph`'s suffix functions) | `lintalker/_morph.py` (suffix decomposition) + `lintalker/_assembly.py` (`resolve_pos`/`_place_phrasing`) | Every top-level function is ported, including `Zap_POS` (`apply_pos_from_suffix`'s `hasAlt`-true branch; `PlacePhrasing`'s `inParen`/SEP7 aren't real gaps -- neither is ever exercised by the C reference itself, see "Known gaps"); `Search_Suffix`'s real `SuffixTab` trie data is approximated with an ordered `endswith()` cascade instead of extracted; a narrow remaining gap where the `hasAlt` branch picks the ALT (`pos_code2`) reading -- the morphed word's phonemes should then come from the root's alternate pronunciation (`phon_hold`), not `phon_str`, see "Known gaps" |
 | `english_lex.c`/`English.lex` | `lintalker/_lexicon.py` | Dictionary lookup (`lookup(word)`), verified bit-exact against the real engine for 249 words spanning common/rare/compound-noun/abbreviation entries (`test/test_lexicon.py`). |
 | `Sounds.c` | not ported | Embedded sound effects (bells, etc.) — raw PCM blobs, not logic |
 
@@ -287,12 +287,35 @@ single-sentence text is.
   COUNT, since a missing/extra SIL phoneme shows up as a frame-count
   mismatch, not just a wrong flag bit) — see
   `test/test_synthesize_text.py::test_sep1_to_sep5_phrase_boundary_frame_exact`.
-- (Fixed) `_morph.pos_select_for_suffix` ports `SetPOS_FromSuffix`
-  (`Morph.c:1027-1189`, the `!tok->hasAlt` branch only -- `has_alt` is
-  always `False` for morphed words in this port, so the `hasAlt`-true
-  branch, which instead re-`Zap_POS`'s the token and picks between
+- (Fixed) `_morph.pos_select_for_suffix`/`apply_pos_from_suffix` port
+  `SetPOS_FromSuffix` (`Morph.c:1027-1189`) IN FULL, including the
+  `hasAlt`-true branch, which re-`Zap_POS`'s the token and picks between
   `POScode1`/`POScode2` for homograph-style alternate-pronunciation
-  entries, isn't reachable and isn't ported). Most suffixes force a
+  entries (e.g. "wind" noun/verb, "lead" verb/noun, "bow" noun/verb/noun,
+  "tear" verb/noun). `_assembly.make_fe_word_token`'s morphed-word
+  branch now passes the ROOT's real `has_alt` (previously hardcoded
+  `False`, making this branch provably unreachable) through to
+  `apply_pos_from_suffix`, which searches `pos_code1`/`pos_code2` in
+  lockstep for the suffix-forced POS (mirroring the C loop exactly,
+  including which candidate set wins when both could match) and zeroes
+  the LOSING side, setting `alt_choice=1` when `pos_code2` wins.
+  Verified via `test/test_synthesize_text.py::test_do_morph_pos_from_
+  suffix_hasalt_zap_pos` (frame-exact for "leaded"/"tears"/"bowed"/
+  "bows", all cases where the forced POS matches `pos_code1`). A
+  narrower, still-open gap surfaced by this work: when the forced POS
+  instead matches `pos_code2` (the ALT reading) -- e.g. "winded" (root
+  WIND, `-ED` forces `kVerb`, matching WIND's `pos_code2` verb reading,
+  not its `pos_code1` noun reading) -- the real engine ALSO switches to
+  that root's alternate PRONUNCIATION (`phon_hold`, e.g. /waɪnd/) rather
+  than the primary one (`phon_str`, /wɪnd/) it would otherwise use, but
+  this port's suffix functions always build the morphed word's phonemes
+  from `phon_str` regardless of which POS reading won -- confirmed via
+  direct phoneme comparison against the C reference: "he winded up the
+  toy." mismatches on exactly the vowel phoneme that differs between
+  `phon_str`/`phon_hold`. Fixing this needs `try_do_morph`'s ~30 return
+  sites to defer their final `phon_str`-vs-`phon_hold` choice until
+  after `apply_pos_from_suffix` resolves `alt_choice`, a larger
+  mechanical change not attempted here. Most suffixes force a
   FIXED POS on the morphed word regardless of the root's own (possibly
   ambiguous) dictionary POS candidates -- e.g. `-ED` always means
   `kVerb` ("time" is noun/adj/verb, but "timed" cannot be anything but a
@@ -336,17 +359,14 @@ single-sentence text is.
   an approximation -- bit-exact). `kBND_Sep7` (`mt4.h:106`, "boundary
   strength 7 (quotative tag)") is defined but never referenced by any
   `.c` file in the reference -- dead/reserved, never emitted by the
-  real engine either. With both corrected, `Morph.c`'s only remaining,
-  deliberately-scoped gap is:
-  - `Zap_POS` (only reachable via `SetPOS_FromSuffix`'s `hasAlt`-true
-    branch, itself not ported since `has_alt` is always `False` for
-    morphed words in this port -- see above).
-  Every other top-level `Morph.c` function (`ResolvePOS`,
-  `PlacePhrasing` SEP1-6, `SetPOS_FromSuffix`, `Store_S_or_Z`,
-  `Consonant_Doubling_Adjust`, `Decompose_E_Common`/`Decompose_I_
-  Common`, every `Do_*_Morph` suffix function, and `DoMorph` itself) is
-  ported. `Search_Suffix`'s real `SuffixTab` trie data isn't extracted
-  (approximated via an ordered `endswith()` cascade in `try_do_morph`,
+  real engine either. With both corrected, and `Zap_POS` itself since
+  ported (see above), every top-level `Morph.c` function (`ResolvePOS`,
+  `PlacePhrasing` SEP1-6, `SetPOS_FromSuffix` including `Zap_POS`,
+  `Store_S_or_Z`, `Consonant_Doubling_Adjust`, `Decompose_E_Common`/
+  `Decompose_I_Common`, every `Do_*_Morph` suffix function, and
+  `DoMorph` itself) is ported. `Search_Suffix`'s real `SuffixTab` trie
+  data isn't extracted (approximated via an ordered `endswith()`
+  cascade in `try_do_morph`,
   functionally equivalent for every case verified against the C
   reference so far) — see task #8.
 - (Fixed) Multi-clause synthesis used to give each clause of

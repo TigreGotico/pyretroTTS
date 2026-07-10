@@ -457,6 +457,51 @@ def pos_select_for_suffix(suffix: int, pos_count1: int, comp_pos1: int):
     return _POS_FROM_SUFFIX.get(suffix)
 
 
+def apply_pos_from_suffix(pos_code1, comp_pos1, pos_code2, comp_pos2, pos_count1, has_alt, suffix):
+    """Full port of `SetPOS_FromSuffix` (`Morph.c:1027-1189`), INCLUDING
+    the `hasAlt`-true branch that `Zap_POS`s the token and picks between
+    `POScode1`/`POScode2` -- reachable in this port for any root that's
+    both a DICTIONARY entry with `has_alt=True` (a homograph pair like
+    "close"/"lead"/"record") AND matched by a suffix that forces a POS
+    (e.g. "close" + "-er" -> "closer", forcing `kNoun`; "close" is a verb
+    in `pos_code1` but has `kNoun` in its alt `pos_code2` reading, so the
+    real engine picks the ALT reading and zeroes the primary one).
+
+    Returns `(pos_code1, comp_pos1, pos_code2, comp_pos2, alt_choice)`
+    -- `alt_choice` is `1` if the ALT (`pos_code2`) reading was picked,
+    else `None` (meaning "leave the caller's `alt_choice` default
+    alone", matching the C code only ever setting `tok->altChoice = 1`
+    in that one branch, never resetting it to `0` here).
+    """
+    pos_select = pos_select_for_suffix(suffix, pos_count1, comp_pos1)
+    if pos_select is None:
+        return pos_code1, comp_pos1, pos_code2, comp_pos2, None
+
+    if not has_alt:
+        return [pos_select, kUndefPOS, kUndefPOS, kUndefPOS], 1 << pos_select, pos_code2, comp_pos2, None
+
+    pc1 = list(pos_code1) + [kUndefPOS] * (4 - len(pos_code1))
+    pc2 = (list(pos_code2) if pos_code2 is not None else [kUndefPOS] * 4)
+    pc2 = pc2 + [kUndefPOS] * (4 - len(pc2))
+    for j in range(4):
+        if pc1[j] == pos_select and pc1[j] != pc2[j]:
+            # Zap_POS (Morph.c:1010-1022): clear both POS candidate sets
+            return (
+                [pos_select, kUndefPOS, kUndefPOS, kUndefPOS], 1 << pos_select,
+                [kUndefPOS, kUndefPOS, kUndefPOS, kUndefPOS], 0,
+                None,
+            )
+        elif pc2[j] == pos_select:
+            return (
+                [kUndefPOS, kUndefPOS, kUndefPOS, kUndefPOS], 0,
+                [pos_select, kUndefPOS, kUndefPOS, kUndefPOS], 1 << pos_select,
+                1,
+            )
+    # No match in either candidate set -- the C loop completes without
+    # ever calling Zap_POS, leaving the token's POS fields untouched.
+    return pos_code1, comp_pos1, pos_code2, comp_pos2, None
+
+
 # ---------------------------------------------------------------------------
 # The rest of DoMorph's suffix functions (Morph.c:1272-2373). Each entry is
 # tried longest-suffix-first (an ordering choice, not a port of the real

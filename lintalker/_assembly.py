@@ -188,7 +188,7 @@ from ._phonemes import (
 from ._frontend import tokenize
 from ._lexicon import lookup, LexEntry
 from ._engtop import engtop
-from ._morph import try_s_morph, try_do_morph, pos_select_for_suffix
+from ._morph import try_s_morph, try_do_morph, apply_pos_from_suffix
 
 # BackEnd.c:3971-3973 -- the POS set that marks a word a "content word"
 # (`kContent_Word`, gates primary-vs-secondary stress at 3869-3877).
@@ -285,17 +285,22 @@ def make_fe_word_token(word: str, punct: Optional[str]) -> FEWordToken:
         # (most suffixes -- e.g. -ED always forces kVerb regardless of
         # the root's own dictionary POS, matching a real English
         # zero-derivation pattern: "time" is kNoun/kVerb, but "timed" is
-        # unambiguously kVerb). `has_alt` is always False here (see
-        # `pos_select_for_suffix`'s docstring), so only the simpler
-        # `!hasAlt` override branch applies.
+        # unambiguously kVerb). `has_alt` comes from the ROOT's own
+        # dictionary entry (a homograph pair like "close"/"lead"), which
+        # SearchAllDicts would have populated onto the token in the real
+        # engine too -- when true, `apply_pos_from_suffix` ports
+        # `SetPOS_FromSuffix`'s `hasAlt`-true `Zap_POS` branch (picks
+        # between `pos_code1`/`pos_code2`, e.g. "close"+"-er"->"closer"
+        # forces `kNoun`, found in "close"'s ALT reading, not its primary
+        # verb reading).
         morphed_phon_str, root_entry, suffix_type = morphed
-        pos_code1 = list(root_entry.pos_code1)
-        comp_pos1 = root_entry.comp_pos1
+        _pos_code2 = list(root_entry.pos_code2) if root_entry.pos_code2 is not None else None
         _pc1, _pc2, _ = _pos_count_and_hi_rank(root_entry.pos_code1, root_entry.pos_code2)
-        pos_select = pos_select_for_suffix(suffix_type, _pc1, comp_pos1)
-        if pos_select is not None:
-            pos_code1 = [pos_select, kUndefPOS, kUndefPOS, kUndefPOS]
-            comp_pos1 = 1 << pos_select
+        pos_code1, comp_pos1, pos_code2, comp_pos2, alt_choice = apply_pos_from_suffix(
+            list(root_entry.pos_code1), root_entry.comp_pos1,
+            _pos_code2, root_entry.comp_pos2,
+            _pc1, root_entry.has_alt, suffix_type,
+        )
         tok = FEWordToken(
             word=word,
             phon_str=morphed_phon_str,
@@ -304,10 +309,12 @@ def make_fe_word_token(word: str, punct: Optional[str]) -> FEWordToken:
             comp_pos1=comp_pos1,
             is_abbrev=root_entry.is_abbrev,
             is_compound_hint=root_entry.is_compound,
-            has_alt=False,
-            pos_code2=list(root_entry.pos_code2) if root_entry.pos_code2 is not None else None,
-            comp_pos2=root_entry.comp_pos2,
+            has_alt=root_entry.has_alt,
+            pos_code2=pos_code2,
+            comp_pos2=comp_pos2,
         )
+        if alt_choice is not None:
+            tok.alt_choice = alt_choice
     else:
         # No dictionary entry, no DoMorph match -> _engtop.engtop()
         # rule-engine fallback. FrontEnd.c:1650 calls SetPOStoVal(t, kNoun)
