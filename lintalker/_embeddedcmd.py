@@ -1,10 +1,13 @@
 """
 Port of the per-frame embedded-control-command dispatcher: DoCtrl (BackEnd.c).
 
-DoCtrl is *not* the FrontEnd.c/EmbeddedCmd.c backtick-escape parser (that
-parser -- ProcessEmbeddedCommands and friends in EmbeddedCmd.c -- lives one
-level up, turning `` `p200` ``-style text escapes into vv->PendingCommands
-bits; none of FrontEnd.c is ported here). DoCtrl is the *consumer* at the
+DoCtrl is *not* the FrontEnd.c/EmbeddedCmd.c bracket-delimited text-escape
+parser (that parser -- ProcessEmbeddedCommands and friends in
+EmbeddedCmd.c -- lives one level up, turning `[[pbas200]]`-style text
+escapes -- `[[`/`]]` are the real engine's default command delimiters,
+`mt4.h`'s `defaultCmdBeginDelim`/`defaultCmdEndDelim`, changeable at
+runtime via the `dlim` command itself -- into vv->PendingCommands bits;
+none of FrontEnd.c is ported here). DoCtrl is the *consumer* at the
 bottom of the pipeline: once a phoneme plan is built, some phonemes may carry
 a count in `user_Cmd_Buf2[phonIndex]` of queued (type, data) control words
 sitting in the `CMDQueue` ring buffer, and `say_frame` (BackEnd.c Talk())
