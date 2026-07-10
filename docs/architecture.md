@@ -1,10 +1,18 @@
 # Architecture
 
-`pylintalker` is a Python port of DECtalk. Text goes in one end, 16-bit mono
-PCM comes out the other, and every stage in between mirrors a function in the
-original C source. This document maps the two onto each other, describes the
-state the pipeline threads through, explains how the port is kept honest, and
-lists what it does not do.
+This document describes the **MacinTalk** engine: Apple's Klatt-derived formant
+synthesizer (`FrontEnd.c`: *"Implementation of MacInTalk2 FrontEnd, Written by:
+Tim Schaaff, Copyright (c) 1991-1992 by Apple Computer, Inc."*). Text goes in
+one end, 16-bit mono PCM comes out the other, and every stage in between mirrors
+a function in the original C source.
+
+For the DECtalk engine — a different codebase by different authors, whose
+markup this repository also understands — see
+[dectalk-port-plan.md](dectalk-port-plan.md).
+
+This document maps the C onto the Python, describes the state the pipeline
+threads through, explains how the port is kept honest, and lists what it does
+not do.
 
 For the theory behind formant synthesis, and how to build a voice, read
 [creating-voices.md](creating-voices.md). For what DECtalk is and why it
@@ -151,6 +159,10 @@ they need no C build:
 | `test_synthesize_text.py` | the harness's full pipeline, all 17 voices |
 | `test_embeddedcmd.py` | the arithmetic in `DoCtrl`'s C source |
 
+The C sources are ISO-8859 encoded with CRLF line endings, so `grep` classifies
+them as binary and reports no matches at all rather than reporting failure. Use
+`grep -a` on `lintalker-c`, always.
+
 `test_assembly.py`'s oracle values come from a stage the standard harness does
 not dump. To re-capture them, add a temporary `fprintf` of `phon_Buf_1` and
 `phon_Ctrl_Buf_1` right after the `Collect_FE_Tokens` loop in `Talk()`, rebuild,
@@ -163,8 +175,8 @@ only `-v <voice> <text>` and shows no sign of recognizing either delimiter as a
 command. `[[` and `]]` are used because the C source names them as the defaults,
 not because this reference confirmed them.
 
-**`C_reset` raises `NotImplementedError`.** It needs `ResetVoice`
-(`Say.c:1506`'s `synth_ResetVoice`), which is not ported. `C_voice` is a no-op,
+**`C_reset` raises `NotImplementedError`.** It needs `synth_ResetVoice`
+(`Say.c:1506`), which is not ported. `C_voice` is a no-op,
 matching the C source, whose case body is commented out.
 
 **Number grouping is unverified end to end.** Individual number words are
@@ -176,14 +188,14 @@ combines them is a faithful transcription with no working reference to check
 against.
 
 **`Search_Suffix`'s trie is approximated.** `_morph.py` uses an ordered
-`endswith()` cascade rather than the extracted `SuffixTab` data.
+`endswith()` cascade rather than the `SuffixTab` data at `Data.c:3848`.
 
-**DECtalk's `[: ]` command syntax and singing markup are not supported.** The
-`.EN` song format — `[:phone on]`, `[:dv ...]`, `[:ra N]`, lowercase phoneme
-mnemonics, and `<duration,tone>` note annotations — has no parser here. Those
-notes are what would drive `user_Dur_Buf2` and `user_Pitch_Buf2`, the two
-per-phoneme override channels that consequently have no source today. Only the
-Mac-style `[[...]]` delimiters are implemented.
+**Four embedded commands are unimplemented.** The C engine accepts nineteen;
+`note`, `tempo`, `marker` and `svox` have no parser here. `note` and `tempo`
+are MacinTalk's singing controls: their consumers are already ported (
+`Mod_Duration`'s note-retiming branches, `Note_Times[]`), so only the parsing
+and the `user_Note_Buf1` wiring are missing. `user_Dur_Buf2` and
+`user_Pitch_Buf2` consequently have no source.
 
 **`Engine.c`'s text entry points are absent.** `e_SpeakBuffer`, `e_UseVoice`,
 `e_ResetParams` and `e_ReinitVoice` reach into `FrontEnd.c` and `fsynth.c`.

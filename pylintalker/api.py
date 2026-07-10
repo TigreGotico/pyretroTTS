@@ -204,6 +204,11 @@ def build_phoneme_plan(
         # a later clause's rate/ratr resolves against this baseline.
         vv.speech_Rate = commands.final_rate
 
+    if commands.tempo is not None:
+        e_set_tempo(vv, commands.tempo)
+    if commands.notes:
+        vv.singing = True  # EC_note sets this in the C source
+
     sa = collect_fe_tokens(commands.text, commands)
     # collect_fe_tokens counted each queued command against the phoneme it was
     # written in front of (QueueCommand, BackEnd.c:3592-3599). Load the queue

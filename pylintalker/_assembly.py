@@ -721,6 +721,7 @@ def collect_fe_tokens(
     nmbr_overrides = commands.digit_by_digit
     raw_phon_overrides = commands.raw_phonemes
     char_overrides = commands.spelled
+    note_overrides = commands.notes
 
     sa = SentenceAssembly()
     in_index = 1  # mirrors phonBuf_1_In_Index
@@ -884,6 +885,11 @@ def collect_fe_tokens(
         if rate_overrides and _wi in rate_overrides:
             ensure(in_index)
             sa.rate_buf[in_index] = rate_overrides[_wi]
+        # --- EC_note (BackEnd.c:3679-3683): a packed note word on this word's
+        # own start slot; vv.singing is set by build_phoneme_plan.
+        if note_overrides and _wi in note_overrides:
+            ensure(in_index)
+            sa.note_buf[in_index] = note_overrides[_wi]
         # --- pbas/pmod/volm/rset/sync: queued against this word's own start
         # slot, exactly as QueueCommand counts them against
         # phonBuf_1_In_Index (BackEnd.c:3598).

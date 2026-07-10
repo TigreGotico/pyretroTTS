@@ -32,6 +32,8 @@ from ._consts import (
     kMIDI_50HZ,
     kMinRate,
     kNormal_Speech_Rate,
+    kNoteDur,
+    kNotePitch,
 )
 from ._frontend import (
     tokenize,
@@ -223,6 +225,11 @@ class BracketCommands:
     raw_phonemes: dict[int, list] = field(default_factory=dict)
     #: word_index -> spell the word out letter by letter, from `char LTRL`
     spelled: dict[int, bool] = field(default_factory=dict)
+    #: word_index -> a packed note word: MIDI pitch in kNotePitch, length code
+    #: in kNoteDur. Any note switches the voice into singing mode.
+    notes: dict[int, int] = field(default_factory=dict)
+    #: beats per minute, from the last `tempo` command, or None
+    tempo: int | None = None
     #: rate in force at the end of the clause, or None if no rate command ran
     final_rate: int | None = None
 
@@ -270,6 +277,8 @@ def scan_bracket_commands(text: str, initial_rate: int = kNormal_Speech_Rate) ->
     nmbr_overrides = {}
     raw_phon_overrides = {}
     char_overrides = {}
+    notes = {}
+    tempo = None
     last_rate = initial_rate
     out_parts = []
     word_count = 0
@@ -341,6 +350,23 @@ def scan_bracket_commands(text: str, initial_rate: int = kNormal_Speech_Rate) ->
                 BEGIN = chr(begin_code)
                 END = chr(end_code)
             i = end + old_end_len
+            continue
+
+        if keyword == 'NOTE':
+            # Parse_Embedded_Command's EC_note (BackEnd.c:3679-3683): the Fixed
+            # value's integer part is a MIDI note, its fraction a length code.
+            value, _ = _parse_fixed_value(inner, _skip_spaces(inner, 4))
+            notes[word_count] = ((value >> 16) & kNotePitch) | (value & kNoteDur)
+            i = end + len(END)
+            continue
+
+        if keyword == 'TMPO':
+            # Parse_tempo_Command. EC_tempo's body is commented out in the C
+            # source, so this changes nothing there; recorded here because
+            # e_set_tempo, which it would drive, is ported.
+            value, _ = _parse_fixed_value(inner, _skip_spaces(inner, 4))
+            tempo = value >> 16
+            i = end + len(END)
             continue
 
         if keyword == 'SLNC':
@@ -503,6 +529,8 @@ def scan_bracket_commands(text: str, initial_rate: int = kNormal_Speech_Rate) ->
         digit_by_digit=nmbr_overrides,
         raw_phonemes=raw_phon_overrides,
         spelled=char_overrides,
+        notes=notes,
+        tempo=tempo,
         final_rate=last_rate if rates else None,
     )
 

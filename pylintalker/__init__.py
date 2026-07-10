@@ -1,9 +1,16 @@
-"""DECtalk formant speech synthesis.
+"""Classic formant speech synthesis: MacinTalk and DECtalk.
+
+    from pylintalker import MacInTalkEngine, DECtalkEngine
+
+    MacInTalkEngine().say("hello, this is a test.", "out.wav")
+    DECtalkEngine().sing("[:phone on] hxeh<200,13>lb<100>ow<400,20>", "hi.wav")
+
+The lower-level API works one voice at a time:
 
     from pylintalker import synthesize_text, pcm_to_wav
     from pylintalker._data import Fred_Voice
 
-    pcm_to_wav(synthesize_text(Fred_Voice, "hello, this is a test."), "out.wav")
+    pcm_to_wav(synthesize_text(Fred_Voice, "hello."), "out.wav")
 """
 from .api import (
     PhonemePlan,
@@ -14,9 +21,13 @@ from .api import (
     synthesize_plan,
     synthesize_text,
 )
+from .engines import DECtalkEngine, Engine, MacInTalkEngine
 from .version import __version__
 
 __all__ = [
+    "DECtalkEngine",
+    "Engine",
+    "MacInTalkEngine",
     "PhonemePlan",
     "__version__",
     "build_phoneme_plan",

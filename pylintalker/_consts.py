@@ -142,7 +142,8 @@ kPitchFall = 0x0040
 kPitchRise1 = 0x04000000
 kPitchFall1 = 0x08000000
 kLowVibrato = 0x10
-kNoteDur = 0x0F00
+kNotePitch = 0x00FF   # mt4.h:436 -- MIDI note number, low byte of a note word
+kNoteDur = 0x0F00     # mt4.h:437 -- note-length code, indexes Note_Times[]
 kNoteDurShift = 8
 
 # Pitch flow flags

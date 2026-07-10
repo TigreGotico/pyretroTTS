@@ -1,11 +1,21 @@
 # pylintalker
 
-A standalone Python port of **DECtalk** — the formant speech synthesizer
-behind Stephen Hawking's voice, decades of screen readers, and one of
-the most recognizable "robot voices" in computing history. No neural
-network, no audio corpus, no GPU: just a physical model of the human
-vocal tract, driven by a few hundred kilobytes of tables and rules, the
-same way it worked in 1984.
+A standalone Python port of the **classic formant speech synthesizers** —
+the "robot voices" of 1980s and 1990s computing. No neural network, no
+audio corpus, no GPU: just a physical model of the human vocal tract,
+driven by a few hundred kilobytes of tables and rules.
+
+Two engines, both descended from Dennis Klatt's formant synthesis
+research at MIT:
+
+- **MacinTalk** (Apple, 1991-1995) — the Macintosh `say -v Fred` voices.
+  Ported bit-exact against the original C.
+- **DECtalk** (Digital Equipment Corporation, 1984) — Stephen Hawking's
+  voice. Its inline markup and singing notation are supported; the
+  engine itself is being ported.
+
+They are different codebases by different authors. Fred is not Perfect
+Paul. See `docs/history.md`.
 
 ```python
 from pylintalker import synthesize_text, pcm_to_wav
@@ -22,18 +32,20 @@ This package has no OVOS/plugin dependencies and no external runtime
 dependencies at all; it's a plain, standalone synthesizer library. An
 OVOS TTS plugin wrapper around it lives in a separate repo.
 
-## Why DECtalk
+## Why these engines
 
-Read `docs/history.md` for the full story — the short version: Dennis
-Klatt's formant-synthesis research at MIT became DECtalk in 1984, one of
-the first computers that could read arbitrary text aloud in real time on
-commodity hardware. Its "Perfect Paul" voice became world-famous as
-Stephen Hawking's voice for over three decades. Its novelty voices
-(Zarvox, Trinoids, Whisper...) are still a cultural shorthand for "how
-computers used to sound." And because the whole engine is deterministic
-arithmetic over small parameter tables — no training data, no model
-weights, no corpus — it remains genuinely useful today: tiny, fully
-inspectable, and endlessly re-tunable into new voices.
+Read `docs/history.md` for the full story. The short version: Klatt's
+research at MIT produced two famous commercial descendants. DEC shipped
+DECtalk in 1984, one of the first machines that could read arbitrary
+text aloud in real time; its Perfect Paul voice became world-famous as
+Stephen Hawking's. Apple shipped MacinTalk on the Macintosh a few years
+later, and its Fred, Zarvox and Trinoids voices are still shorthand for
+"how computers used to sound."
+
+Because the whole engine is deterministic arithmetic over small
+parameter tables — no training data, no model weights, no corpus — it
+remains genuinely useful today: tiny, fully inspectable, and endlessly
+re-tunable into new voices.
 
 ## How it works, in one paragraph
 
@@ -107,7 +119,7 @@ single-word letter-to-sound example and a voice-listing script.
 
 ## Voices
 
-All 17 original DECtalk voices, verified bit-exact against the
+All 17 original MacinTalk voices, verified bit-exact against the
 reference engine:
 
 **Fred**, **Kathy**, **Princess**, **Junior**, **Ralph**, **Whisper** —
@@ -135,7 +147,7 @@ Beyond plain word-by-word synthesis, the text frontend supports:
 - **Prosody**: sentence-level stress, phrase boundaries, and
   question/statement pitch contours driven by real part-of-speech
   tagging, not word lists.
-- **Embedded bracket commands**, DECtalk's original inline control
+- **Embedded bracket commands**, MacinTalk's inline `[[...]]` control
   syntax: pitch/pitch-modulation/volume changes, word emphasis, inserted
   silence, part-of-speech overrides, speaking-rate changes, digit-by-
   digit number reading, letter-by-letter word spelling, and raw phoneme

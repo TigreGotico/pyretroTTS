@@ -4,3 +4,6 @@ __pycache__/
 build/
 dist/
 *.wav
+
+# Rendered song demos are committed on purpose.
+!songs/wav/*.wav
