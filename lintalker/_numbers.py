@@ -103,6 +103,17 @@ _POWERS = {1: _THOUSAND, 2: _MILLION, 3: _BILLION}
 # their output, rather than one per real-engine sub-word group).
 _OH = [56, 14]
 
+# Same direct, bit-exact transcription as `_OH` above -- literal
+# compile-time constants (`Data.c:3837`'s `DollarPhonStr[] = {7, _Word_,
+# _d_, _Stress1_, _AA_, _l_, _ER_, _z_}` and `Data.c:3838`'s
+# `CentPhonStr[] = {7, _Word_, _s_, _Stress1_, _EH_, _n_, _t_, _s_}`),
+# leading `_Word_` dropped for the same reason as `_OH`. Each is the
+# PLURAL form ("dollars"/"cents"); `Parse_Number...`'s singular case
+# (`FrontEnd.c:1896`/`1902`: `tok->phonStr[0] -= 1`) just drops the
+# final phoneme -- the trailing `_z_`/`_s_` -- to get "dollar"/"cent".
+_DOLLAR = [47, 56, 4, 31, 9, 41]
+_CENT = [40, 56, 2, 34, 46, 40]
+
 
 def _two_digit_phonemes(tens: int, units: int) -> list:
     """Port of `AppendTwoDigitPhonemes` (`FrontEnd.c:1708-1738`)."""
@@ -229,6 +240,23 @@ def year_to_phonemes(digits: str):
 
     out = _group(int(digits[0]), int(digits[1])) + _group(int(digits[2]), int(digits[3]))
     return [_Word_] + out
+
+
+def dollar_phonemes(digits: str):
+    """Port of the `kAddDollar` suffix applied by `PartialNumberToPhonemes`
+    (`FrontEnd.c:1893-1897`): a plain digit string preceded by `$`
+    (`GetNextToken`'s `$`-followed-by-digit handling, `FrontEnd.c:1017
+    -1027`) is read as a grouped cardinal number (same as `number_to_
+    phonemes`, INCLUDING automatic year detection being bypassed --
+    `SpeakTokenAsNumber`'s `kYearSpecial` check explicitly excludes
+    tokens with `kAddDollar` set, `FrontEnd.c:1982-1983`) followed by
+    "dollar"/"dollars" (`_DOLLAR`, singular when the amount is exactly
+    1 -- `FrontEnd.c`'s `kMoreThanOne` flag, `!= 1` in plain digit
+    terms).
+    """
+    body = number_to_phonemes(digits)[1:]  # strip its own leading _Word_
+    suffix = list(_DOLLAR) if int(digits) != 1 else _DOLLAR[:-1]
+    return [_Word_] + body + suffix
 
 
 def digit_by_digit_phonemes(digits: str):

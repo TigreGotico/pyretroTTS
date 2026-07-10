@@ -182,6 +182,56 @@ def test_nmbr_mode_latches_until_switched_back():
     assert sa.words[1].phon_str == number_to_phonemes("34")
 
 
+def test_tokenize_dollar_prefix_kept_as_digit_token():
+    from lintalker._frontend import tokenize
+
+    dollar_indices = []
+    tokens = tokenize("i have $5.", dollar_indices)
+    assert tokens == [("I", None), ("HAVE", None), ("5", ".")]
+    assert dollar_indices == [2]
+
+
+def test_dollar_prefix_no_longer_silently_dropped():
+    # Regression guard: before dollar-amount reading was ported, "$5"
+    # had no alpha characters left after tokenize()'s fallback filter,
+    # so the whole token vanished instead of being read as a number.
+    from lintalker._frontend import tokenize
+
+    tokens = tokenize("i have $5.")
+    words = [w for w, _ in tokens]
+    assert "5" in words
+
+
+def test_dollar_phonemes_plural_and_singular():
+    from lintalker._numbers import dollar_phonemes, number_to_phonemes, _DOLLAR
+
+    assert dollar_phonemes("5") == [_Word_] + number_to_phonemes("5")[1:] + _DOLLAR
+    assert dollar_phonemes("1") == [_Word_] + number_to_phonemes("1")[1:] + _DOLLAR[:-1]
+
+
+def test_dollar_amount_reaches_word_token_end_to_end():
+    from lintalker._assembly import collect_fe_tokens
+    from lintalker._numbers import dollar_phonemes, number_to_phonemes
+
+    sa = collect_fe_tokens("i have $5.")
+    dollar_word = sa.words[2]
+    assert dollar_word.word == "5"
+    assert dollar_word.phon_str == dollar_phonemes("5")
+    assert dollar_word.phon_str != number_to_phonemes("5")
+
+
+def test_dollar_bypasses_year_detection():
+    # "$1984" must read as a plain cardinal + "dollars", NOT as a year
+    # (SpeakTokenAsNumber's kYearSpecial check explicitly excludes
+    # kAddDollar tokens, FrontEnd.c:1982-1983).
+    from lintalker._assembly import make_fe_word_token
+    from lintalker._numbers import dollar_phonemes, year_to_phonemes
+
+    tok = make_fe_word_token("1984", None, is_dollar=True)
+    assert tok.phon_str == dollar_phonemes("1984")
+    assert tok.phon_str != year_to_phonemes("1984")
+
+
 if __name__ == "__main__":
     tests = [v for k, v in list(globals().items()) if k.startswith("test_")]
     for t in tests:

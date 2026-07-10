@@ -56,7 +56,7 @@ _PUNCT_PHON = {
 }
 
 
-def tokenize(text: str) -> list[tuple[str, str | None]]:
+def tokenize(text: str, _dollar_out: list | None = None) -> list[tuple[str, str | None]]:
     """Split raw text into (WORD, trailing_punct_or_None) pairs.
 
     Minimal stand-in for FrontEnd.c's `Collect_FE_Tokens`/word-scanning loop:
@@ -66,6 +66,21 @@ def tokenize(text: str) -> list[tuple[str, str | None]]:
     beyond letters+apostrophe, or multi-char terminal punctuation (e.g. "...",
     "?!") -- FrontEnd.c has dedicated logic for those (search FrontEnd.c for
     `kAbbrev`/`ProcessNumberString`) that is not ported here.
+
+    `_dollar_out`, if given a list, gets the output-token INDEX of every
+    `$<digits>` token appended to it (e.g. `"$5"` -> the digit token
+    `"5"`, with its index recorded) -- a port of `GetNextToken`'s `$`
+    handling (`FrontEnd.c:1017-1027`: a `$` immediately followed by a
+    digit sets `tok->addFlags |= kAddDollar` and is itself consumed, not
+    kept as its own token). This is a side-channel rather than a change
+    to this function's `(word, punct)` return shape, matching how
+    `_embeddedcmd.scan_bracket_commands`'s per-word override dicts are
+    threaded through `_assembly.collect_fe_tokens` without altering
+    `tokenize()`'s own contract. Before this was ported, a leading `$`
+    made the whole token get silently DROPPED (`isdigit()` fails on
+    `"$5"`, and the fallback `isalpha()`-only filter strips digits too,
+    leaving an empty string) -- a real bug, not just a missing feature;
+    fixing the drop and adding dollar-amount reading landed together.
     """
     tokens: list[tuple[str, str | None]] = []
     for raw in text.split():
@@ -75,11 +90,17 @@ def tokenize(text: str) -> list[tuple[str, str | None]]:
             if w[-1] in _PUNCT_PHON:
                 punct = w[-1]
             w = w[:-1]
+        is_dollar = False
+        if len(w) > 1 and w[0] == '$' and w[1:].isdigit():
+            w = w[1:]
+            is_dollar = True
         if w.isdigit():
             # Preserve a pure digit run as its own token instead of
             # stripping it (FrontEnd.c's kNumericTok path,
             # ProcessNumberString -- see _numbers.py for the cardinal-
             # reading port this feeds via _assembly.make_fe_word_token).
+            if is_dollar and _dollar_out is not None:
+                _dollar_out.append(len(tokens))
             tokens.append((w, punct))
             continue
         w = ''.join(c for c in w if c.isalpha() or c == "'")

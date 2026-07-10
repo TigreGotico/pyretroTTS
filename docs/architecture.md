@@ -509,13 +509,52 @@ single-sentence text is.
   insertion`/`test_year_to_phonemes_round_hundred`/`test_number_token_
   reads_as_year_by_default`.
 
-  NOT ported: `ProcessNumberString`'s clock/dollar/cent special modes,
-  ordinals, decimals, and the full `SpeakTokenAsNumber`/`GetNextToken`
-  tokenizer state machine needed to detect them from surrounding
-  punctuation/context (a leading `$`, a trailing `:`/`.`/`¢`, etc.) --
-  all larger, separate pieces of tokenizer-context-detection scope
-  beyond the plain-digit-token path this port's simplified `_frontend.py`
-  tokenizer has.
+  (Fixed) Dollar-amount reading: `GetNextToken`'s `$`-followed-by-digit
+  handling (`FrontEnd.c:1017-1027`) sets `kAddDollar` and consumes the
+  `$` without keeping it as its own token; `PartialNumberToPhonemes`
+  appends `_DOLLAR`/`_DOLLAR[:-1]` (plural/singular, `FrontEnd.c:1893
+  -1897`) after the cardinal reading, and `SpeakTokenAsNumber` explicitly
+  excludes `kAddDollar` tokens from year detection (`FrontEnd.c:1982
+  -1983`) even when they'd otherwise qualify.
+
+  Fixing this surfaced a real, PRE-EXISTING bug, not just a missing
+  feature: `_frontend.tokenize()`'s digit-token check (`w.isdigit()`)
+  never matched `"$5"` (the `$` makes it fail), and the fallback
+  `isalpha()`-only filter for non-numeric tokens strips digits too --
+  so a `$`-prefixed number was silently DROPPED from the output
+  entirely (not spoken at all), for every text containing a dollar
+  amount, until now.
+
+  `tokenize()` gained an optional `_dollar_out` parameter: a list that
+  collects the output-token INDEX of every `$<digits>` token, without
+  changing `tokenize()`'s own `(word, punct)` return shape (the same
+  side-channel-parameter approach already used elsewhere to avoid
+  widening a function's return contract). `_assembly.collect_fe_tokens`
+  passes this to `make_fe_word_token`'s new `is_dollar` parameter, which
+  routes to `_numbers.dollar_phonemes` instead of `number_to_phonemes`/
+  `year_to_phonemes`.
+
+  `_numbers._DOLLAR`/`_CENT` are the same kind of direct, bit-exact
+  transcription as `_OH` above -- literal compile-time constants
+  (`Data.c:3837`'s `DollarPhonStr[]`/`Data.c:3838`'s `CentPhonStr[]`),
+  not runtime dictionary lookups, so they carry no `Symbols`-dictionary
+  corruption caveat either. `_CENT` is decoded but not yet wired to any
+  tokenizer path (see "NOT ported" below).
+
+  Verified: `test/test_numbers.py`'s `test_tokenize_dollar_prefix_kept_
+  as_digit_token`/`test_dollar_prefix_no_longer_silently_dropped`/
+  `test_dollar_phonemes_plural_and_singular`/`test_dollar_amount_
+  reaches_word_token_end_to_end`/`test_dollar_bypasses_year_detection`.
+
+  NOT ported: `ProcessNumberString`'s clock-time (`kClockSpecial`,
+  a `:` between two digits, `FrontEnd.c:1003-1010`) and cent-only
+  (`¢`, no realistic ASCII-keyboard input path, unlike `$`) special
+  modes, ordinals, decimals, and the full `SpeakTokenAsNumber`/
+  `GetNextToken` tokenizer state machine needed to detect the rest of
+  them from surrounding punctuation/context -- all larger, separate
+  pieces of tokenizer-context-detection scope beyond the plain-digit-
+  token and `$`-prefixed-digit-token paths this port's simplified
+  `_frontend.py` tokenizer now has.
 - (Fixed) Abbreviation-period handling: `GetNextToken` doesn't treat a
   `.` right after a known dictionary abbreviation (e.g. "MR.", "DR.",
   "ST.", looked up WITH the period as part of its key, `is_abbrev=True`
