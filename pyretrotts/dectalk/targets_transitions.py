@@ -29,6 +29,9 @@ The transition machinery around `us_gettar` (`ph_setar.c:561` `phsettar`) reads:
               reproducible -- `phsettar.py` treats those out-of-range entries as
               zero (giving a zero increment), which matches the audibly-silent
               effect but is not guaranteed bit-identical for such phones.
+  LINEARTILT  `lineartilt` (`ph_romi.c:96`, 32 entries): `send_pars`
+              (`ph_claus.c:731`) remaps the drawn TILT (0..31) through it before
+              the vocal tract model.
 """
 
 US_INHDR: tuple[int, ...] = (
@@ -158,5 +161,11 @@ DIVTAB: tuple[int, ...] = (
     682, 655, 630, 607, 585, 565, 546, 528, 512, 496, 482, 468,
     455, 443, 431, 420, 409, 399, 390, 381, 372, 364, 356, 349,
     341, 334,
+)
+
+LINEARTILT: tuple[int, ...] = (
+    0, 6, 8, 12, 15, 17, 19, 21, 23, 25, 26, 27,
+    28, 29, 30, 31, 32, 33, 34, 35, 35, 36, 36, 37,
+    37, 38, 38, 39, 39, 39, 40, 40,
 )
 

@@ -48,6 +48,7 @@ TRANS_ARRAYS = {
     "US_PLOCU": ("us_plocu", 177),
     "US_FEMLOC": ("us_femloc", 478),
     "DIVTAB": ("divtab", 50),
+    "LINEARTILT": ("lineartilt", 32),
 }
 
 # name -> element count, from p_us_rom_dectalk_1996m_43f.c initializers.
@@ -131,6 +132,9 @@ The transition machinery around `us_gettar` (`ph_setar.c:561` `phsettar`) reads:
               reproducible -- `phsettar.py` treats those out-of-range entries as
               zero (giving a zero increment), which matches the audibly-silent
               effect but is not guaranteed bit-identical for such phones.
+  LINEARTILT  `lineartilt` (`ph_romi.c:96`, 32 entries): `send_pars`
+              (`ph_claus.c:731`) remaps the drawn TILT (0..31) through it before
+              the vocal tract model.
 """
 '''
 
