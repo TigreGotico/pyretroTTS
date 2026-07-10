@@ -30,7 +30,8 @@ build `phdraw`'s input) is not ported, so there is still no text-to-speech;
 | Constants, frame-parameter layout | `consts.py` | — |
 | Frame-driven synthesis + WAV writer | `engine.py` | — |
 | Phoneme frame drawer (`phdraw`) | `ph.py` | bit-exact vs C (10 voices) |
-| `ph/` allophone/duration/F0/target-setup stages | — | **not ported** (Phase 3+) |
+| `phsettar` + `p_us_rom` target tables | — | in progress (Phase 3) |
+| `ph/` allophone/duration/F0 stages | — | **not ported** (Phase 4+) |
 | `cmd/` markup, `lts/` letter-to-sound | — | **not ported** (Phase 3+) |
 
 ## The oracle
