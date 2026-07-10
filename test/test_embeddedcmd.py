@@ -329,6 +329,23 @@ def test_slnc_applied_end_to_end_via_build_phoneme_plan():
     assert dur[hits[0]] == 500 // kFrameTime
 
 
+def test_scan_bracket_commands_rset():
+    """Regression test for Parse_rset_Command (EmbeddedCmd.c:724-739):
+    the only valid argument is 0 (queues a C_reset command, which
+    do_ctrl already correctly stubs with NotImplementedError -- see
+    do_ctrl's module docstring); a nonzero argument matches
+    LogParseError's effect of not resetting at all."""
+    from lintalker._embeddedcmd import scan_bracket_commands
+
+    clean, cmds, emph, silences = scan_bracket_commands("[[rset0]]hello")
+    assert clean == "hello"
+    assert cmds == [(0, C_reset, 0)]
+
+    clean, cmds, emph, silences = scan_bracket_commands("[[rset5]]hello")
+    assert clean == "hello"
+    assert cmds == []
+
+
 if __name__ == "__main__":
     tests = [v for k, v in list(globals().items()) if k.startswith("test_")]
     for t in tests:

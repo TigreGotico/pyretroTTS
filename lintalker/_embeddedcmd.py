@@ -303,6 +303,17 @@ def scan_bracket_commands(text: str):
             i = end + len(END)
             continue
 
+        if keyword == 'RSET':
+            # Parse_rset_Command (EmbeddedCmd.c:724-739): the ONLY valid
+            # argument is 0 -- HandleReset is called only in that case,
+            # else LogParseError fires and no reset happens (matched
+            # here by simply not queuing a command for a nonzero value).
+            value, _ = _parse_fixed_value(inner, 4)
+            if value == 0:
+                commands.append((word_count, C_reset, 0))
+            i = end + len(END)
+            continue
+
         entry = _BRACKET_COMMANDS.get(keyword)
         if entry is None:
             # Unrecognized keyword -- leave this span untouched (not
