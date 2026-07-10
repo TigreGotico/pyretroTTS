@@ -1,9 +1,9 @@
 # pyretroTTS
 
-A standalone Python port of the **classic formant speech synthesizers** —
-the "robot voices" of 1980s and 1990s computing. No neural network, no
-audio corpus, no GPU: just a physical model of the human vocal tract,
-driven by a few hundred kilobytes of tables and rules.
+Standalone Python ports of the **classic speech synthesizers** — the
+"robot voices" of 1980s and 1990s computing. No neural network, no audio
+corpus, no GPU: a few hundred kilobytes of tables and rules, and integer
+arithmetic.
 
 Two of the three engines descend from Dennis Klatt's formant synthesis
 research at MIT:
@@ -25,9 +25,12 @@ The third is older and works nothing like the other two:
 They are different codebases by different authors. Fred is not Perfect
 Paul, and neither is Sam. See `docs/history.md`.
 
+The DECtalk community — its singing notation, and a large archive of
+songs written in it — lives at <https://dectalk.de/>. `songs/` holds a
+handful of public-domain scores from that tradition, rendered.
+
 ```python
-from pyretrotts import MacInTalkEngine, DECtalkEngine
-from pyretrotts.sam import SAMEngine
+from pyretrotts import MacInTalkEngine, DECtalkEngine, SAMEngine
 
 MacInTalkEngine().say("hello, this is a test.", "out.wav")
 

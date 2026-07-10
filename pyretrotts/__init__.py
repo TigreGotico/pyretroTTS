@@ -1,9 +1,10 @@
 """Classic formant speech synthesis: MacinTalk and DECtalk.
 
-    from pyretrotts import MacInTalkEngine, DECtalkEngine
+    from pyretrotts import MacInTalkEngine, DECtalkEngine, SAMEngine
 
     MacInTalkEngine().say("hello, this is a test.", "out.wav")
     DECtalkEngine().sing("[:phone on] hxeh<200,13>lb<100>ow<400,20>", "hi.wav")
+    SAMEngine().say("i am sam.", "sam.wav", "Little Robot")
 
 The lower-level API works one voice at a time:
 
@@ -21,7 +22,7 @@ from .api import (
     synthesize_plan,
     synthesize_text,
 )
-from .engines import DECtalkEngine, Engine, MacInTalkEngine
+from .engines import DECtalkEngine, Engine, MacInTalkEngine, SAMEngine
 from .version import __version__
 
 __all__ = [
@@ -29,6 +30,7 @@ __all__ = [
     "Engine",
     "MacInTalkEngine",
     "PhonemePlan",
+    "SAMEngine",
     "__version__",
     "build_phoneme_plan",
     "new_voice",

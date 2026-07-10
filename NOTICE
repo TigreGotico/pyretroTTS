@@ -8,6 +8,26 @@ commercial product, each has a different provenance, and they are not equally
 free to redistribute. This file states what is known about each, plainly. It is
 not legal advice.
 
+## Upstream sources
+
+Every line of ported code traces to one of these. None of them is vendored into
+this repository; each is read from a read-only checkout alongside it.
+
+| Engine | Upstream repository | Original author | Original copyright |
+|---|---|---|---|
+| MacinTalk | `github.com/dectalk/lintalker` | Tim Schaaff | Apple Computer, Inc., 1991-1995 |
+| DECtalk | `github.com/dectalk/dectalk` | Dennis Klatt et al. | Digital Equipment Corporation, 1984; later Fonix / Force Computers |
+| DECtalk (portable) | `github.com/dectalk/DECtalkMini` | — | as above |
+| SAM | `github.com/vidarh/SAM` | Vidar Hokstad, from the 6502 original | SoftVoice, Inc., 1982 |
+
+The MacinTalk upstream is named "lintalker" and sits under the `dectalk`
+GitHub organisation. It is not DECtalk. Its C headers read *"Implementation of
+MacInTalk2 FrontEnd. Written by: Tim Schaaff. Copyright (c) 1991-1992 by Apple
+Computer, Inc."*
+
+A community around DECtalk, its singing notation, and a large archive of songs
+written in it lives at <https://dectalk.de/>.
+
 ## MacinTalk — `pyretrotts/_backend.py` and the rest of the core
 
 Apple Computer's MacinTalk 2/3, ported from C sources whose headers read:
