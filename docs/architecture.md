@@ -411,20 +411,42 @@ single-sentence text is.
   `"123"`'s internal, non-final "one" does not) -- extract each number
   word in a mid-utterance, non-final context (e.g. as the first word of
   a longer phrase) to avoid contaminating the captured `phon_Buf_2` with
-  sentence-final-only content. Also still unresolved: bare digit-only
-  input like `"123"` does NOT reproduce the `"and"`-inserting phoneme
-  sequence that `PartialNumberToPhonemes`'s documented algorithm would
-  predict for a plain 3-digit cardinal (confirmed by direct comparison:
-  `"123"` and `"one hundred and twenty three."` produce different-length
-  phoneme sequences) -- the real tokenizer's `SpeakTokenAsNumber`
-  trigger conditions and exactly which digit-run token type
-  (`kNumericTok` vs `kSmartNumberTok`) plain typed digits get classified
-  as needs to be pinned down (likely via direct instrumentation of
-  `GetNextToken`/`Fill_Tok_Buffer`) before the ones/tens/hundreds
-  construction logic itself can be ported and verified frame-exact. The
-  full `SpeakTokenAsNumber`/`GetNextToken` tokenizer state machine
-  (decimals, currency, years, phone numbers) is larger still and out of
-  scope for a first pass.
+  sentence-final-only content.
+
+  RESOLVED (the "`"123"` doesn't match the documented algorithm" puzzle
+  above): direct instrumentation of `PartialNumberToPhonemes` (temporary
+  `fprintf` dumps of `tok->phonHold` after each iteration, reverted
+  after) confirmed `SpeakTokenAsNumber` IS called for plain typed digits
+  (`kNumericTok`, `latchedMode` has no `kDigitByDigit` bit set by
+  default) and the ones/tens/hundreds/AND-insertion control flow in
+  `FrontEnd.c:1765-1888` matches this doc's earlier reading exactly --
+  the mismatch has a different root cause: for `"123"`, the
+  hundreds-digit lookup (`SearchAllDicts(vv, "\p100", tok, vv->Symbols,
+  true)`, meant to resolve the literal 3-character key `"100"` to the
+  word "HUNDRED") returns the IDENTICAL phoneme sequence as the digit
+  lookup for `"1"` ("ONE") -- confirmed by comparing the raw
+  `phon_Buf`/`_Word_`+stress-marker-prefixed phoneme bytes byte-for-byte
+  across both calls. In other words, the real compiled reference speaks
+  `"123"` as "ONE ONE AND TWENTY THREE", not "ONE HUNDRED AND TWENTY
+  THREE" -- the `"100"`-keyed `Symbols` dictionary entry appears to
+  collide with (or fall back to) the same entry as `"1"` in THIS
+  compiled build. Combined with the separately-documented `Symbols`
+  dictionary header not decoding the way `English.lex`'s does, this is
+  most likely a corruption or incompleteness in this specific compiled
+  `Symbols` blob rather than genuine original DECtalk behavior --
+  faithfully reproducing "HUNDRED sounds like ONE" bit-for-bit would
+  risk enshrining a build artifact as spec. Porting `PartialNumberToPhon
+  emes` correctly therefore needs either a clean, independently-sourced
+  `Symbols` dictionary (the "100"/"1000"/"1000000"-family keys and the
+  plain digit/teen/tens words are NOT guaranteed reliable in this
+  compiled blob and must be spot-checked individually, not assumed
+  correct because the plain digits happened to resolve sensibly) or an
+  authoritative outside reference (e.g. a second independent DECtalk
+  build, or a written spec of the intended pronunciation) to validate
+  against instead of this repo's `lintalker-c` checkout. The full
+  `SpeakTokenAsNumber`/`GetNextToken` tokenizer state machine (decimals,
+  currency, years, phone numbers) is larger still and out of scope for
+  a first pass regardless.
 - No embedded commands (`EmbeddedCmd.c`'s backtick-escape text parser is
   unported — `DoCtrl`, the per-phoneme dispatcher it would feed, is
   ported and tested independently via `test/test_embeddedcmd.py`).
