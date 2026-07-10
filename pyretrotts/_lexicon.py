@@ -366,5 +366,14 @@ def lookup(word: str) -> LexEntry | None:
     back to `_engtop.engtop()` for letter-to-sound rules, exactly as
     `FrontEnd.c:2039` does (`if (SearchAllDicts(...)) ... else DoMorph/EngToP`).
     """
+    # SearchAllDicts consults application and user dictionaries before the main
+    # one (FrontEnd.c:1592-1608). None is installed by default.
+    from .dictionaries import active_dictionary
+    overlay = active_dictionary()
+    if overlay is not None:
+        entry = overlay.lookup(word)
+        if entry is not None:
+            return entry
+
     dict_header = _get_english_dict()
     return search_single_dict(word, dict_header)

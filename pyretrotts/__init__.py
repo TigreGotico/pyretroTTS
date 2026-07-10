@@ -22,6 +22,7 @@ from .api import (
     synthesize_plan,
     synthesize_text,
 )
+from .dictionaries import UserDictionary, load_dictionary, use_dictionary
 from .engines import DECtalkEngine, Engine, MacInTalkEngine, SAMEngine
 from .g2p import phonemize, phonemize_words
 from .version import __version__
@@ -31,9 +32,11 @@ __all__ = [
     "Engine",
     "MacInTalkEngine",
     "PhonemePlan",
+    "UserDictionary",
     "SAMEngine",
     "__version__",
     "build_phoneme_plan",
+    "load_dictionary",
     "new_voice",
     "phonemize",
     "phonemize_words",
@@ -41,4 +44,5 @@ __all__ = [
     "synthesize_phonemes",
     "synthesize_plan",
     "synthesize_text",
+    "use_dictionary",
 ]
