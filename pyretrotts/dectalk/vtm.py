@@ -243,15 +243,19 @@ def process_frame(st: VtmState, frame: list[int]) -> list[int]:
     spk = st.spk
     v = list(frame)  # variabpars
 
-    # First two frames after a speaker definition are forced to silence.
+    # Frames after a speaker definition are forced to silence. `ldspdef` is a C
+    # `BOOL`, which is `unsigned char` in this build (`api/tts.h:237`), so the
+    # `-1` below wraps to 255: the following frame still satisfies `>= 1` and is
+    # silenced too, giving three silent frames (0, 1, 2), not two. Modelling it
+    # as a signed int silences only two and latches `avlin` one frame early.
     if st.ldspdef >= 1:
-        st.ldspdef += 1
+        st.ldspdef = (st.ldspdef + 1) & 0xFF
         for i in (C.OUT_AV, C.OUT_AP, C.OUT_A2, C.OUT_A3, C.OUT_A4,
                   C.OUT_A5, C.OUT_A6, C.OUT_AB):
             v[i] = 0
         st.avlin = 0
     if st.ldspdef >= 3:
-        st.ldspdef = -1
+        st.ldspdef = 0xFF
 
     # Pitch period, scaled for 11025 Hz (SAMPLE_RATE_INCREASE).
     T0inS4 = s16(frac1mul(_RATE, v[C.OUT_T0]) << 1)
