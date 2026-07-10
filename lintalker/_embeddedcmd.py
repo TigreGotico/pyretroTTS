@@ -339,24 +339,33 @@ def scan_bracket_commands(text: str, initial_rate: int = kNormal_Speech_Rate):
     running `make_fe_word_token`'s normal dictionary/`EngToP` lookup on
     the meaningless placeholder string.
 
-    NOT ported: `char` (`Parse_char_Command`/`ChangeCharMode`'s
-    `kCharByChar` letter-by-letter speaking mode needs each letter's own
-    NAME pronunciation -- e.g. "B" -> "bee" -- which comes from the
-    `Symbols` dictionary's per-character lookup, `LiteralCharToPhonemes`
-    `EmbeddedCmd.c`/`FrontEnd.c:1664-1694`; unlike `mode`'s `MAGIC_MAP`
-    above (a literal compile-time table) or the digit words `nmbr`
-    reuses, no bit-exact extraction of the 26 letter-name pronunciations
-    from the compiled reference exists yet, so this remains unported
-    rather than guessed via the letter-to-sound engine), and mid-clause
+    Also recognizes `char` (`Parse_char_Command`/`ChangeCharMode`,
+    search `EmbeddedCmd.c` for `Parse_char_Command`): the same bare
+    `NORM`/`LTRL` selector shape as `nmbr`, toggling `kCharByChar`
+    letter-by-letter spelling (`_letters.spell_word`, e.g. "cab" ->
+    "see ay bee") for every following alphabetic word until changed
+    again -- also a LATCHED mode, returned as `char_overrides:
+    {word_index: is_spelled}`, applied by `_assembly.collect_fe_tokens`
+    as a running flag exactly like `nmbr_overrides`. `_letters.
+    LETTER_PHONEMES` is extracted bit-exact from the compiled
+    `lintalker-c` reference's real `Symbols`-dictionary letter lookup
+    (a genuine RUNTIME lookup, unlike `mode`'s literal `MAGIC_MAP` --
+    but confirmed NOT corrupted for plain single-character keys, unlike
+    the `"100"`/`"1000"`-class SCALE-WORD numeric keys documented
+    elsewhere); see that module's docstring for the extraction method
+    and a documented multi-letter vowel-hiatus caveat.
+
+    NOT ported: mid-clause
     phoneme-accurate positioning for `pbas`/`pmod`/`volm`
     (a command found after the Nth word of ONE clause is applied before
-    that clause's Nth word for `emph`/`slnc`/`xtnd`/`rate`/`nmbr`/`mode`,
-    but `pbas`/`pmod`/`volm` are applied as an immediate `do_ctrl` state
-    change at the whole clause's start instead -- see
+    that clause's Nth word for `emph`/`slnc`/`xtnd`/`rate`/`nmbr`/`mode`/
+    `char`, but `pbas`/`pmod`/`volm` are applied as an immediate
+    `do_ctrl` state change at the whole clause's start instead -- see
     `api.build_phoneme_plan`).
 
     Returns `(clean_text, commands, emphasis, silences, pos_overrides,
-    rates, final_rate, nmbr_overrides, raw_phon_overrides)`: `clean_text`
+    rates, final_rate, nmbr_overrides, raw_phon_overrides,
+    char_overrides)`: `clean_text`
     is `text` with every recognized bracketed command span removed
     (raw-phoneme spans replaced with `"RAWPHONn"` placeholder words, one
     per opcode group); `commands` is a
@@ -368,7 +377,8 @@ def scan_bracket_commands(text: str, initial_rate: int = kNormal_Speech_Rate):
     dict for `rate`/`ratr`; `final_rate` is described above;
     `nmbr_overrides` is a `{word_index: is_digit_by_digit}` dict for
     `nmbr`; `raw_phon_overrides` is a `{word_index: phon_str}` dict for
-    `mode PHON`. `word_index`
+    `mode PHON`; `char_overrides` is a `{word_index: is_spelled}` dict
+    for `char`. `word_index`
     is how many words (per
     `_frontend.tokenize`) of `clean_text` PRECEDE that command, i.e. the
     command/override applies to (or right before) that word. An
@@ -388,6 +398,7 @@ def scan_bracket_commands(text: str, initial_rate: int = kNormal_Speech_Rate):
     rates = {}
     nmbr_overrides = {}
     raw_phon_overrides = {}
+    char_overrides = {}
     last_rate = initial_rate
     out_parts = []
     word_count = 0
@@ -515,6 +526,21 @@ def scan_bracket_commands(text: str, initial_rate: int = kNormal_Speech_Rate):
             i = end + len(END)
             continue
 
+        if keyword == 'CHAR':
+            # Parse_char_Command/ChangeCharMode (EmbeddedCmd.c: search
+            # for "Parse_char_Command"): same NORM/LTRL selector shape
+            # as `nmbr`, toggling `kCharByChar` letter-by-letter
+            # spelling (`_letters.spell_word`) for every following
+            # alphabetic word until changed again.
+            j = _skip_spaces(inner, 4)
+            mode_val, _ = _parse_selector_value(inner.upper(), j)
+            if mode_val == _MODE_NORMAL:
+                char_overrides[word_count] = False
+            elif mode_val == _MODE_LITERAL:
+                char_overrides[word_count] = True
+            i = end + len(END)
+            continue
+
         if keyword == 'MODE':
             # Parse_mode_Command/ChangeInputMode (EmbeddedCmd.c: search
             # for "Parse_mode_Command"): argument is a bare TEXT/PHON
@@ -599,7 +625,7 @@ def scan_bracket_commands(text: str, initial_rate: int = kNormal_Speech_Rate):
     final_rate = last_rate if rates else None
     return (
         ''.join(out_parts), commands, emphasis, silences, pos_overrides,
-        rates, final_rate, nmbr_overrides, raw_phon_overrides,
+        rates, final_rate, nmbr_overrides, raw_phon_overrides, char_overrides,
     )
 
 

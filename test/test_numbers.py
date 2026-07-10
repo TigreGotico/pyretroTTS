@@ -111,7 +111,7 @@ def test_nmbr_embedded_command_switches_to_digit_by_digit():
     from lintalker._assembly import collect_fe_tokens
     from lintalker._numbers import digit_by_digit_phonemes, number_to_phonemes
 
-    clean, _cmds, _emph, _sil, _pos, _rates, _final_rate, nmbr, _rawphon = scan_bracket_commands(
+    clean, _cmds, _emph, _sil, _pos, _rates, _final_rate, nmbr, _rawphon, _char = scan_bracket_commands(
         "[[nmbr LTRL]]123"
     )
     assert clean == "123"
@@ -173,7 +173,7 @@ def test_nmbr_mode_latches_until_switched_back():
     from lintalker._assembly import collect_fe_tokens
     from lintalker._numbers import digit_by_digit_phonemes, number_to_phonemes
 
-    clean, _cmds, _emph, _sil, _pos, _rates, _final_rate, nmbr, _rawphon = scan_bracket_commands(
+    clean, _cmds, _emph, _sil, _pos, _rates, _final_rate, nmbr, _rawphon, _char = scan_bracket_commands(
         "[[nmbr LTRL]]12 [[nmbr NORM]]34"
     )
     assert nmbr == {0: True, 1: False}

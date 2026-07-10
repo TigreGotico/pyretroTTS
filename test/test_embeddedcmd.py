@@ -176,7 +176,7 @@ def test_regression_voice_set_never_queues_commands():
 def test_scan_bracket_commands_strips_and_parses_pbas():
     from lintalker._embeddedcmd import scan_bracket_commands
 
-    clean, cmds, _emph, _silences, _pos, _rates, _final_rate, _nmbr, _rawphon = scan_bracket_commands("[[pbas300]]hello world")
+    clean, cmds, _emph, _silences, _pos, _rates, _final_rate, _nmbr, _rawphon, _char = scan_bracket_commands("[[pbas300]]hello world")
     assert clean == "hello world"
     assert cmds == [(0, C_absPitch, 300 << 16)]
 
@@ -184,7 +184,7 @@ def test_scan_bracket_commands_strips_and_parses_pbas():
 def test_scan_bracket_commands_word_index_tracks_preceding_words():
     from lintalker._embeddedcmd import scan_bracket_commands
 
-    clean, cmds, _emph, _silences, _pos, _rates, _final_rate, _nmbr, _rawphon = scan_bracket_commands("hello [[volm50]] world")
+    clean, cmds, _emph, _silences, _pos, _rates, _final_rate, _nmbr, _rawphon, _char = scan_bracket_commands("hello [[volm50]] world")
     assert clean == "hello  world"
     assert cmds == [(1, C_absVol, 50 << 16)]
 
@@ -192,17 +192,17 @@ def test_scan_bracket_commands_word_index_tracks_preceding_words():
 def test_scan_bracket_commands_relative_sign():
     from lintalker._embeddedcmd import scan_bracket_commands
 
-    clean, cmds, _emph, _silences, _pos, _rates, _final_rate, _nmbr, _rawphon = scan_bracket_commands("[[pbas+50]]hello")
+    clean, cmds, _emph, _silences, _pos, _rates, _final_rate, _nmbr, _rawphon, _char = scan_bracket_commands("[[pbas+50]]hello")
     assert cmds == [(0, C_relPitch, 50 << 16)]
 
-    clean, cmds, _emph, _silences, _pos, _rates, _final_rate, _nmbr, _rawphon = scan_bracket_commands("[[pbas-50]]hello")
+    clean, cmds, _emph, _silences, _pos, _rates, _final_rate, _nmbr, _rawphon, _char = scan_bracket_commands("[[pbas-50]]hello")
     assert cmds == [(0, C_relPitch, -(50 << 16))]
 
 
 def test_scan_bracket_commands_unrecognized_keyword_left_untouched():
     from lintalker._embeddedcmd import scan_bracket_commands
 
-    clean, cmds, _emph, _silences, _pos, _rates, _final_rate, _nmbr, _rawphon = scan_bracket_commands("[[bogus123]]hello")
+    clean, cmds, _emph, _silences, _pos, _rates, _final_rate, _nmbr, _rawphon, _char = scan_bracket_commands("[[bogus123]]hello")
     assert clean == "[[bogus123]]hello"
     assert cmds == []
 
@@ -210,11 +210,11 @@ def test_scan_bracket_commands_unrecognized_keyword_left_untouched():
 def test_scan_bracket_commands_cmnt_and_vers_are_stripped_noops():
     from lintalker._embeddedcmd import scan_bracket_commands
 
-    clean, cmds, emph, _silences, _pos, _rates, _final_rate, _nmbr, _rawphon = scan_bracket_commands("[[cmnt this is ignored]]hello")
+    clean, cmds, emph, _silences, _pos, _rates, _final_rate, _nmbr, _rawphon, _char = scan_bracket_commands("[[cmnt this is ignored]]hello")
     assert clean == "hello"
     assert cmds == [] and emph == {}
 
-    clean, cmds, emph, _silences, _pos, _rates, _final_rate, _nmbr, _rawphon = scan_bracket_commands("[[vers65536]]hello")
+    clean, cmds, emph, _silences, _pos, _rates, _final_rate, _nmbr, _rawphon, _char = scan_bracket_commands("[[vers65536]]hello")
     assert clean == "hello"
     assert cmds == [] and emph == {}
 
@@ -223,12 +223,12 @@ def test_scan_bracket_commands_dlim_changes_subsequent_delimiters():
     from lintalker._embeddedcmd import scan_bracket_commands
 
     # '<'=60, '>'=62: switch delimiters mid-text, then use them for pbas.
-    clean, cmds, _emph, _silences, _pos, _rates, _final_rate, _nmbr, _rawphon = scan_bracket_commands("[[dlim60 62]]<pbas60>hello")
+    clean, cmds, _emph, _silences, _pos, _rates, _final_rate, _nmbr, _rawphon, _char = scan_bracket_commands("[[dlim60 62]]<pbas60>hello")
     assert clean == "hello"
     assert cmds == [(0, C_absPitch, 60 << 16)]
 
     # Old [[ ]] delimiters no longer recognized after a dlim switch.
-    clean, cmds, _emph, _silences, _pos, _rates, _final_rate, _nmbr, _rawphon = scan_bracket_commands("[[dlim60 62]][[pbas60]]hello")
+    clean, cmds, _emph, _silences, _pos, _rates, _final_rate, _nmbr, _rawphon, _char = scan_bracket_commands("[[dlim60 62]][[pbas60]]hello")
     assert clean == "[[pbas60]]hello"
     assert cmds == []
 
@@ -257,12 +257,12 @@ def test_scan_bracket_commands_emph():
     next word, a plain per-token field copy (not a CMDQueue entry)."""
     from lintalker._embeddedcmd import scan_bracket_commands
 
-    clean, cmds, emph, _silences, _pos, _rates, _final_rate, _nmbr, _rawphon = scan_bracket_commands("[[emph+]]hello world")
+    clean, cmds, emph, _silences, _pos, _rates, _final_rate, _nmbr, _rawphon, _char = scan_bracket_commands("[[emph+]]hello world")
     assert clean == "hello world"
     assert cmds == []
     assert emph == {0: "emphasize"}
 
-    clean, cmds, emph, _silences, _pos, _rates, _final_rate, _nmbr, _rawphon = scan_bracket_commands("hello [[emph-]]world")
+    clean, cmds, emph, _silences, _pos, _rates, _final_rate, _nmbr, _rawphon, _char = scan_bracket_commands("hello [[emph-]]world")
     assert clean == "hello world"
     assert emph == {1: "deemphasize"}
 
@@ -281,7 +281,7 @@ def test_scan_bracket_commands_slnc():
     plain millisecond value (500)."""
     from lintalker._embeddedcmd import scan_bracket_commands
 
-    clean, cmds, emph, silences, _pos, _rates, _final_rate, _nmbr, _rawphon = scan_bracket_commands("hello [[slnc500]]world")
+    clean, cmds, emph, silences, _pos, _rates, _final_rate, _nmbr, _rawphon, _char = scan_bracket_commands("hello [[slnc500]]world")
     assert clean == "hello world"
     assert silences == {1: 500}
 
@@ -337,11 +337,11 @@ def test_scan_bracket_commands_rset():
     LogParseError's effect of not resetting at all."""
     from lintalker._embeddedcmd import scan_bracket_commands
 
-    clean, cmds, emph, silences, _pos, _rates, _final_rate, _nmbr, _rawphon = scan_bracket_commands("[[rset0]]hello")
+    clean, cmds, emph, silences, _pos, _rates, _final_rate, _nmbr, _rawphon, _char = scan_bracket_commands("[[rset0]]hello")
     assert clean == "hello"
     assert cmds == [(0, C_reset, 0)]
 
-    clean, cmds, emph, silences, _pos, _rates, _final_rate, _nmbr, _rawphon = scan_bracket_commands("[[rset5]]hello")
+    clean, cmds, emph, silences, _pos, _rates, _final_rate, _nmbr, _rawphon, _char = scan_bracket_commands("[[rset5]]hello")
     assert clean == "hello"
     assert cmds == []
 
@@ -355,7 +355,7 @@ def test_scan_bracket_commands_sync():
     from lintalker._embeddedcmd import scan_bracket_commands
     from lintalker._consts import C_sync
 
-    clean, cmds, emph, silences, _pos, _rates, _final_rate, _nmbr, _rawphon = scan_bracket_commands("[[sync12345]]hello")
+    clean, cmds, emph, silences, _pos, _rates, _final_rate, _nmbr, _rawphon, _char = scan_bracket_commands("[[sync12345]]hello")
     assert clean == "hello"
     assert cmds == [(0, C_sync, 12345)]
 
@@ -373,7 +373,7 @@ def test_scan_bracket_commands_xtnd_wpos():
     from lintalker._embeddedcmd import scan_bracket_commands
     from lintalker._consts import kVerb
 
-    clean, cmds, emph, silences, pos, _rates, _final_rate, _nmbr, _rawphon = scan_bracket_commands(
+    clean, cmds, emph, silences, pos, _rates, _final_rate, _nmbr, _rawphon, _char = scan_bracket_commands(
         "[[xtnd mtk3 wpos 1]]record it"
     )
     assert clean == "record it"
@@ -385,7 +385,7 @@ def test_scan_bracket_commands_xtnd_wrong_creator_ignored():
     silently ignored -- the command isn't directed at this engine."""
     from lintalker._embeddedcmd import scan_bracket_commands
 
-    clean, cmds, emph, silences, pos, _rates, _final_rate, _nmbr, _rawphon = scan_bracket_commands(
+    clean, cmds, emph, silences, pos, _rates, _final_rate, _nmbr, _rawphon, _char = scan_bracket_commands(
         "[[xtnd zzz9 wpos 1]]record it"
     )
     assert clean == "record it"
@@ -446,7 +446,7 @@ def test_scan_bracket_commands_rate():
     from lintalker._embeddedcmd import scan_bracket_commands
     from lintalker._consts import kNormal_Speech_Rate, kMinRate
 
-    clean, cmds, emph, silences, pos, rates, final_rate, _nmbr, _rawphon = scan_bracket_commands(
+    clean, cmds, emph, silences, pos, rates, final_rate, _nmbr, _rawphon, _char = scan_bracket_commands(
         "hello [[rate240]]world"
     )
     assert clean == "hello world"
@@ -454,20 +454,20 @@ def test_scan_bracket_commands_rate():
     assert final_rate == 240
 
     # Relative change accumulates from initial_rate.
-    clean, cmds, emph, silences, pos, rates, final_rate, _nmbr, _rawphon = scan_bracket_commands(
+    clean, cmds, emph, silences, pos, rates, final_rate, _nmbr, _rawphon, _char = scan_bracket_commands(
         "[[rate+20]]hello", initial_rate=200
     )
     assert rates == {0: 220}
     assert final_rate == 220
 
     # Clamped to kMinRate.
-    clean, cmds, emph, silences, pos, rates, final_rate, _nmbr, _rawphon = scan_bracket_commands(
+    clean, cmds, emph, silences, pos, rates, final_rate, _nmbr, _rawphon, _char = scan_bracket_commands(
         "[[rate-500]]hello", initial_rate=kNormal_Speech_Rate
     )
     assert rates == {0: kMinRate}
 
     # No rate command -> final_rate is None.
-    clean, cmds, emph, silences, pos, rates, final_rate, _nmbr, _rawphon = scan_bracket_commands("hello")
+    clean, cmds, emph, silences, pos, rates, final_rate, _nmbr, _rawphon, _char = scan_bracket_commands("hello")
     assert rates == {} and final_rate is None
 
 
@@ -492,7 +492,7 @@ def test_scan_bracket_commands_mode_phon_parses_raw_phonemes():
     from lintalker._embeddedcmd import scan_bracket_commands
     from lintalker._rawphon import parse_raw_phonemes, split_into_word_groups
 
-    clean, cmds, emph, silences, pos, rates, final_rate, nmbr, rawphon = scan_bracket_commands(
+    clean, cmds, emph, silences, pos, rates, final_rate, nmbr, rawphon, _char = scan_bracket_commands(
         "hello [[mode PHON]]_1AAt[[mode TEXT]] world"
     )
     assert clean == "hello RAWPHON1 world"
@@ -505,7 +505,7 @@ def test_scan_bracket_commands_mode_phon_multiple_word_groups():
     from lintalker._rawphon import parse_raw_phonemes, split_into_word_groups
 
     # Two _Word_-delimited groups inside one PHON span -> two placeholders.
-    clean, cmds, emph, silences, pos, rates, final_rate, nmbr, rawphon = scan_bracket_commands(
+    clean, cmds, emph, silences, pos, rates, final_rate, nmbr, rawphon, _char = scan_bracket_commands(
         "[[mode PHON]]_1AAt_2t1IY[[mode TEXT]]"
     )
     groups = split_into_word_groups(parse_raw_phonemes("_1AAt_2t1IY"))
@@ -518,7 +518,7 @@ def test_scan_bracket_commands_mode_phon_unterminated_runs_to_end():
     from lintalker._embeddedcmd import scan_bracket_commands
     from lintalker._rawphon import parse_raw_phonemes, split_into_word_groups
 
-    clean, cmds, emph, silences, pos, rates, final_rate, nmbr, rawphon = scan_bracket_commands(
+    clean, cmds, emph, silences, pos, rates, final_rate, nmbr, rawphon, _char = scan_bracket_commands(
         "hello [[mode PHON]]_1AAt"
     )
     groups = split_into_word_groups(parse_raw_phonemes("_1AAt"))
@@ -529,7 +529,7 @@ def test_mode_phon_reaches_word_token_end_to_end():
     from lintalker._assembly import collect_fe_tokens
     from lintalker._embeddedcmd import scan_bracket_commands
 
-    clean, _cmds, emph, sil, pos, rates, final_rate, nmbr, rawphon = scan_bracket_commands(
+    clean, _cmds, emph, sil, pos, rates, final_rate, nmbr, rawphon, _char = scan_bracket_commands(
         "hello [[mode PHON]]_1AAt[[mode TEXT]] world"
     )
     sa = collect_fe_tokens(clean, raw_phon_overrides=rawphon)
@@ -546,6 +546,50 @@ def test_mode_phon_applied_end_to_end_via_build_phoneme_plan_does_not_crash():
 
     vv = new_voice(Fred_Voice)
     plan = build_phoneme_plan(Fred_Voice, "hello [[mode PHON]]_1AAt[[mode TEXT]] world", vv)
+    assert len(plan[0]) > 0
+
+
+def test_scan_bracket_commands_char_toggles_spelling_mode():
+    from lintalker._embeddedcmd import scan_bracket_commands
+
+    clean, cmds, emph, sil, pos, rates, final_rate, nmbr, rawphon, char = scan_bracket_commands(
+        "[[char LTRL]]cab[[char NORM]] home"
+    )
+    assert clean == "cab home"
+    assert char == {0: True, 1: False}
+
+
+def test_char_spelling_reaches_word_token_end_to_end():
+    from lintalker._assembly import collect_fe_tokens
+    from lintalker._letters import spell_word
+
+    sa = collect_fe_tokens("cab home", char_overrides={0: True, 1: False})
+    assert sa.words[0].word == "CAB"
+    assert sa.words[0].phon_str == spell_word("CAB")
+    assert sa.words[1].word == "HOME"
+    assert sa.words[1].phon_str != spell_word("HOME")  # char mode off again
+
+
+def test_char_mode_latches_until_switched_back():
+    from lintalker._embeddedcmd import scan_bracket_commands
+    from lintalker._assembly import collect_fe_tokens
+    from lintalker._letters import spell_word
+
+    clean, _cmds, _emph, _sil, _pos, _rates, _final_rate, _nmbr, _rawphon, char = scan_bracket_commands(
+        "[[char LTRL]]ab cd[[char NORM]] ef"
+    )
+    sa = collect_fe_tokens(clean, char_overrides=char)
+    assert sa.words[0].phon_str == spell_word("AB")
+    assert sa.words[1].phon_str == spell_word("CD")
+    assert sa.words[2].phon_str != spell_word("EF")
+
+
+def test_char_mode_applied_end_to_end_via_build_phoneme_plan_does_not_crash():
+    from lintalker.api import build_phoneme_plan, new_voice
+    from lintalker._data import Fred_Voice
+
+    vv = new_voice(Fred_Voice)
+    plan = build_phoneme_plan(Fred_Voice, "[[char LTRL]]cab[[char NORM]] home", vv)
     assert len(plan[0]) > 0
 
 

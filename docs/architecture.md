@@ -18,7 +18,7 @@
 | `BackEnd.c` (`Fill_Pitch_Buf`, `Store_F0_and_Time`) | `lintalker/_pitchbuf.py` | Turns the ctrl-bit pitch contour into `pitch_Buf_Freq`/`pitch_Buf_Time`/`pitch_Buf_Flags`, verified bit-exact against the C reference across voices/sentences (`test/test_pitchbuf.py`). |
 | `Engine.c` | `lintalker/_engine.py` | Top-level init/speak/reset/rate/pitch/volume API, built on `_backend.py`. `e_speak_buffer` (the text-in entry point) and a few fsynth-dependent setters (`e_reset_params`, `e_use_voice`, `e_reinit_voice`) raise `NotImplementedError` naming the specific unported upstream C function they need. |
 | `BackEnd.c` (`DoCtrl`, the per-phoneme `CMDQueue` dispatcher: absolute/relative pitch, volume, mod) | `lintalker/_embeddedcmd.py` | Ported (see `test/test_embeddedcmd.py`); `C_reset`/`C_voice` are unimplemented/no-op the same way upstream leaves them, pending `ResetVoice`/`NewVoice` |
-| `EmbeddedCmd.c` (the FrontEnd bracket-delimited text-command parser, e.g. `[[pbas200]]` -- `[[`/`]]` are the default delimiters, `mt4.h`'s `defaultCmdBeginDelim`/`defaultCmdEndDelim`, a distinct mechanism from `DoCtrl` above — it sets `PendingCommands` bits that `FrontEnd.c` later turns into `CMDQueue` entries via `QueueCommand`, except `emph`/`xtnd wpos`/`rate` which write directly to per-token/per-word state) | `lintalker/_embeddedcmd.py`'s `scan_bracket_commands` | Ported for `pbas`/`pbar`/`pmod`/`pmor`/`volm`/`volr`/`rset`/`sync` (applied as an immediate state change at clause start via `do_ctrl`, not true per-phoneme positioning -- `rset` correctly raises `NotImplementedError` via `do_ctrl`'s existing stub, `sync` is a genuine no-op matching `do_ctrl` having no `C_sync` case, same as the real `DoCtrl`), `emph`/`emph-`/`xtnd`'s `wpos` selector/`slnc`/`rate`/`ratr` (all applied at the exact word position -- `emph`/`xtnd wpos` via token fields, `slnc`/`rate` via `sa.note_buf`/`sa.rate_buf` consumed by `_moduration.mod_duration`), `cmnt`/`vers` (no-ops, stripped), and `dlim` (changes the begin/end delimiter used for later commands in the same text), `nmbr` (a latched `NORM`/`LTRL` mode switching digit-string tokens between cardinal grouping and digit-by-digit reading, applied as a running flag in `_assembly.collect_fe_tokens` rather than a one-shot per-word override), and `mode` (a latched `TEXT`/`PHON` mode parsing raw phoneme mnemonics via `lintalker/_rawphon.py`'s bit-exact `MAGIC_MAP`, applied by `scan_bracket_commands` itself rather than deferred to `collect_fe_tokens`); `char` not ported; cannot be verified frame-exact against `lintalker-c`'s compiled `test_harness` -- see "Known gaps" |
+| `EmbeddedCmd.c` (the FrontEnd bracket-delimited text-command parser, e.g. `[[pbas200]]` -- `[[`/`]]` are the default delimiters, `mt4.h`'s `defaultCmdBeginDelim`/`defaultCmdEndDelim`, a distinct mechanism from `DoCtrl` above — it sets `PendingCommands` bits that `FrontEnd.c` later turns into `CMDQueue` entries via `QueueCommand`, except `emph`/`xtnd wpos`/`rate` which write directly to per-token/per-word state) | `lintalker/_embeddedcmd.py`'s `scan_bracket_commands` | Ported for `pbas`/`pbar`/`pmod`/`pmor`/`volm`/`volr`/`rset`/`sync` (applied as an immediate state change at clause start via `do_ctrl`, not true per-phoneme positioning -- `rset` correctly raises `NotImplementedError` via `do_ctrl`'s existing stub, `sync` is a genuine no-op matching `do_ctrl` having no `C_sync` case, same as the real `DoCtrl`), `emph`/`emph-`/`xtnd`'s `wpos` selector/`slnc`/`rate`/`ratr` (all applied at the exact word position -- `emph`/`xtnd wpos` via token fields, `slnc`/`rate` via `sa.note_buf`/`sa.rate_buf` consumed by `_moduration.mod_duration`), `cmnt`/`vers` (no-ops, stripped), and `dlim` (changes the begin/end delimiter used for later commands in the same text), `nmbr` (a latched `NORM`/`LTRL` mode switching digit-string tokens between cardinal grouping and digit-by-digit reading, applied as a running flag in `_assembly.collect_fe_tokens` rather than a one-shot per-word override), `mode` (a latched `TEXT`/`PHON` mode parsing raw phoneme mnemonics via `lintalker/_rawphon.py`'s bit-exact `MAGIC_MAP`, applied by `scan_bracket_commands` itself rather than deferred to `collect_fe_tokens`), and `char` (a latched `NORM`/`LTRL` mode spelling alphabetic words letter-by-letter via `lintalker/_letters.py`'s per-letter bit-exact `LETTER_PHONEMES`, applied the same running-flag way as `nmbr`); cannot be verified frame-exact against `lintalker-c`'s compiled `test_harness` -- see "Known gaps" |
 | `Morph.c` (`ResolvePOS`, `PlacePhrasing`, `SetPOS_FromSuffix` including `Zap_POS`, `DoMorph`'s suffix functions) | `lintalker/_morph.py` (suffix decomposition) + `lintalker/_assembly.py` (`resolve_pos`/`_place_phrasing`) | Every top-level function is ported, including `Zap_POS` (`apply_pos_from_suffix`'s `hasAlt`-true branch, which also selects the root's alternate pronunciation `phon_hold` when the ALT `pos_code2` reading wins -- `PlacePhrasing`'s `inParen`/SEP7 aren't real gaps -- neither is ever exercised by the C reference itself, see "Known gaps"); `Search_Suffix`'s real `SuffixTab` trie data is approximated with an ordered `endswith()` cascade instead of extracted |
 | `english_lex.c`/`English.lex` | `lintalker/_lexicon.py` | Dictionary lookup (`lookup(word)`), verified bit-exact against the real engine for 249 words spanning common/rare/compound-noun/abbreviation entries (`test/test_lexicon.py`). |
 | `Sounds.c` | not ported | Embedded sound effects (bells, etc.) — raw PCM blobs, not logic |
@@ -905,22 +905,71 @@ single-sentence text is.
   `lintalker-c`'s compiled `test_harness`, which shows no evidence of
   recognizing bracketed commands at all via its CLI).
 
-  NOT ported: `char` (`Parse_char_Command`/`ChangeCharMode`'s
-  `kCharByChar` letter-by-letter speaking mode) needs each letter's own
-  NAME pronunciation (e.g. "B" -> "bee"), which comes from the
-  `Symbols` dictionary's per-character lookup
-  (`LiteralCharToPhonemes`, `FrontEnd.c:1664-1694`) -- UNLIKE `mode`
-  above (a literal compile-time table) or the digit words `nmbr`
-  reuses, this is a genuine RUNTIME dictionary lookup (the same
-  `Symbols` dictionary already confirmed corrupted for scale-word
-  numeric keys; its per-letter entries were not separately
-  investigated), so no bit-exact extraction of the 26 letter-name
-  pronunciations exists yet, and this remains unported rather than
-  guessed via the letter-to-sound engine (which would produce a
-  different, spelling-rule-based pronunciation than a dictionary
-  letter-name lookup). And true
+  (Fixed) `char` (`Parse_char_Command`/`ChangeCharMode`'s
+  `kCharByChar` letter-by-letter speaking mode, e.g. "cab" -> "see ay
+  bee") needs each letter's own NAME pronunciation, which comes from
+  the `Symbols` dictionary's per-character lookup
+  (`LiteralCharToPhonemes`, `FrontEnd.c:1664-1694`) -- a genuine
+  RUNTIME dictionary lookup, UNLIKE `mode`'s literal `MAGIC_MAP` or the
+  digit words `nmbr` reuses. Previously undocumented as unextractable;
+  a new EXTRACTION METHOD closed this: a single-letter token
+  surrounded by tokens of length 1 forces `WordToPhonemes`'s real
+  `kAlphaTok` branch into `SpeakTokenCharByChar` (`FrontEnd.c:2010
+  -2015`), so placing the target letter as the FIRST word of a
+  two-letter utterance (e.g. `"b z."`) reaches the exact same
+  `LiteralCharToPhonemes` path `char LTRL` mode would use, without
+  needing the (unverifiable) bracket-command parser to work at all --
+  sentence-initial position specifically avoids a real, confirmed
+  coarticulation artifact where a vowel-initial letter name preceded by
+  another vowel-final sound gets a spurious glottal-stop phoneme
+  (`_QX_`) inserted before it (a general vowel-hiatus juncture rule,
+  not part of the letter's own pronunciation, confirmed by comparing
+  the same letter's extraction in sentence-initial vs. vowel-adjacent
+  position). All 26 letters were extracted this way and decode to their
+  expected English letter names when checked against `_phonemes.py`'s
+  opcode names (e.g. B -> `_b_`,`_IY_` = "bee"; W -> `_d_`,`_AH_`,
+  `_b_`,`_EL_`,`_y_`,`_UW_` = "double-you"). This is the SAME `Symbols`
+  dictionary already confirmed corrupted for `"100"`/`"1000"`-class
+  SCALE-WORD numeric keys elsewhere in this port, but that corruption
+  does NOT extend to plain single-character keys (already established:
+  digit lookups 0-9 work correctly the same way, see `_numbers.py`'s
+  module docstring) -- confirmed again here since all 26 letters decode
+  to sensible pronunciations, not corrupted/duplicate ones.
+
+  `lintalker/_letters.py`'s `LETTER_PHONEMES` holds these 26 bit-exact
+  entries; `spell_word(word)` concatenates them per character
+  (non-letter characters are simply skipped). `_embeddedcmd.
+  scan_bracket_commands` gained `char` parsing (same `NORM`/`LTRL`
+  selector shape as `nmbr`), returning a latched `char_overrides:
+  {word_index: is_spelled}` dict; `_assembly.collect_fe_tokens` applies
+  it as a running flag exactly like `nmbr_overrides`, building an
+  alphabetic word's `FEWordToken` directly from `spell_word` instead of
+  the normal dictionary/`EngToP` lookup when active (mirrors
+  `kCharByChar` being checked BEFORE `GetNextToken`'s `tokType` switch,
+  i.e. it overrides everything else for that token).
+
+  VERIFICATION CAVEAT: each INDIVIDUAL letter's phonemes are bit-exact.
+  Concatenating MULTIPLE letters for one spelled word is NOT
+  independently verified end-to-end: direct comparison (`"c a b."`
+  spoken as three separate letter tokens) confirmed the real engine
+  inserts an extra glottal-stop phoneme (`_QX_`) between two ADJACENT
+  letters where the first ends in a vowel and the second starts with
+  one (e.g. between "C" /siː/ and "A" /eɪ/) -- the SAME general
+  vowel-hiatus juncture rule noted above, applied across ANY word
+  boundary (not specific to spelled letters), and not ported here --
+  same class of scope limit as `_numbers.py`'s grouping algorithm being
+  faithful-but-unverified end-to-end for the analogous reason.
+
+  Verified: `test/test_letters.py` (the table and `spell_word` in
+  isolation) and `test/test_embeddedcmd.py`'s
+  `test_scan_bracket_commands_char_toggles_spelling_mode`/
+  `test_char_spelling_reaches_word_token_end_to_end`/`test_char_mode_
+  latches_until_switched_back`/`test_char_mode_applied_end_to_end_via_
+  build_phoneme_plan_does_not_crash`.
+
+  Remaining gap: true
   per-phoneme positioning for `pbas`/`pmod`/`volm` (see above --
-  `emph`/`slnc`/`xtnd wpos`/`rate`/`nmbr`/`mode` already get real
+  `emph`/`slnc`/`xtnd wpos`/`rate`/`nmbr`/`mode`/`char` already get real
   per-word positioning).
 - Primary/secondary stress placement is gated on POS tagging. For
   dictionary hits, `_lexicon.py:lookup(word)` provides real POS codes.

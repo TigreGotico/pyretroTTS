@@ -640,8 +640,19 @@ def collect_fe_tokens(
     rate_overrides: Optional[dict] = None,
     nmbr_overrides: Optional[dict] = None,
     raw_phon_overrides: Optional[dict] = None,
+    char_overrides: Optional[dict] = None,
 ) -> SentenceAssembly:
     """Adapted port of `Collect_FE_Tokens` (`BackEnd.c:3712-4157`).
+
+    `char_overrides`, if given, is a `{word_index: is_spelled}` dict
+    (from `_embeddedcmd.scan_bracket_commands`'s `char` support): like
+    `nmbr_overrides`, a LATCHED mode tracked as a running flag while
+    building this clause's tokens -- when active, an alphabetic word's
+    `FEWordToken` is built with `_letters.spell_word(word)` as its
+    `phon_str` instead of the normal dictionary/`EngToP` lookup
+    (mirrors `kCharByChar` being checked before `GetNextToken`'s
+    `tokType` switch, `FrontEnd.c:2010-2015`, i.e. it overrides
+    everything else for that token).
 
     `raw_phon_overrides`, if given, is a `{word_index: phon_str}` dict
     (from `_embeddedcmd.scan_bracket_commands`'s `mode PHON` support):
@@ -794,6 +805,7 @@ def collect_fe_tokens(
     from ._morph import resolve_pos
     _clause_tokens = []
     _digit_mode = False
+    _char_mode = False
     _dollar_indices: list = []
     _decimal_frac_indices: list = []
     _cent_indices: list = []
@@ -804,10 +816,29 @@ def collect_fe_tokens(
     )):
         if nmbr_overrides and _wi in nmbr_overrides:
             _digit_mode = nmbr_overrides[_wi]
+        if char_overrides and _wi in char_overrides:
+            _char_mode = char_overrides[_wi]
         if raw_phon_overrides and _wi in raw_phon_overrides:
             _clause_tokens.append(FEWordToken(
                 word=word,
                 phon_str=list(raw_phon_overrides[_wi]),
+                from_dictionary=True,
+                pos_code1=[kNoun, kUndefPOS, kUndefPOS, kUndefPOS],
+                comp_pos1=kHas_Noun,
+                is_abbrev=False,
+                is_compound_hint=False,
+                has_alt=False,
+                pos_choice=kNoun,
+                trailing_punct=punct,
+                phrase_bnd=_PUNCT_TO_BND.get(punct, kBND_None) if punct else kBND_None,
+            ))
+            continue
+        if _char_mode and word.isalpha():
+            from ._letters import spell_word
+
+            _clause_tokens.append(FEWordToken(
+                word=word,
+                phon_str=spell_word(word),
                 from_dictionary=True,
                 pos_code1=[kNoun, kUndefPOS, kUndefPOS, kUndefPOS],
                 comp_pos1=kHas_Noun,
