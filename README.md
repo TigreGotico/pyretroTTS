@@ -22,6 +22,7 @@ counterpart is checked out locally as `lintalker-c`).
 | English word -> phoneme dispatch (single word, letter-to-sound rules) | `EngToP.c` | Ported, verified bit-exact for 36/36 test words (`test/test_engtop.py`) |
 | Top-level engine API (init/speak/rate/pitch/volume) | `Engine.c` | Ported for everything not depending on unported text tokenization; see `docs/architecture.md` for the exact list of stubs |
 | Text tokenization + per-word dispatch | `FrontEnd.c` (partial) | Ported (`lintalker/_frontend.py`): splits text into words + punctuation, dispatches each through `EngToP`. Does not assemble a synthesizable phoneme plan — see `docs/architecture.md` |
+| Cardinal-number reading (e.g. "123" -> "one hundred and twenty three") | `FrontEnd.c` (`PartialNumberToPhonemes`) | Ported (`lintalker/_numbers.py`) with a documented verification caveat: individual number words are bit-exact against the compiled reference, but the reference's own `Symbols`-dictionary numeric-key lookup for scale words ("hundred"/"thousand"/...) is corrupted in this build, so the assembled multi-digit algorithm can't be verified end-to-end against it — see `docs/architecture.md` |
 | Sentence-level stress/word/punctuation/syllable bookkeeping | `BackEnd.c` (`Collect_FE_Tokens` + `Flag_PhonBuf_1`/`MarkSyllable`/`MarkSyllableStart`) | Ported (`lintalker/_assembly.py`), verified bit-exact against the C reference for 4 sentences (`test/test_assembly.py`) |
 | Allophone selection + plosive release (dark L, R-coloring, flapping, glottalization, ...) | `BackEnd.c` (`Fill_Phon_Buf_2`), `formantSynth.c` (`Insert_Closure_Release`) | Ported (`lintalker/_phonbuf2.py`), verified bit-exact against the C reference across voices/sentences (`test/test_assembly_pipeline.py`) |
 | Sentence-level pitch-contour ctrl-bit flagging | `BackEnd.c` (`Pitch_RaiseAndFall`) | Ported (`lintalker/_pitchcontour.py`), verified bit-exact against the C reference across voices/sentences (`test/test_assembly_pipeline.py`) |
@@ -70,8 +71,12 @@ position), and speaking-rate changes (`[[rate240]]`/`[[rate+20]]`, at
 the exact word position, persisting across clauses) — pitch/mod/volume
 are applied at the start of the clause they appear in, not the exact
 phoneme position; see
-`docs/architecture.md`. Remaining known gaps: no number/abbreviation
-expansion and no `char`/`mode`/`nmbr` embedded commands — see
+`docs/architecture.md`. Cardinal numbers ("123" -> "one hundred and
+twenty three") are also supported (`lintalker/_numbers.py`) -- see
+`docs/architecture.md` for that feature's documented verification
+caveat. Remaining known gaps: `char`/`mode`/`nmbr` embedded commands,
+abbreviation expansion, and ordinal/decimal/currency/year/phone-number
+reading modes — see
 `docs/architecture.md` for
 specifics. You can still synthesize from an
 already-built phoneme plan directly via

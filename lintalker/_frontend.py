@@ -75,6 +75,13 @@ def tokenize(text: str) -> list[tuple[str, str | None]]:
             if w[-1] in _PUNCT_PHON:
                 punct = w[-1]
             w = w[:-1]
+        if w.isdigit():
+            # Preserve a pure digit run as its own token instead of
+            # stripping it (FrontEnd.c's kNumericTok path,
+            # ProcessNumberString -- see _numbers.py for the cardinal-
+            # reading port this feeds via _assembly.make_fe_word_token).
+            tokens.append((w, punct))
+            continue
         w = ''.join(c for c in w if c.isalpha() or c == "'")
         if not w:
             continue

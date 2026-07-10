@@ -178,7 +178,7 @@ from ._consts import (
     kTerm_Bound, kPrep_Start, kVerb_Start, kSilenceTypeShift, kSilenceTypeField,
     kBND_Pause, kBND_Decl, kBND_Quest, kBND_Emph, kBND_None,
     kBND_Sep1, kBND_Sep2, kBND_Sep3, kBND_Sep4, kBND_Sep5, kBND_Sep6,
-    kSilenceDuration,
+    kSilenceDuration, kHas_Adj,
 )
 from ._morph import _pos_count_and_hi_rank
 from ._phonemes import (
@@ -247,7 +247,34 @@ def make_fe_word_token(word: str, punct: Optional[str]) -> FEWordToken:
     `_frontend.tokenize()`), consulting `_lexicon.lookup()` first and
     falling back to `_engtop.engtop()` -- the same dictionary-then-rules
     order `FrontEnd.c:2039` uses.
+
+    A pure digit string (`_frontend.tokenize()` now preserves these
+    instead of stripping them) bypasses the dictionary/`DoMorph`/
+    `EngToP` chain entirely, matching `WordToPhonemes`'s real
+    `kNumericTok`/`SpeakTokenAsNumber` branch: `_numbers.number_to_
+    phonemes` builds the cardinal-reading phoneme opcodes (see that
+    module's docstring for its verification status), and
+    `PartialNumberToPhonemes`'s own final step (`FrontEnd.c:1886-1889`:
+    `tok->POScode1[0] = kAdj; tok->compPOS1 = kHas_Adj; tok->hiRank =
+    kAdj; tok->POScount1 = 1`) is matched directly.
     """
+    if word.isdigit():
+        from ._numbers import number_to_phonemes
+
+        return FEWordToken(
+            word=word,
+            phon_str=number_to_phonemes(word),
+            from_dictionary=True,
+            pos_code1=[kAdj, kUndefPOS, kUndefPOS, kUndefPOS],
+            comp_pos1=kHas_Adj,
+            is_abbrev=False,
+            is_compound_hint=False,
+            has_alt=False,
+            pos_choice=kAdj,
+            trailing_punct=punct,
+            phrase_bnd=_PUNCT_TO_BND.get(punct, kBND_None) if punct else kBND_None,
+        )
+
     entry: Optional[LexEntry] = lookup(word)
 
     if entry is not None:
