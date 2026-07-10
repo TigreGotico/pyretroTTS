@@ -36,7 +36,7 @@ build `phdraw`'s input) is not ported, so there is still no text-to-speech;
 | `phsettar` transition setup (`ph_setar.c`, `p_us_st0.c`, `ph_sttr2.c`) | `phsettar.py` | bit-exact vs C (10 voices) |
 | `phdraw` per-frame state advance + `send_pars` | `ph.py` (`advance_frame`, `finalize_av`, `send_pars`) | bit-exact vs C (10 voices) |
 | `ph/` duration rules (`us_phtiming`, `p_us_tim0.c`) | `timing.py` | bit-exact vs C (10 voices) |
-| `ph/` allophone selection (`phsort`/`phalloph`) | — | **not ported** |
+| `ph/` allophone selection (`phsort`/`phalloph`) | `allophones.py` | bit-exact vs C (10 voices) |
 | `ph/` F0 / intonation (`phinton`, `pht0draw`) | — | **not ported** |
 | Phoneme+stress alphabet, `LOG_PHONEMES` renderer | `lts.py` | bit-exact vs oracle over the capture corpus |
 | US main-dictionary load + lookup (`ls_dict.c`) | `dictionary.py` | payload bit-exact for unique-grapheme words |
@@ -569,6 +569,101 @@ reads them). This boundary matters: `phinton` inserts further phones after
   not the `durxx` user-duration-override branch (reached only by a `[:dv]`
   duration command); a mutation there passes the gate.
 
+## What the allophone-selection stage (`phsort`/`phalloph`) is
+
+`phclause` runs `phsort -> phalloph -> us_phtiming -> phinton` before the
+per-frame loop. `phsort` and `phalloph` are the first two: they turn the
+phoneme + stress + sentence-structure symbol stream the front end emits into the
+allophone stream every downstream stage -- `us_phtiming` (`timing.py`),
+`phsettar`, `phdraw`, `vtm` -- consumes.
+
+- **`phsort` (`all_phsort`, `ph_sort.c:428`)** orders the input `symbols[]` into
+  a phoneme stream `phonemes[]` and a parallel 32-bit `sentstruc[]`. It inserts a
+  leading word boundary, resolves compound de-stress, collapses adjacent boundary
+  symbols (`zap_weaker_bound`), promotes/relocates dangling stress marks
+  (`move_stdangle`, `find_syll_to_stress`, `raise_last_stress`), sets the clause
+  type on comma/period/question/exclamation, then emits one phone per real symbol
+  (`make_phone`) and folds every control symbol -- word/phrase/clause boundaries,
+  stress marks, hat commands, sentence terminators -- into `sentstruc` feature
+  bits: `FSTRESS_*`, `FWINITC`, the first/medial/final syllable class
+  (`init_med_final`), the next-boundary type via `bounftab` (`get_next_bound_type`),
+  and the consonant-cluster stress carry (`get_stress_of_conson`, `us_phcluster`).
+- **`phalloph` (`ph_aloph1.c:444`)** applies the phonological allophone-selection
+  rules: it copies each phoneme to `allophons[]` unless a context/stress/boundary
+  rule substitutes a different allophone -- postvocalic `/r/`+vowel coalescence
+  (`ar/er/ir/or/ur/rr`) and `/l/`->`/lx/`, `/t d/` flapping (`df/dx`) and
+  glottalization/dentalization (`d/tx/dz`), `/dh/` assimilation, `/t d/`->`/ch jh/`
+  palatalization, and the `the/for/to/and` function-word unreductions -- and it
+  writes `allofeats[]`: the `sentstruc` bits plus the hat-pattern intonation marks
+  (`FHAT_BEGINS`/`FHAT_ENDS`) placed by the stressed-syllable rise/fall rules
+  (`remaining_stresses_til`, `promote_last_2`). It is 1:1 phone->allophone on the
+  US path (no insertion/deletion; the `/r/` coalescence rewrites the previous
+  allophone in place and drops the `/r/`).
+
+### What is ported: `phsort` and `phalloph`
+
+`pyretrotts/dectalk/allophones.py` ports both for the compiled US path
+(`ENGLISH`, `ENGLISH_US`, `OLD_INTONATION_AND_TIMING`, `US_TOT_ALLOPHONES == 57`;
+none of `GERMAN`, `FRENCH`, `SPANISH`, `ENGLISH_UK`, `HLSYN`, `CHANGES_AFTER_V43`,
+`NWSNOAA`, `SLOWTALK`, `NEVER`, and `lang_curr == LANG_english`). It is the
+reference's integer arithmetic throughout (C `short`; the US path has no
+fixed-point scaling). The `bounftab` boundary-type table, the `us_phcluster`
+cluster classes, and the phone-index/feature/struct-bit constants are transcribed
+from the C with `file:line` citations; the per-phoneme feature bits are read
+through the existing `settar._phone_feature` (`US_FEATB`, already ROM-verified).
+
+The stage is voice-independent: `phsort`/`phalloph` do not read the speaker
+definition (only `malfem`, which the US path never uses), and the captured output
+is identical across all ten voices for every utterance. The output is exactly the
+stream `timing.us_phtiming` consumes, captured at `phalloph`'s own boundary (the
+`us_phtiming` input line), before `phinton` inserts further phones.
+
+### Verification
+
+- **`test/test_dectalk_phalloph.py`** -- field-for-field diff of Python `phsort`
+  (`phonemes`/`sentstruc`/`nphonetot`) and `phalloph`
+  (`allophons`/`allofeats`/`nallotot`) against the instrumented C, replaying the
+  port over the captured stage input, for all ten voices over ten varied
+  utterances (consonant clusters, phrase-final devoicing, function words,
+  questions, plosive bursts, flapping, `/r l/` coalescence). Result: **100/100
+  cases; `phsort` 1970/1970 phonemes and 1970/1970 `sentstruc` fields;
+  `phalloph` 1960/1960 `allophons` and 1960/1960 `allofeats`; every `nphonetot`
+  and `nallotot` exact**. Over a wider 36-utterance corpus the counts are
+  4430/4430 and 4410/4410. Skipped when the instrumented binary is absent.
+- **`test/dectalk_phalloph_golden.py` + `dectalk_phalloph_golden.json` +
+  `test_dectalk_phalloph_golden.py`** -- a deterministic sha256 gate over
+  `phsort` + `phalloph` on `dectalk_phalloph_vectors.json`, **130 real** captured
+  vectors across all ten voices (7860 fields). It runs in CI without the C.
+  `--write` refuses to regenerate the digest unless the port first matches the
+  oracle field for field for all ten voices; the gate is verified to bite on a
+  `bounftab` mutation and on an allophone-substitution mutation.
+
+The dumper (`tools/dump_dectalk_phalloph.py`) reuses the two instrumentation
+points already in `ph_claus.c`/`p_us_tim0.c`: `DECTALK_SORT_DUMP` writes
+`phsort`'s input `symbols` and output `phonemes`/`sentstruc`, and
+`DECTALK_TIM_DUMP` writes `phalloph`'s output `allophons`/`allofeats` at the
+`us_phtiming` boundary; it pairs them per clause. `phsort`+`phalloph`+`us_phtiming`
+compose bit-exactly (`symbols -> allodurs`, 950/950 durations, ten voices).
+
+### What is stubbed (US)
+
+- **Citation mode and user prosody.** `cite_it` (`(modeflag & MODE_CITATION) &&
+  docitation`) defaults to 0 (connected speech) and `f0mode` to `NORMAL`; the
+  citation-only unreductions (`long a -> ey`, `at -> ae`) and the
+  `HAT_LOCATIONS_SPECIFIED`/`HAT_F0_SIZES_SPECIFIED` user-hat and per-phone
+  `user_f0`/`user_dur` command paths are present but not exercised by any
+  default-text vector. The `mode_citation` flag (raw `MODE_CITATION`, set in the
+  default mode) is threaded so the "to"-flap rule matches the oracle.
+- **`zap_weaker_bound` merge direction.** The compiled 43F oracle keeps the
+  lower-coded (weaker) of two adjacent boundary symbols (verified field-for-field
+  against `sentstruc`); a literal transcription of the C keeps the stronger one.
+  The port follows the observed oracle. This is documented inline.
+- **Slow-rate boundary strengthening** (`sprate <= 120`/`<= 140`) is implemented
+  but the default rate (180) never reaches it, so those branches are untested.
+- **`adjust_index`/`set_index_allo`** (index-mark bookkeeping for markup
+  callbacks) are side effects with no bearing on the phoneme/allophone output and
+  are not ported.
+
 ## Limitations
 
 - **`divtab` out-of-range.** `phsettar` indexes `divtab` (50 entries) by
@@ -578,14 +673,18 @@ reads them). This boundary matters: `phinton` inserts further phones after
   (non-reproducible); `phsettar.py` would read zero there. No test utterance hits
   this.
 - **`ph/` front end above `phsettar`.** The duration rules (`us_phtiming`,
-  `p_us_tim0.c`) are ported (`timing.py`, bit-exact, ten voices). Allophone
-  selection (`phsort`/`phalloph`, `ph_sort.c`/`ph_aloph1.c`) and the F0 contour
-  and `pht0draw` (`phinton`, `ph_inton0.c`/`ph_drwt01.c`) remain unported. Because
-  those two are not yet ported, there is **no phoneme -> PCM composition**: the
-  chain still starts from the captured allophone stream and borrows the F0
-  contour from the oracle. The single biggest remaining obstacle is allophone
-  selection (`phalloph`), which produces the `allophons[]`/`allofeats[]` stream
-  every downstream stage -- including `timing.py` -- consumes.
+  `p_us_tim0.c`) are ported (`timing.py`, bit-exact, ten voices) and allophone
+  selection (`phsort`/`phalloph`, `ph_sort.c`/`ph_aloph1.c`) is ported
+  (`allophones.py`, bit-exact, ten voices). The F0 contour and `pht0draw`
+  (`phinton`, `ph_inton0.c`/`ph_drwt01.c`) remain unported. Because `phinton` is
+  not yet ported, there is still **no phoneme -> PCM composition**: `phinton` runs
+  after `us_phtiming` and inserts further phones and the F0 targets the per-frame
+  loop consumes, so the PCM chain still starts from the captured post-`phinton`
+  allophone stream and borrows the F0 contour from the oracle. `phsort` +
+  `phalloph` + `us_phtiming` do compose bit-exactly: driving `symbols ->
+  phsort -> phalloph -> us_phtiming` reproduces the oracle `allodurs` field for
+  field (950/950 durations, ten voices). The single biggest remaining obstacle to
+  phoneme -> PCM is now the F0 / `phinton` stage.
 - **No text input.** The whole `cmd/` -> `lts/` -> `ph/` chain that turns text
   and `[: ]` markup into parameter frames is unported. `engine.py` takes frames,
   not text. Driving it therefore requires porting the rest of the front end
