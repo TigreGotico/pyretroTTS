@@ -170,6 +170,10 @@ run, then revert the C source. `lintalker-c` stays clean.
 
 ## Limitations
 
+**A command's argument may be spaced or not.** `[[rate 170]]` and `[[rate170]]`
+parse the same, because `Get32BitValue` skips leading whitespace
+(`EmbeddedCmd.c:349`).
+
 **Bracket commands cannot be verified frame-exact.** The compiled harness takes
 only `-v <voice> <text>` and shows no sign of recognizing either delimiter as a
 command. `[[` and `]]` are used because the C source names them as the defaults,

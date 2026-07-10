@@ -343,7 +343,7 @@ def scan_bracket_commands(text: str, initial_rate: int = kNormal_Speech_Rate) ->
 
         if keyword == 'DLIM':
             old_end_len = len(END)
-            begin_val, j = _parse_fixed_value(inner, 4)
+            begin_val, j = _parse_fixed_value(inner, _skip_spaces(inner, 4))
             while j < len(inner) and inner[j] in ' \t':
                 j += 1
             end_val, j = _parse_fixed_value(inner, j)
@@ -393,7 +393,7 @@ def scan_bracket_commands(text: str, initial_rate: int = kNormal_Speech_Rate) ->
             continue
 
         if keyword == 'SLNC':
-            value, _ = _parse_fixed_value(inner, 4)
+            value, _ = _parse_fixed_value(inner, _skip_spaces(inner, 4))
             duration = value >> 16
             if duration > 0:
                 silences[word_count] = silences.get(word_count, 0) + duration
@@ -405,7 +405,7 @@ def scan_bracket_commands(text: str, initial_rate: int = kNormal_Speech_Rate) ->
             # argument is 0 -- HandleReset is called only in that case,
             # else LogParseError fires and no reset happens (matched
             # here by simply not queuing a command for a nonzero value).
-            value, _ = _parse_fixed_value(inner, 4)
+            value, _ = _parse_fixed_value(inner, _skip_spaces(inner, 4))
             if value == 0:
                 commands.append((word_count, C_reset, 0))
             i = end + len(END)
@@ -419,7 +419,7 @@ def scan_bracket_commands(text: str, initial_rate: int = kNormal_Speech_Rate) ->
             # lastRate = integer part of the Fixed value, clamped to
             # kMinRate. Relative: lastRate += the signed integer delta,
             # same clamp.
-            tagged, _ = _parse_signed_command_value(inner, 4)
+            tagged, _ = _parse_signed_command_value(inner, _skip_spaces(inner, 4))
             is_relative, resolved = _resolve_tagged_value(tagged)
             delta_or_abs = resolved >> 16
             if is_relative:
@@ -485,7 +485,7 @@ def scan_bracket_commands(text: str, initial_rate: int = kNormal_Speech_Rate) ->
             # doesn't either, BackEnd.c:272-322's `default: break;`), so
             # this is a genuine no-op in the real engine too, not a gap
             # in this port.
-            value, _ = _parse_long_value(inner, 4)
+            value, _ = _parse_long_value(inner, _skip_spaces(inner, 4))
             commands.append((word_count, C_sync, value))
             i = end + len(END)
             continue
@@ -528,7 +528,7 @@ def scan_bracket_commands(text: str, initial_rate: int = kNormal_Speech_Rate) ->
             i = end + len(END)
             continue
 
-        tagged, _ = _parse_signed_command_value(inner, 4)
+        tagged, _ = _parse_signed_command_value(inner, _skip_spaces(inner, 4))
         is_relative, resolved = _resolve_tagged_value(tagged)
         abs_type, rel_type = entry
         ctrl_type = rel_type if is_relative else abs_type
