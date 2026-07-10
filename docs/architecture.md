@@ -110,29 +110,26 @@ single-sentence text is.
      reverb enabled. There was also a redundant duplicate (unscaled)
      assignment of both fields later in `init_voice`, now removed.
   A 12-voice sample-level PCM sweep (not just frame comparison) came back
-  0 mismatches for every voice on `"hello world"` after both fixes, and
-  the full `test/test_voices.py --all` 68-combination suite is 66/68
-  exact at the sample level (see the next entry for the remaining 2).
+  0 mismatches for every voice on `"hello world"` after both fixes.
   `test_voices.py` now compares actual PCM sample values, not just
   count — see that file's module docstring for the full history.
-- Two remaining `test/test_voices.py --all` sample-level mismatches:
-  Princess on `"testing one two three"`/`"I am."` (not `"hello"`/
-  `"goodbye"`). Narrowed further than previously documented: the
-  divergence is NOT `Calc_Pole_Coefficients` itself — direct
-  instrumentation confirmed the C reference's `CosTbl`/`BcoeffTbl`/
-  `CcoeffTbl` table VALUES at the exact indices hit (`pitch=1095`
-  `=f1(1085)+f1_Offset(10)`, `bw=336` → `bwIndex=57`) match this port's
-  tables exactly, and calling `_backend.calc_pole_coefficients(zz, 1095,
-  336)` directly reproduces the C reference's exact `Acoeff`/`Bcoeff`/
-  `Ccoeff` (2245/12727/-6780). The prior sample (last sample of the
-  preceding frame) also matches exactly, so the F1 filter's carried-over
-  memory (`Na1`/`Nb1`) entering the diverging frame should be identical
-  too. That leaves the SOURCE feeding the F1 filter that frame (the
-  nasal zero/pole stage immediately before it, or `sourceC` itself --
-  aspiration/wavesample/buzz) as the next place to check; not yet
-  isolated further. Princess has nonzero `f1_Offset`/`f2_Offset`/
-  `f3_Offset` (10/20/50) where Fred/Cellos/other spot-checked voices have
-  0, which is the one confirmed difference correlated with this bug.
+- (Fixed) The last 2 `test/test_voices.py --all` sample-level
+  mismatches (Princess on `"testing one two three"`/`"I am."`) were a
+  third bug in the same `init_voice` neighborhood as the two above.
+  Narrowed via direct instrumentation to NOT be `Calc_Pole_Coefficients`
+  itself (confirmed identical `CosTbl`/`BcoeffTbl`/`CcoeffTbl` values and
+  identical carried-over F1 filter memory `Na1`/`Nb1` entering the
+  diverging frame), which pointed at the source feeding the F1 filter —
+  the nasal zero/pole stage. `init_voice` set `zz.nasalAmt =
+  vd.get('nasalAmt', 0)` correctly, then unconditionally overwrote it
+  with `zz.nasalAmt = 0` a few lines later (a leftover from an earlier,
+  wrong draft of the nasal-frequency init block) — silently zeroing the
+  per-voice nasal-zero-frequency offset (`Say.c:1427`:
+  `zz->nasalAmt = vd->nasalAmt`, never reset afterward) for the one
+  voice that actually uses it (`Data.c`: `nasalAmt=30` for Princess,
+  `0` for all 16 other voices — this is why only Princess was affected).
+  Fixed by removing the redundant reset. The full `test/test_voices.py
+  --all` 68-combination suite is now 68/68 exact at the sample level.
 - (Fixed) What was tracked here as an unexplained `f0` drift over long
   sentences was actually TWO separate, real bugs, both confirmed via
   direct instrumentation of the C reference and now fixed:

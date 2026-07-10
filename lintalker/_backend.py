@@ -1184,7 +1184,6 @@ def init_voice(vv: VoiceVar, vd: dict):
     zz.nasalBaseFreq = vd.get('nasal_Base', 350)
     zz.nasalTargFreq = vd.get('nasal_targ', 500)
     zz.fNP = e_hz_to_pitch(vv, zz.nasalBaseFreq)
-    zz.nasalAmt = 0
 
     # Gains
     zz.setNoiseGain = vd.get('nGain', 0)
