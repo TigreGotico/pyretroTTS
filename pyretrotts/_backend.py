@@ -208,16 +208,47 @@ from ._phonemes import (
 from ._voice import Voice
 
 # ---------------------------------------------------------------------------
-# Fixed-point math helpers (mirrors C macros)
+# Fixed-point math helpers (Fsynth.h:275-279)
+#
+# The integer build scales with arithmetic shifts. A right shift floors toward
+# negative infinity, so every scaled multiply in the recursive formant filters
+# carries a half-LSB downward bias that accumulates.
+#
+# The exact build keeps the same 1.0 == 2**kPrecision scaling but divides. C
+# truncates the resulting double toward zero on its way back into a short, so
+# the rounding is symmetric and no DC accumulates. Same magnitudes, no bias.
+# `exact_arithmetic()` selects between them; see docs/precision.md.
 # ---------------------------------------------------------------------------
 
+_EXACT = False
+
+
+def exact_arithmetic(enabled: bool) -> bool:
+    """Turn exact arithmetic on or off. Returns the previous setting."""
+    global _EXACT
+    previous, _EXACT = _EXACT, enabled
+    return previous
+
+
+def _trunc(numerator: int, s: int) -> int:
+    """`numerator / 2**s` truncated toward zero, as C truncates a double."""
+    divisor = 1 << s
+    if numerator < 0:
+        return -((-numerator) // divisor)
+    return numerator // divisor
+
+
 def mMul2(x: int, y: int, s: int = kPrecision) -> int:
+    if _EXACT:
+        return _trunc(x * y, s)
     return (x * y) >> s
 
 def mDiv(x: int, y: int, s: int = kPrecision) -> int:
-    # C's mDiv(x, y, s) reduces to `x >> s` in the non-float build (Fsynth.h);
+    # C's mDiv(x, y, s) reduces to `x >> s` in the integer build (Fsynth.h);
     # `y` is unused there. Callers rely on this for scaled averaging, e.g.
     # mDiv(a + b, 2, 1) == (a + b) >> 1.
+    if _EXACT:
+        return _trunc(x, s)
     return x >> s
 
 def mScale(x: int, s: int = kPrecision) -> int:
@@ -229,9 +260,13 @@ def s16(x: int) -> int:
     return x - 0x10000 if x >= 0x8000 else x
 
 def mUnScale(x: int, s: int = kPrecision) -> int:
+    if _EXACT:
+        return _trunc(x, s)
     return x >> s
 
 def mRatio(x: int, y: int, s: int = kPrecision) -> int:
+    if _EXACT:
+        return cDiv(x << s, y)
     return (x << s) // y
 
 def cDiv(x: int, y: int) -> int:
