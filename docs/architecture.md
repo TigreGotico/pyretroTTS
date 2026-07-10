@@ -190,21 +190,6 @@ words are taken from the ordinary dictionary instead, and the algorithm that
 combines them is a faithful transcription with no working reference to check
 against.
 
-**The morphology cascade disagrees with `Search_Suffix` on the `-IE-` family.**
-`_morph.search_suffix` is a faithful port of `Search_Suffix`: the `SuffixTab`
-entries from `Data.c:3848`, scanned in table order from the word's last letter
-backwards, first match winning. `try_do_morph` still decides with a hand-written
-`endswith` cascade, and the two part company on `carried`, `carrier` and
-`carriers`, where the table strips `IED`/`IER`/`IERS` and the cascade strips
-`ED`/`ER`/`ERS`.
-
-The reference agrees with the table. `he carried it.` and `the carrier came.`
-render 3,136 and 3,223 samples away from the C reference; `she hurried.` and
-every other tested word match exactly. The plan's phonemes and durations are
-right and only one control bit differs -- `kSecondaryStress` on the `IY` of
-`carried`, which the reference sets and this port does not. The cascade should
-be driven by `search_suffix`; it is not yet.
-
 **The C oracle cannot check the duration and pitch channels.** `test_voices.py`
 transfers the C reference's phoneme plan into a fresh `VoiceVar`, but the
 harness dumps no `user_Pitch_Buf2` or `user_Dur_Buf2`, so those arrive zeroed

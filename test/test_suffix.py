@@ -56,3 +56,26 @@ def test_the_root_keeps_at_least_one_letter():
 def test_a_trailing_apostrophe_is_skipped_before_the_scan():
     suffix_type, _ = search_suffix("DOGS'")
     assert suffix_type == kS_suffix
+
+
+def test_the_ie_family_does_not_fall_through_to_the_e_family():
+    """DoMorph tries only the branch Search_Suffix chose (Morph.c:2396-2803).
+
+    `carried` yields IED and the root `carr`, whose Y-form `carry` is not in the
+    dictionary. The reference stops there; it does not retry as ED with the root
+    `carri`. Both words then reach the letter-to-sound rules, and both render
+    identically to the C reference.
+    """
+    from pyretrotts._morph import try_do_morph
+
+    assert search_suffix("CARRIED") == (kIED_suffix, 4)
+    assert try_do_morph("CARRIED") is None
+    assert try_do_morph("CARRIER") is None
+    assert try_do_morph("CARRIERS") is None
+
+
+def test_iest_keeps_its_own_root_recovery():
+    """Do_IEST_Morph recovers its root itself (Morph.c:1905): loveliest -> lovely."""
+    from pyretrotts._morph import try_do_morph
+
+    assert try_do_morph("LOVELIEST") is not None

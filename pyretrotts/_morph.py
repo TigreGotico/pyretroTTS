@@ -727,6 +727,23 @@ def try_do_morph(word: str):
 
     w = word
 
+    # `Search_Suffix` chooses the suffix and `DoMorph`'s switch tries only that
+    # branch (Morph.c:2396-2803). For the -IE- family the branch is
+    # `Decompose_I_Common`'s Y-mutation lookup, and a miss ends the attempt:
+    # `carried` yields IED and the root `carr`, whose Y-form `carry` is not in
+    # the dictionary, so the reference stops rather than retrying as ED.
+    # `Do_IEST_Morph` recovers its own root (Morph.c:1905) and keeps its branch
+    # below; these three share `Decompose_I_Common` alone.
+    _STRIP = {kIED_suffix: 3, kIER_suffix: 3, kIERS_suffix: 4}
+    _APPEND = {kIED_suffix: [_d_], kIER_suffix: [_ER_], kIERS_suffix: [_ER_, _z_]}
+
+    _suffix, _ = search_suffix(w)
+    if _suffix in _STRIP:
+        entry = _decompose_i_common(w[: -_STRIP[_suffix]])
+        if entry is None:
+            return None
+        return (lambda base, _e=_APPEND[_suffix]: _append(base, _e)), entry, _suffix
+
     # --- -CALLY / -BLY / -LY (Morph.c:1880-1955, dispatch 2653-2678) ---
     if w.endswith('CALLY') and len(w) > 6:
         # Do_CALLY_Morph: the suffix table entry is "CALLY" (5 chars), but
