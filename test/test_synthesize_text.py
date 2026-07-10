@@ -260,6 +260,30 @@ def test_sep6_phrase_boundary_frame_exact():
     _check("welcome to the show.", "Fred")
 
 
+def test_sep1_to_sep5_phrase_boundary_frame_exact():
+    """Regression test for `_assembly._place_phrasing`'s SEP1-5 rules
+    (`Morph.c:148-256`), the rest of `PlacePhrasing`'s boundary cascade
+    beyond the previously-ported SEP6. Unlike SEP6, a SEP1-5 boundary
+    inserts an actual `_SIL_` phoneme (`BackEnd.c:3819-3826`: any
+    boundary type `>= kBND_Paren_L` other than `kBND_Sep6` gets its own
+    phoneme, with the boundary/`kVerb_Start` flags on THAT `_SIL_`, not
+    on the next word's first phoneme) -- confirmed via direct frame-count
+    comparison against the C reference (a missing SIL shows up as a
+    frame-count mismatch, not just a wrong flag bit). Each sentence below
+    was confirmed via direct instrumentation to exercise a real SEP1-5
+    hit in the C reference (a `_SIL_` phoneme with a nonzero
+    `kSilenceTypeField` value in `[7,11]` at a non-clause-final
+    position)."""
+    _check("i want to go to the store and buy some food.", "Fred")
+    _check("the man who lives there is nice.", "Fred")
+    _check("she said that he was late.", "Fred")
+    _check("many people came to the party.", "Fred")
+    _check("he ran quickly and then he stopped.", "Fred")
+    _check("the dog and the cat played together.", "Fred")
+    _check("when he arrives we will leave.", "Fred")
+    _check("i think that this is a very good idea.", "Fred")
+
+
 def test_note_driven_singing_voices_frame_exact():
     """Regression test for a real bug: api.new_voice() used to force
     vv.singing = False unconditionally, overriding init_voice()'s correct

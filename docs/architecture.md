@@ -18,7 +18,7 @@
 | `Engine.c` | `lintalker/_engine.py` | Top-level init/speak/reset/rate/pitch/volume API, built on `_backend.py`. `e_speak_buffer` (the text-in entry point) and a few fsynth-dependent setters (`e_reset_params`, `e_use_voice`, `e_reinit_voice`) raise `NotImplementedError` naming the specific unported upstream C function they need. |
 | `BackEnd.c` (`DoCtrl`, the per-phoneme `CMDQueue` dispatcher: absolute/relative pitch, volume, mod) | `lintalker/_embeddedcmd.py` | Ported (see `test/test_embeddedcmd.py`); `C_reset`/`C_voice` are unimplemented/no-op the same way upstream leaves them, pending `ResetVoice`/`NewVoice` |
 | `EmbeddedCmd.c` (the FrontEnd backtick-escape text parser, e.g. `` `p200` ``, a distinct mechanism from `DoCtrl` above — it sets `PendingCommands` bits that `FrontEnd.c` later turns into `CMDQueue` entries via `QueueCommand`) | not ported | Depends on the unported `FrontEnd.c` tokenizer |
-| `Morph.c` | not ported | Prefix/suffix stripping, compound-word handling |
+| `Morph.c` (`ResolvePOS`, `PlacePhrasing` SEP1-6, `DoMorph`'s common suffix functions) | `lintalker/_morph.py` (suffix decomposition) + `lintalker/_assembly.py` (`resolve_pos`/`_place_phrasing`) | Word-by-word POS disambiguation, mid-clause phrase boundaries, and plural/3rd-person/`-LY`/`-EST`/`-ER`/`-ED`/`-ING`/`-MENT`/`-ABLE`/`-NESS`/`-ISM`/`-OR`/`-IZE`-family suffix decomposition all ported; true compound-noun decomposition and `PlacePhrasing`'s SEP7/parenthesized-clause handling not ported |
 | `english_lex.c`/`English.lex` | `lintalker/_lexicon.py` | Dictionary lookup (`lookup(word)`), verified bit-exact against the real engine for 249 words spanning common/rare/compound-noun/abbreviation entries (`test/test_lexicon.py`). |
 | `Sounds.c` | not ported | Embedded sound effects (bells, etc.) — raw PCM blobs, not logic |
 
@@ -246,11 +246,38 @@ single-sentence text is.
   "itemizer"/"itemizers" (root ITEM, none of which have "itemize" itself
   in the dictionary, so each exercises the fallback path) — see
   `test/test_synthesize_text.py::test_do_morph_suffix_frame_exact`.
-- NOT ported: `Zap_POS`/`SetPOS_FromSuffix` and true compound-noun
-  decomposition (`Morph.c:1010-2373`), and the rest of `PlacePhrasing`'s
-  rules (SEP1-5, `Morph.c:148-271`) — see task #8. These remain
-  independently-scoped, similarly-sized pieces of `Morph.c` rather than
-  one monolithic remaining task.
+- (Fixed) `_assembly._place_phrasing` ports the rest of `PlacePhrasing`'s
+  boundary cascade, SEP1-5 (`Morph.c:148-256`), beyond the
+  previously-ported SEP6: SEP1 (sentence-initial adverb followed by an
+  article/determiner), SEP2 (coordinating conjunctions and several
+  pronoun/adverb/interrogative lookahead cases), SEP3 (a subject noun
+  phrase cued by a following auxiliary verb), SEP4 (before a
+  conjunction, or after a verb particle followed by a noun/adjective),
+  and SEP5 (before a relative pronoun or quantifier). Confirmed the
+  C reference's per-clause `tokBuffer` (one word-token list plus exactly
+  ONE trailing punctuation token, since `Fill_Tok_Buffer`/`ParseSentence`
+  process one such clause per call) lines up 1:1 with this port's
+  per-clause word list, so `next_Punct`/`next2_Punct`/`next3_Punct`
+  reduce to "is this lookahead position the clause's last word" rather
+  than needing any literal mid-clause punctuation token — no token-buffer
+  restructuring was actually required, unlike previously assumed.
+  Unlike SEP6, a SEP1-5 boundary inserts an ACTUAL `_SIL_` phoneme with
+  the boundary type and `kVerb_Start` flags on that inserted phoneme
+  (`BackEnd.c:3819-3826`: any boundary type `>= kBND_Paren_L` other than
+  `kBND_Sep6` gets its own phoneme) — `_place_phrasing` runs as a
+  complete prepass over the clause's tokens (mirroring `PlacePhrasing`
+  itself being a separate pass before `Collect_FE_Tokens` ever emits
+  phonemes), returning a per-word boundary-type list that
+  `collect_fe_tokens`'s main per-word loop consults to insert the SIL (or
+  flag the word's own first phoneme directly, for SEP6) before emitting
+  that word's phonemes. Verified frame-exact (including exact frame
+  COUNT, since a missing/extra SIL phoneme shows up as a frame-count
+  mismatch, not just a wrong flag bit) — see
+  `test/test_synthesize_text.py::test_sep1_to_sep5_phrase_boundary_frame_exact`.
+- NOT ported: `Zap_POS`/`SetPOS_FromSuffix`, true compound-noun
+  decomposition (`Morph.c:1010-2373`), and `PlacePhrasing`'s SEP7 /
+  parenthesized-clause handling (this port has no parenthesis tracking)
+  — see task #8.
 - (Fixed) Multi-clause synthesis used to give each clause of
   `api.synthesize_text` an independently-reset `VoiceVar`, rather than the
   real engine's single continuous `Talk()` session (`BackEnd.c:4264-4298`:

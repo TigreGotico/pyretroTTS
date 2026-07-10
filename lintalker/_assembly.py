@@ -172,11 +172,14 @@ from typing import Optional
 from ._consts import (
     kUndefPOS, kNoun, kVerb, kAdj, kAdv, kInterr, kInterj, kVPart, kQuant,
     kIPron, kRPron, kPrep, kConj, kRelPro,
+    kArt, kDet, kCConj, kObjPron, kSubjPron, kContr, kInf, kVaux, kRVaux,
     kPrimaryStress, kSecondaryStress, kEmphaticStress, kStressField,
     kContent_Word, kWord_Start, kWord_Initial_Consonant, kCompoundNoun,
     kTerm_Bound, kPrep_Start, kVerb_Start, kSilenceTypeShift, kSilenceTypeField,
-    kBND_Pause, kBND_Decl, kBND_Quest, kBND_Emph, kBND_None, kBND_Sep6,
+    kBND_Pause, kBND_Decl, kBND_Quest, kBND_Emph, kBND_None,
+    kBND_Sep1, kBND_Sep2, kBND_Sep3, kBND_Sep4, kBND_Sep5, kBND_Sep6,
 )
+from ._morph import _pos_count_and_hi_rank
 from ._phonemes import (
     _SIL_, _Word_, _Period_, _Comma_, _Quest_, _Exclam_, _Comp_, _Prep_,
     _Verb_,
@@ -343,6 +346,192 @@ class SentenceAssembly:
     words: list = field(default_factory=list)   # list[FEWordToken], in order
 
 
+_SEP_CONTENT_POS = {kNoun, kVerb, kAdj, kAdv}
+
+
+def _place_phrasing(words: list) -> list:
+    """Port of `PlacePhrasing` (`Morph.c:20-280`)'s mid-clause boundary
+    cascade (SEP1-6; SEP7/parenthesized-clause handling not ported --
+    this port has no parenthesis tracking). Returns a list the same
+    length as `words`, `mid_bnds[i]` being the resolved boundary type
+    (`kBND_None` if none) to apply just before word `i`'s own phonemes.
+
+    Mirrors the C reference's per-clause `tokBuffer` loop directly: this
+    port's `words` (one clause's word tokens) line up 1:1 with
+    `vv->tokBuffer[1..LastTok-1]` -- the C reference's tokBuffer holds
+    exactly one trailing punctuation token PER CLAUSE, at index
+    `LastTok` (since this port already splits input into clauses on
+    `. , ! ?` the same way one `Fill_Tok_Buffer`/`ParseSentence` pass
+    processes one such clause) -- so `next_Punct`/`next2_Punct`/
+    `next3_Punct` just mean "the word at this lookahead distance IS the
+    last word of the clause", not "some literal mid-clause punctuation
+    token", and a flat word list is exactly the right shape; no
+    architectural change was needed. `inParen` is always false (no
+    parenthesized-clause tracking, a separate, smaller gap) so the C
+    code's `!inParen` guard is always true here. Each rule is checked in
+    order and the first match wins (mirrors the C code's
+    goto-past-the-rest-of-the-checks control flow); the same-token /
+    previous-token "already has a boundary" mutual-exclusion
+    (`!prev_Tok->add_BND && !cur_Tok->add_BND`) is tracked via
+    `word_had_bnd`.
+    """
+    n_words = len(words)
+    mid_bnds = [kBND_None] * n_words
+    short_sent = n_words <= 8  # Morph.c:60-63: vv->LastTok<=9 <=> n_words<=8
+    prev_pos = kUndefPOS
+    ambig1_pos = False
+    det_flag = False
+    initial_adv = False
+    word_had_bnd = [False] * n_words
+    for wi, cur_tok in enumerate(words):
+        cur_pos = cur_tok.pos_choice
+        c1, c2, _ = _pos_count_and_hi_rank(cur_tok.pos_code1, cur_tok.pos_code2)
+        ambig_pos = (c1 + c2) > 1
+
+        is_last = wi == n_words - 1
+        next_pos = words[wi + 1].pos_choice if wi + 1 < n_words else kUndefPOS
+        next_punct = is_last
+        # Morph.c:83-99: next2/next3 POS are only populated when that
+        # lookahead position is a genuine non-final word; when it lands
+        # exactly on the clause's last word, next2_Punct/next3_Punct is
+        # set instead and the POS stays kUndefPOS (mirrors the C code's
+        # mutually-exclusive `CurTok < LastTok-2`/`== LastTok-2` checks).
+        next2_pos = kUndefPOS
+        next2_punct = False
+        if wi + 2 < n_words - 1:
+            next2_pos = words[wi + 2].pos_choice
+        elif wi + 2 == n_words - 1:
+            next2_punct = True
+        next3_pos = kUndefPOS
+        next3_punct = False
+        if wi + 3 < n_words - 1:
+            next3_pos = words[wi + 3].pos_choice
+        elif wi + 3 == n_words - 1:
+            next3_punct = True
+
+        cur_bnd = kBND_None
+        if not next_punct:
+            got_bnd = False
+
+            # SEP1: sentence-initial adverb (Morph.c:148-160)
+            if initial_adv:
+                cur_bnd = kBND_Sep1
+                initial_adv = False
+                got_bnd = True
+            else:
+                initial_adv = (
+                    prev_pos == kUndefPOS and cur_pos == kAdv
+                    and next_pos in (kArt, kDet)
+                )
+
+            # SEP2: coordinating conjunctions (Morph.c:165-183)
+            if not got_bnd and (
+                (
+                    prev_pos != kUndefPOS and cur_pos == kCConj
+                    and not det_flag and wi > 3
+                    and next2_pos != kConj
+                )
+                or (cur_pos == kAdv and wi > 4 and next_pos != kAdj)
+                or (prev_pos == kObjPron and wi > 2)
+                or (
+                    cur_pos in (kSubjPron, kContr) and wi > 3
+                    and prev_pos != kRelPro and prev_pos != kConj
+                )
+                or (cur_pos == kInterr and wi > 4)
+            ):
+                cur_bnd = kBND_Sep2
+                got_bnd = True
+
+            # SEP3: subject noun phrase cued by a following aux verb
+            # (Morph.c:190-213)
+            if not got_bnd and (
+                (
+                    wi > 2 and prev_pos in (kNoun, kVerb)
+                    and prev_pos not in (kVaux, kRVaux)
+                    and cur_pos in (kVaux, kRVaux)
+                )
+                or (
+                    prev_pos == kNoun
+                    and next_pos not in (kRelPro, kVaux, kRVaux)
+                    and next2_pos not in (kVaux, kRVaux)
+                    and wi > 4 and cur_pos in (kVaux, kRVaux)
+                )
+                or (
+                    prev_pos == kNoun and next_pos != kRelPro and ambig1_pos
+                    and next_pos != kRVaux and next_pos != kConj
+                    and next_pos != kCConj and wi > 3 and cur_pos == kVerb
+                )
+                or (
+                    prev_pos == kNoun and cur_pos != kRelPro
+                    and cur_pos != kRVaux and cur_pos != kInf
+                    and cur_pos != kCConj and cur_pos != kConj
+                    and wi > 2 and ambig1_pos
+                    and (wi > 2 or short_sent) and cur_pos == kVerb
+                )
+            ):
+                cur_bnd = kBND_Sep3
+                got_bnd = True
+
+            # SEP4: before a conjunction (Morph.c:219-236)
+            if not got_bnd and (
+                (
+                    cur_pos == kConj and wi > 3 and cur_pos != kInf
+                    and not next_punct and prev_pos != kConj
+                    and prev_pos != kCConj and not next2_punct
+                )
+                or (
+                    prev_pos == kVPart and cur_pos != kPrep
+                    and cur_pos != kDet and cur_pos != kArt and wi > 2
+                    and (cur_pos == kNoun or cur_pos == kAdj)
+                )
+                or (cur_pos == kInterr and wi > 2 and cur_pos == kSubjPron)
+                or (
+                    cur_pos == kInf and wi > 3 and not next_punct
+                    and not next2_punct and not next3_punct
+                )
+            ):
+                cur_bnd = kBND_Sep4
+                got_bnd = True
+
+            # SEP5: before a relative pronoun/quantifier (Morph.c:242-256)
+            if not got_bnd and (
+                (
+                    cur_pos == kRelPro and wi >= 3 and prev_pos != kPrep
+                    and next3_pos != kVaux and next3_pos != kRVaux
+                    and (prev_pos == kNoun or prev_pos == kVerb)
+                )
+                or (
+                    cur_pos == kQuant and wi > 5
+                    and prev_pos != kAdj and prev_pos != kArt
+                    and prev_pos != kVaux and prev_pos != kRVaux
+                    and prev_pos != kDet and next2_pos != kCConj
+                    and not next_punct
+                )
+            ):
+                cur_bnd = kBND_Sep5
+                got_bnd = True
+
+            # SEP6: Silverman87-style content/function tone group boundary
+            # (Morph.c:262-267)
+            if not got_bnd and (
+                prev_pos in _SEP_CONTENT_POS and cur_pos not in _SEP_CONTENT_POS
+            ):
+                cur_bnd = kBND_Sep6
+
+        if cur_bnd != kBND_None and not (wi > 0 and word_had_bnd[wi - 1]) and not word_had_bnd[wi]:
+            mid_bnds[wi] = cur_bnd
+            word_had_bnd[wi] = True
+
+        prev_pos = cur_pos
+        if wi > 1:
+            det_flag = False
+        if cur_pos in (kArt, kDet):
+            det_flag = True
+        ambig1_pos = ambig_pos
+
+    return mid_bnds
+
+
 def collect_fe_tokens(text: str) -> SentenceAssembly:
     """Adapted port of `Collect_FE_Tokens` (`BackEnd.c:3712-4157`).
 
@@ -442,8 +631,9 @@ def collect_fe_tokens(text: str) -> SentenceAssembly:
     resolve_pos(_clause_tokens)
     for _tok in _clause_tokens:
         _tok.is_content_word = _tok.pos_choice in _CONTENT_POS
+    _mid_bnds = _place_phrasing(_clause_tokens)
 
-    for tok in _clause_tokens:
+    for _wi, tok in enumerate(_clause_tokens):
         sa.words.append(tok)
 
         # --- _Word_ opcode case (BackEnd.c:3903-3982) ---
@@ -451,8 +641,22 @@ def collect_fe_tokens(text: str) -> SentenceAssembly:
             promote_word_emphasis()
             word_was_emph = False
 
+        # --- mid-clause phrase boundary (BackEnd.c:3814-3826): a
+        # boundary type >= kBND_Paren_L and != kBND_Sep6 (i.e. SEP1-5)
+        # inserts an actual _SIL_ phoneme (with the boundary/kVerb_Start
+        # flags on THAT inserted phoneme, not on the word's own first
+        # phoneme); kBND_Sep6 instead flags the word's own first
+        # phoneme slot directly, no extra phoneme inserted.
+        _mid_bnd = _mid_bnds[_wi]
+        if _mid_bnd not in (kBND_None, kBND_Sep6):
+            _sil_idx = store(_SIL_)
+            sa.ctrl_buf[_sil_idx] |= (_mid_bnd << kSilenceTypeShift)
+            sa.ctrl_buf[_sil_idx] |= kVerb_Start
+
         word_start_indices.append(in_index[0])
         flag_current(kWord_Start)
+        if _mid_bnd == kBND_Sep6:
+            flag_current(_mid_bnd << kSilenceTypeShift)
         word_initial = True
         sa.is_compound_noun = False
         sa.last_word_index = in_index[0]
@@ -556,37 +760,6 @@ def collect_fe_tokens(text: str) -> SentenceAssembly:
             word_initial = True
             sa.is_compound_noun = False
 
-    # --- mid-sentence phrase boundary, SEP6 only (Morph.c:PlacePhrasing:262-271):
-    # "content/function tone group boundary" -- a boundary is placed at the
-    # START of a word whose POS is NOT one of {Noun,Verb,Adj,Adv} when the
-    # PRECEDING word's POS IS one of those, unless the current word is
-    # immediately followed by terminal punctuation (Morph.c's next_Punct
-    # check). Confirmed via direct instrumentation of the C reference: for
-    # "the quick brown fox jumps over the lazy dog.", the real engine sets
-    # this exact boundary (kBND_Sep6=12) on "over"'s first phoneme (prev
-    # word "jumps" is kVerb, "over" is kPrep) with NO silence phoneme
-    # inserted (Collect_FE_Tokens's add_BND only inserts a _SIL_ for
-    # boundary types >= kBND_Paren_L that AREN'T kBND_Sep6,
-    # BackEnd.c:3819-3826) -- this port previously missed it entirely,
-    # which silently dropped a `kPhraseReset` entry in Fill_Pitch_Buf
-    # (BackEnd.c:640-645) and made `down_Ramp_Offset` (and therefore `f0`)
-    # drift for the rest of the sentence on every voice. Only SEP6 is
-    # approximated here (not the SEP1-5 rules, which need real syntactic
-    # category distinctions -- conjunctions, subordinate/relative clauses --
-    # this port doesn't have); see docs/architecture.md "Known gaps".
-    _SEP6_CONTENT_POS = {kNoun, kVerb, kAdj, kAdv}
-    for wi in range(1, len(sa.words)):
-        prev_tok = sa.words[wi - 1]
-        cur_tok = sa.words[wi]
-        is_last_word = wi == len(sa.words) - 1
-        if (
-            prev_tok.pos_choice in _SEP6_CONTENT_POS
-            and cur_tok.pos_choice not in _SEP6_CONTENT_POS
-            and not is_last_word
-        ):
-            idx = word_start_indices[wi]
-            if not (sa.ctrl_buf[idx] & kSilenceTypeField):
-                sa.ctrl_buf[idx] |= (kBND_Sep6 << kSilenceTypeShift)
 
     # --- implicit terminal silence on EOF with no punctuation seen
     # (BackEnd.c:3805-3814): if the input never hit a recognized terminal
