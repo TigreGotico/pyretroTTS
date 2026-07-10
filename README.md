@@ -86,9 +86,13 @@ instead of as a grouped cardinal, matching the real engine's own
 narrow, automatic `kYearSpecial` detection. A `$` immediately before a
 digit run (e.g. "$5") reads as a cardinal number followed by
 "dollar"/"dollars" (this also fixed a real pre-existing bug where such
-tokens were silently dropped instead of spoken at all). Remaining known
-gaps: `char`/`mode` embedded commands and
-clock/cent/ordinal/decimal/phone-number reading modes — see
+tokens were silently dropped instead of spoken at all). A `.` between
+two numbers (e.g. "3.14") reads as the word "point" followed by the
+fractional digits read one at a time ("three point one four") -- not
+applied when the whole number is preceded by `$` (that combination
+isn't ported, see `docs/architecture.md`). Remaining known gaps:
+`char`/`mode` embedded commands and clock-time/cent-only-currency
+reading modes — see
 `docs/architecture.md` for
 specifics. You can still synthesize from an
 already-built phoneme plan directly via

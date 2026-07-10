@@ -546,15 +546,72 @@ single-sentence text is.
   `test_dollar_phonemes_plural_and_singular`/`test_dollar_amount_
   reaches_word_token_end_to_end`/`test_dollar_bypasses_year_detection`.
 
+  (Fixed) Decimal-point reading: `kPeriodTok`'s "KLUDGE" (`FrontEnd.c:
+  2088-2109`, the comment is the C source's own word for it) turns a
+  `.` between two number-like tokens into the literal WORD "POINT" --
+  looked up via the ordinary `WordToPhonemes` dictionary-then-`EngToP`
+  chain, exactly like any other word (no `Symbols`-dictionary
+  involvement, no corruption caveat, unlike `HUNDRED`/`THOUSAND`/etc.
+  above) -- and forces the digits AFTER the point into digit-by-digit
+  reading (`lastType == kDecimalTok` at `FrontEnd.c:2058`, the same
+  `SpeakTokenCharByChar` mechanism `nmbr LTRL` uses): "3.14" -> "three
+  point one four", not "three point fourteen".
+
+  Like the `$`-prefix fix above, this closed a real, PRE-EXISTING
+  silent-drop bug, not just a missing feature: `_frontend.tokenize()`'s
+  digit check never matched `"3.14"` (the `.` fails `isdigit()`), and
+  the `isalpha()`-only fallback filter strips digits AND the `.`,
+  leaving nothing -- so "3.14" vanished from the output entirely.
+
+  `tokenize()` gained a second side-channel parameter,
+  `_decimal_frac_out` (same non-return-shape-changing approach as
+  `_dollar_out`): a `N.M`-shaped raw token is split into THREE output
+  tokens (`"N"`, `"POINT"`, `"M"`), with only the fractional half's
+  index recorded (it's the one that needs forced digit-by-digit
+  reading -- the integer half goes through the normal digit-token path,
+  including year detection, unchanged). `_assembly.collect_fe_tokens`
+  ORs this into the same `digit_by_digit` flag `nmbr_overrides` already
+  threads into `make_fe_word_token` -- no new parameter needed there.
+
+  NOT applied when the whole token is `$`-prefixed: the real engine's
+  `kPeriodTok` case has a SEPARATE branch for that combination
+  (`FrontEnd.c:2096-2101`): the `.` becomes the word "AND" plus a
+  `kAddCent` flag on the following token instead of "POINT" -- i.e.
+  `"$5.25"` reads as "five dollars AND twenty five cents", not "five
+  dollars point two five". This combination is NOT ported (see below);
+  `tokenize()` simply skips decimal-splitting for a `$`-prefixed token
+  rather than applying the wrong (plain-decimal) reading to it.
+
+  Verified: `test/test_numbers.py`'s `test_tokenize_decimal_splits_
+  into_three_tokens`/`test_decimal_no_longer_silently_dropped`/
+  `test_decimal_fraction_read_digit_by_digit`/`test_decimal_not_
+  applied_to_dollar_prefixed_token`.
+
+  CORRECTED: earlier passes of this doc (and `README.md`) listed
+  "ordinal" number reading (e.g. "1st"/"2nd") and "phone number"
+  reading as remaining gaps. Neither exists anywhere in the C
+  reference at all -- confirmed via exhaustive grep of the entire
+  source tree (`grep -rin "ordinal" src/ include/`, `grep -in "phone"
+  src/FrontEnd.c`, both empty) -- so there is nothing to port: this
+  compiled engine has no special-cased reading for either input shape
+  in the first place (an "ordinal"-looking token like "1st" would just
+  fall through to whatever this port's `_frontend.py`/`_engtop.py`
+  already do with mixed alphanumeric text, the same as the real
+  engine would). Same class of phantom gap as "true compound-noun
+  decomposition"/`PlacePhrasing`'s SEP7 documented earlier in this
+  file.
+
   NOT ported: `ProcessNumberString`'s clock-time (`kClockSpecial`,
-  a `:` between two digits, `FrontEnd.c:1003-1010`) and cent-only
-  (`¢`, no realistic ASCII-keyboard input path, unlike `$`) special
-  modes, ordinals, decimals, and the full `SpeakTokenAsNumber`/
-  `GetNextToken` tokenizer state machine needed to detect the rest of
-  them from surrounding punctuation/context -- all larger, separate
-  pieces of tokenizer-context-detection scope beyond the plain-digit-
-  token and `$`-prefixed-digit-token paths this port's simplified
-  `_frontend.py` tokenizer now has.
+  a `:` between two digits, `FrontEnd.c:1003-1010`; a genuinely
+  incremental, multi-token-spanning mechanism that wasn't fully traced
+  through this compiled build's `GetNextToken`/`PartialNumberToPhonemes`
+  interaction and wasn't ported without that confidence), cent-only
+  currency (`¢`, no realistic ASCII-keyboard input path, unlike `$`),
+  and the `$5.25`-style combined dollar-and-cents reading (`kAddCent`
+  set via the `kPeriodTok` "AND" branch above) -- all requiring either
+  more tokenizer-context-detection scope or additional confidence in
+  the real engine's exact incremental token-splitting behavior than
+  this port currently has.
 - (Fixed) Abbreviation-period handling: `GetNextToken` doesn't treat a
   `.` right after a known dictionary abbreviation (e.g. "MR.", "DR.",
   "ST.", looked up WITH the period as part of its key, `is_abbrev=True`

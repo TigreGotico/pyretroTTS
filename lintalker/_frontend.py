@@ -56,7 +56,11 @@ _PUNCT_PHON = {
 }
 
 
-def tokenize(text: str, _dollar_out: list | None = None) -> list[tuple[str, str | None]]:
+def tokenize(
+    text: str,
+    _dollar_out: list | None = None,
+    _decimal_frac_out: list | None = None,
+) -> list[tuple[str, str | None]]:
     """Split raw text into (WORD, trailing_punct_or_None) pairs.
 
     Minimal stand-in for FrontEnd.c's `Collect_FE_Tokens`/word-scanning loop:
@@ -81,6 +85,26 @@ def tokenize(text: str, _dollar_out: list | None = None) -> list[tuple[str, str 
     `"$5"`, and the fallback `isalpha()`-only filter strips digits too,
     leaving an empty string) -- a real bug, not just a missing feature;
     fixing the drop and adding dollar-amount reading landed together.
+
+    `_decimal_frac_out`, if given a list, gets the output-token INDEX of
+    the FRACTIONAL half of every `N.M`-shaped token (e.g. `"3.14"` splits
+    into three tokens: `"3"`, `"POINT"`, `"14"` -- only the last one's
+    index is recorded). Ports the `kPeriodTok` "KLUDGE" (`FrontEnd.c:
+    2088-2109`): a `.` between two number-like tokens is turned into the
+    literal WORD "POINT" (an ordinary dictionary word, looked up via
+    `WordToPhonemes` exactly like any other word -- no `Symbols`-
+    dictionary/corruption involved at all here), and the digits AFTER
+    the point are forced into digit-by-digit reading by the following
+    token inheriting `kDigitByDigit`-equivalent behavior (`lastType ==
+    kDecimalTok` at `FrontEnd.c:2058`) -- e.g. "3.14" -> "three point one
+    four", not "three point fourteen". Not applied to a `$`-prefixed
+    token (the real `kPeriodTok` case has a SEPARATE, un-ported branch
+    for that: `$5.25`'s `.` becomes the word "AND" plus a `kAddCent`
+    flag on the following token, i.e. "five dollars AND twenty five
+    cents" -- see `docs/architecture.md` "Known gaps"). Like a plain
+    `.` before this port, `N.M` was previously silently DROPPED
+    entirely (`isdigit()` fails on `"3.14"`, and the `isalpha()`-only
+    fallback filter strips both the digits and the `.`) -- fixed here.
     """
     tokens: list[tuple[str, str | None]] = []
     for raw in text.split():
@@ -94,6 +118,15 @@ def tokenize(text: str, _dollar_out: list | None = None) -> list[tuple[str, str 
         if len(w) > 1 and w[0] == '$' and w[1:].isdigit():
             w = w[1:]
             is_dollar = True
+        if not is_dollar and w.count('.') == 1:
+            _int_part, _frac_part = w.split('.')
+            if _int_part and _frac_part and _int_part.isdigit() and _frac_part.isdigit():
+                tokens.append((_int_part, None))
+                tokens.append(("POINT", None))
+                if _decimal_frac_out is not None:
+                    _decimal_frac_out.append(len(tokens))
+                tokens.append((_frac_part, punct))
+                continue
         if w.isdigit():
             # Preserve a pure digit run as its own token instead of
             # stripping it (FrontEnd.c's kNumericTok path,

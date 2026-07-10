@@ -768,11 +768,16 @@ def collect_fe_tokens(
     _clause_tokens = []
     _digit_mode = False
     _dollar_indices: list = []
-    for _wi, (word, punct) in enumerate(tokenize(text, _dollar_out=_dollar_indices)):
+    _decimal_frac_indices: list = []
+    for _wi, (word, punct) in enumerate(tokenize(
+        text, _dollar_out=_dollar_indices, _decimal_frac_out=_decimal_frac_indices,
+    )):
         if nmbr_overrides and _wi in nmbr_overrides:
             _digit_mode = nmbr_overrides[_wi]
         _clause_tokens.append(make_fe_word_token(
-            word, punct, digit_by_digit=_digit_mode, is_dollar=_wi in _dollar_indices,
+            word, punct,
+            digit_by_digit=_digit_mode or _wi in _decimal_frac_indices,
+            is_dollar=_wi in _dollar_indices,
         ))
     if emphasis_overrides:
         for _wi, _emph in emphasis_overrides.items():

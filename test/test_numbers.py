@@ -232,6 +232,51 @@ def test_dollar_bypasses_year_detection():
     assert tok.phon_str != year_to_phonemes("1984")
 
 
+def test_tokenize_decimal_splits_into_three_tokens():
+    from lintalker._frontend import tokenize
+
+    frac_indices = []
+    tokens = tokenize("it costs 3.14 dollars.", _decimal_frac_out=frac_indices)
+    assert tokens == [
+        ("IT", None), ("COSTS", None),
+        ("3", None), ("POINT", None), ("14", None),
+        ("DOLLARS", "."),
+    ]
+    assert frac_indices == [4]
+
+
+def test_decimal_no_longer_silently_dropped():
+    # Regression guard: before this was ported, "3.14" had no alpha
+    # characters left after tokenize()'s fallback filter (digits AND
+    # the "." both get stripped), so the whole token vanished.
+    from lintalker._frontend import tokenize
+
+    words = [w for w, _ in tokenize("it costs 3.14 dollars.")]
+    assert "3" in words and "POINT" in words and "14" in words
+
+
+def test_decimal_fraction_read_digit_by_digit():
+    from lintalker._assembly import collect_fe_tokens
+    from lintalker._numbers import digit_by_digit_phonemes, number_to_phonemes
+
+    sa = collect_fe_tokens("it costs 3.14 dollars.")
+    frac_word = sa.words[4]
+    assert frac_word.word == "14"
+    assert frac_word.phon_str == digit_by_digit_phonemes("14")
+    assert frac_word.phon_str != number_to_phonemes("14")
+
+
+def test_decimal_not_applied_to_dollar_prefixed_token():
+    # $3.14 isn't handled by the plain-decimal path (the real engine
+    # routes it through a separate, unported "AND ... cents" branch
+    # instead) -- so it must not be silently mis-split either.
+    from lintalker._frontend import tokenize
+
+    tokens = tokenize("it costs $3.14 total.")
+    words = [w for w, _ in tokens]
+    assert "POINT" not in words
+
+
 if __name__ == "__main__":
     tests = [v for k, v in list(globals().items()) if k.startswith("test_")]
     for t in tests:
