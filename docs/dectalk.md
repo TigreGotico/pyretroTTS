@@ -37,7 +37,7 @@ build `phdraw`'s input) is not ported, so there is still no text-to-speech;
 | `phdraw` per-frame state advance + `send_pars` | `ph.py` (`advance_frame`, `finalize_av`, `send_pars`) | bit-exact vs C (10 voices) |
 | `ph/` duration rules (`us_phtiming`, `p_us_tim0.c`) | `timing.py` | bit-exact vs C (10 voices) |
 | `ph/` allophone selection (`phsort`/`phalloph`) | — | **not ported** |
-| `ph/` F0 / intonation (`phinton`, `pht0draw`) | — | **not ported** |
+| `ph/` F0 / intonation (`phinton`, `pht0draw`) | `intonation.py` | bit-exact vs C (10 voices) |
 | Phoneme+stress alphabet, `LOG_PHONEMES` renderer | `lts.py` | bit-exact vs oracle over the capture corpus |
 | US main-dictionary load + lookup (`ls_dict.c`) | `dictionary.py` | payload bit-exact for unique-grapheme words |
 | `[: ]` command tokenizer (voice/rate/mode) | `cmd.py` | tokenization + control state |
@@ -569,6 +569,90 @@ reads them). This boundary matters: `phinton` inserts further phones after
   not the `durxx` user-duration-override branch (reached only by a `[:dv]`
   duration command); a mutation there passes the gate.
 
+## What the F0/intonation stage (`phinton` + `pht0draw`) is
+
+`phclause` runs `phsort -> phalloph -> us_phtiming -> phinton` before the
+per-frame loop; `phinton` is the fourth stage and `pht0draw` runs inside the
+loop. For the compiled US path (`ENGLISH_US`, `OLD_INTONATION_AND_TIMING`; the
+`phinton` at `ph_inton0.c:1325`, reached through `ph_inton.c`, and the `pht0draw`
+at `ph_drwt01.c:2381` -- **not** the malfem-branching one at `ph_drwt01.c:277`,
+which that build's `#if` excludes).
+
+- **`phinton`** (`ph_inton0.c:1325`) runs once per clause. It walks the
+  post-`us_phtiming` allophone/structure/duration stream and, at each syllabic
+  phone and clause boundary, emits F0 commands into `f0tar[]` (target, Hz*10 with
+  rule-encoded flags) and `f0tim[]` (frames since the previous command) via
+  `make_f0_command`: the hat rise at a hat-begin, the stress+phrase-position rise
+  at each stressed syllable (`us_f0_stress_level`/`us_f0_phrase_position`,
+  scaled by `scale_str_rise`), the hat fall at a hat-end (assertiveness-scaled,
+  boundary-dependent, with a forward scan for the next syllable), the
+  continuation-rise/fall pairs at clause and sentence boundaries, and the return
+  to baseline at silence. It also **inserts a reduced vowel** (`AX`/`IX`) after a
+  clause-final plosive, so its output stream is longer than its input.
+- **`pht0draw`** (`ph_drwt01.c:2381`) runs once per output frame. It consumes the
+  F0 command stream and the post-`phinton` allophone/duration stream to draw the
+  per-frame fundamental: a declining baseline (`beginfall`/`endfall`), the summed
+  hat/impulse/segment targets (`us_f0segtars`), a two-pole low-pass
+  (`filter_commands`), a glottalization dip (`set_tglst`/`dtglst`), the speaker
+  range scaling (`f0minimum`/`f0scalefac`), and a `getcosine` pseudo-jitter --
+  then writes the period `parstochip[OUT_T0] = 400000 / f0prime` the vocal tract
+  model uses. The user-markup modes (singing / per-phone / hat-size,
+  `f0mode >= 3`) and their `linear_interp`/`set_user_target`/`notetab` paths are
+  reproduced but not exercised by plain text (`f0mode == NORMAL`).
+
+### What is ported: `intonation.py`
+
+`pyretrotts/dectalk/intonation.py` ports `phinton` + `make_f0_command` and
+`pht0draw` + `set_user_target`/`set_tglst`/`filter_commands`/`linear_interp` for
+that build. It is fixed point where the C is: every intermediate is a C `short`
+(`s16`), the target/assertiveness products use `muldv` and the filter taps
+`mlsh1` (shared with `phsettar.py`). The F0 ROM tables (`us_f0_stress_level`,
+`us_f0_phrase_position`, `us_f0segtars`, `notetab`, `getcosine`) are transcribed
+from `p_us_rom_dectalk_1996m_43f.c` with citations; `us_place`/feature bits reuse
+`targets.US_PLACE`/`US_FEATB`. Its input -- the post-`us_phtiming` stream, the
+speaker F0 scalars, and (for `pht0draw`) the `phinton` output plus the `nf0ev`
+seed -- is captured from the oracle. The `pDphsettarF0` state persists across a
+clause boundary, so a multi-clause utterance is driven through one `Pht0draw`
+whose carried `f0`/`timecos*`/fall state feeds the next clause's `nf0ev == -1`
+soft init.
+
+### Verification
+
+- **`test/test_dectalk_phinton.py`** -- field-for-field diff of Python `phinton`
+  (its `f0tar`/`f0tim`/`nf0tot` and the reduced-vowel-inserted stream) and
+  frame-for-frame diff of `pht0draw` (its `parstochip[OUT_T0]` and drawn
+  `f0prime`) against the instrumented C, for all ten voices over ten utterances
+  (statements, questions, multi-clause, emphasis, function-word runs). The
+  instrumented `phinton`/`pht0draw` (`DECTALK_INT_DUMP`) dump the stage input,
+  output, per-clause scalars, and per-frame T0. Result: **phinton 900/900 output
+  fields exact, pht0draw 37500/37500 per-frame T0/f0prime exact (100/100 cases,
+  10 voices)**. Skipped without the instrumented binary.
+- **`test/dectalk_intonation_golden.py` + `dectalk_intonation_vectors.json` +
+  `test_dectalk_intonation_golden.py`** -- a deterministic sha256 gate over
+  `phinton`/`pht0draw` on the real captured clause corpus (37800 F0 values, ten
+  voices, oracle-anchored at write time). Runs in CI without the C; verified to
+  bite on a `us_f0_stress_level` and a `getcosine` mutation.
+
+### The F0-included chain composes bit-exact
+
+`test/test_dectalk_endtoend.py` proves `phsettar -> phdraw loop -> send_pars ->
+vtm` reproduces the oracle PCM sample-for-sample while borrowing the per-frame
+`parstochip[OUT_T0]` from the oracle. `pht0draw` here draws that exact
+`parstochip[OUT_T0]` field bit-for-bit (37500/37500 frames), so substituting the
+ported F0 for the borrowed one yields identical vocal-tract-model input and
+therefore identical PCM; the borrow in `test_dectalk_endtoend` is now a ported
+stage, not an oracle dependency.
+
+### What is stubbed (F0)
+
+- **User-markup F0 modes.** `f0mode` 3/4/5 (`[/]`/`[\\]` hat sizes, sung notes,
+  per-phone targets) and their `mstofr` millisecond-to-frame conversion are
+  reproduced in structure but not exercised; `mstofr` (defined outside the ported
+  translation units) raises, and no `[:...]` prosody markup reaches this stage in
+  the corpus. Plain text is always `f0mode == NORMAL`.
+- **`cbsymbol`** (French interrogative halving) is always 0 in the US build; those
+  branches are present but dead.
+
 ## Limitations
 
 - **`divtab` out-of-range.** `phsettar` indexes `divtab` (50 entries) by
@@ -578,14 +662,15 @@ reads them). This boundary matters: `phinton` inserts further phones after
   (non-reproducible); `phsettar.py` would read zero there. No test utterance hits
   this.
 - **`ph/` front end above `phsettar`.** The duration rules (`us_phtiming`,
-  `p_us_tim0.c`) are ported (`timing.py`, bit-exact, ten voices). Allophone
-  selection (`phsort`/`phalloph`, `ph_sort.c`/`ph_aloph1.c`) and the F0 contour
-  and `pht0draw` (`phinton`, `ph_inton0.c`/`ph_drwt01.c`) remain unported. Because
-  those two are not yet ported, there is **no phoneme -> PCM composition**: the
-  chain still starts from the captured allophone stream and borrows the F0
-  contour from the oracle. The single biggest remaining obstacle is allophone
-  selection (`phalloph`), which produces the `allophons[]`/`allofeats[]` stream
-  every downstream stage -- including `timing.py` -- consumes.
+  `p_us_tim0.c`) are ported (`timing.py`, bit-exact, ten voices) and the F0
+  contour (`phinton`/`pht0draw`, `ph_inton0.c`/`ph_drwt01.c`) is ported
+  (`intonation.py`, bit-exact, ten voices). Allophone selection
+  (`phsort`/`phalloph`, `ph_sort.c`/`ph_aloph1.c`) remains unported. Because it is
+  not yet ported, there is **no phoneme -> PCM composition**: the chain still
+  starts from the captured allophone stream. The single biggest remaining
+  obstacle is allophone selection (`phalloph`), which produces the
+  `allophons[]`/`allofeats[]` stream every downstream stage -- `timing.py`,
+  `intonation.py`, `phsettar.py` -- consumes.
 - **No text input.** The whole `cmd/` -> `lts/` -> `ph/` chain that turns text
   and `[: ]` markup into parameter frames is unported. `engine.py` takes frames,
   not text. Driving it therefore requires porting the rest of the front end

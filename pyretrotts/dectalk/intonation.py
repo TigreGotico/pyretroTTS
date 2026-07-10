@@ -73,6 +73,8 @@ FCBNEXT = 0o340
 FVPNEXT = 0o240
 FPPNEXT = 0o200
 FMBNEXT = 0o100
+# `struccur & 0740 == 0440`: sentence-final continuation-rise boundary.
+FSENTRISE = 0o440
 FINSERTED = 0o4000  # struccur | 004000: the inserted-vowel marker phinton sets.
 
 # `p_us_rom_dectalk_1996m_43f.c:803`: F0 rise as f(stress-level), Hz*10 (order:
@@ -298,7 +300,7 @@ def phinton(st: IntonState) -> None:
                                         if (st.allofeats[nphonx] & FBOUNDARY) > FVPNEXT:
                                             f0fall = 150
                                             break
-                            if (struccur & FBOUNDARY) == FSENTENDS:
+                            if (struccur & FBOUNDARY) == FSENTRISE:
                                 f0fall = 80
                             f0fall = s16(s32(f0fall * st.assertiveness) >> 12)
                             if st.cbsymbol:
@@ -316,9 +318,9 @@ def phinton(st: IntonState) -> None:
                         hat_loc_re_baseline = s16(hat_loc_re_baseline - f0fall)
 
                     if ((struccur & FBOUNDARY) == FCBNEXT
-                            or (struccur & FBOUNDARY) == FSENTENDS):
+                            or (struccur & FBOUNDARY) == FSENTRISE):
                         delayf0 = st.allodurs[nphon] - 13
-                        if (struccur & FBOUNDARY) == FSENTENDS:
+                        if (struccur & FBOUNDARY) == FSENTRISE:
                             cumdur = _make_f0_command(st, 181, delayf0, cumdur)
                             cumdur = _make_f0_command(
                                 st, 251, st.allodurs[nphon], cumdur)
@@ -338,7 +340,7 @@ def phinton(st: IntonState) -> None:
                             cumdur = _make_f0_command(
                                 st, targf0, st.allodurs[nphon] - 16, cumdur)
                         delayf0 = st.allodurs[nphon] - 13
-                        if (struccur & FBOUNDARY) == FSENTENDS:
+                        if (struccur & FBOUNDARY) == FSENTRISE:
                             cumdur = _make_f0_command(st, 181, delayf0, cumdur)
                             cumdur = _make_f0_command(
                                 st, 251, st.allodurs[nphon], cumdur)
@@ -465,6 +467,17 @@ class Pht0draw:
         self.extrad = 0
         self.segdur = 0
         self.segdrg = 0
+
+    def new_clause(self, src: Pht0drawIn, nf0ev: int) -> None:
+        """Start the next clause of the same utterance (`init_clause`).
+
+        `pDphsettar`/`pDph_t` F0 state persists across clauses in the C (one
+        `pht0draw` state per speech thread); only the F0 command stream and the
+        `nf0ev` seed change. On a non-hard init (`nf0ev == -1`) the carried
+        `f0`, `timecos*`, `tglstp`, and the derived fall/filter fields survive.
+        """
+        self.src = src
+        self.nf0ev = nf0ev
 
     def _allo(self, n: int) -> int:
         return self.src.allophons[n] if 0 <= n < len(self.src.allophons) else 0
