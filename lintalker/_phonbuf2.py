@@ -114,12 +114,15 @@ def fill_phon_buf_2(vv, sa) -> None:
             last_stored_phon = vv.phon_Buf_2[vv.phonBuf_2_In_Index - 1]
         last_flags = _flags(PhonFlags2, last_stored_phon)
 
-        # No embedded-command/singing input is ported, so there is never an
-        # override -- user_dur defaults to kDur_One (100%, the C reference's
-        # own "no override" value; NOT 0, which would zero every duration
-        # once Set_The_Dur divides by it), the rest to 0.
+        # No embedded-command/singing input is ported (except EC_slnc's
+        # note-duration channel, see sa.note_buf below), so there is
+        # never an override for the rest -- user_dur defaults to
+        # kDur_One (100%, the C reference's own "no override" value; NOT
+        # 0, which would zero every duration once Set_The_Dur divides by
+        # it), user_cmd/user_pitch/user_rate stay 0.
         from ._consts import kDur_One
-        user_cmd = user_pitch = user_note = user_rate = 0
+        user_cmd = user_pitch = user_rate = 0
+        user_note = sa.note_buf[out_index] if out_index < len(sa.note_buf) else 0
         user_dur = kDur_One
 
         target_phon = cur_phon

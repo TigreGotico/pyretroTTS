@@ -200,23 +200,33 @@ def scan_bracket_commands(text: str):
     `newBegin >> 16`/`newEnd >> 16` extraction (a plain integer part,
     no fractional digits expected in practice).
 
+    Also recognizes `slnc` (`Parse_slnc_Command`, `EmbeddedCmd.c:741-751`):
+    inserts a real `_SIL_` phoneme at the given position (the ONE command
+    ported here that DOES have a per-phoneme pipeline equivalent -- see
+    `_assembly.collect_fe_tokens`'s `silence_overrides` parameter and
+    `sa.note_buf`, consumed by `_moduration.mod_duration`'s existing
+    `kSilenceDuration` branch). Its argument is a plain Fixed value;
+    `embedData >> 16` (`BackEnd.c`'s `Parse_Embedded_Command` `EC_slnc`
+    case) recovers the millisecond count the user typed.
+
     NOT ported: `rate` (routes through `vv->lastRate`/
     `user_Rate_Buf1`, not `CMDQueue`, and `e_set_speech_rate`'s
     non-singing branch already isn't ported -- see `_engine.py`),
-    `rset`/`xtnd`/`char`/`mode`/`nmbr`/`slnc`/`sync` (each its own
+    `rset`/`xtnd`/`char`/`mode`/`nmbr`/`sync` (each its own
     separate parser/side-effect, not reachable via `CMDQueue` or a
     plain token field the way `emph` is), and mid-clause
-    phoneme-accurate positioning (a command found after the Nth word of
-    ONE clause is applied before that clause's Nth word, but this port
-    has no opcode-in-phon_str pipeline the way the real engine's
-    `StuffBECommand`/`Parse_Embedded_Command` do -- see module
-    docstring).
+    phoneme-accurate positioning for `pbas`/`pmod`/`volm` (a command
+    found after the Nth word of ONE clause is applied before that
+    clause's Nth word for `emph`/`slnc`, but `pbas`/`pmod`/`volm` are
+    applied as an immediate `do_ctrl` state change at the whole
+    clause's start instead -- see `api.build_phoneme_plan`).
 
-    Returns `(clean_text, commands, emphasis)`: `clean_text` is `text`
-    with every recognized bracketed command span removed; `commands` is
-    a list of `(word_index, ctrl_type, ctrl_data)` for `pbas`/`pmod`/
-    `volm`; `emphasis` is a `{word_index: "emphasize"|"deemphasize"}`
-    dict for `emph`. `word_index` is how many words (per
+    Returns `(clean_text, commands, emphasis, silences)`: `clean_text`
+    is `text` with every recognized bracketed command span removed;
+    `commands` is a list of `(word_index, ctrl_type, ctrl_data)` for
+    `pbas`/`pmod`/`volm`; `emphasis` is a `{word_index: "emphasize"|
+    "deemphasize"}` dict for `emph`; `silences` is a `{word_index:
+    duration_ms}` dict for `slnc`. `word_index` is how many words (per
     `_frontend.tokenize`) of `clean_text` PRECEDE that command, i.e. the
     command/override applies to (or right before) that word. An
     unrecognized keyword, or a span with no closing delimiter before
@@ -229,6 +239,7 @@ def scan_bracket_commands(text: str):
 
     commands = []
     emphasis = {}
+    silences = {}
     out_parts = []
     word_count = 0
     i = 0
@@ -284,6 +295,14 @@ def scan_bracket_commands(text: str):
             i = end + old_end_len
             continue
 
+        if keyword == 'SLNC':
+            value, _ = _parse_fixed_value(inner, 4)
+            duration = value >> 16
+            if duration > 0:
+                silences[word_count] = silences.get(word_count, 0) + duration
+            i = end + len(END)
+            continue
+
         entry = _BRACKET_COMMANDS.get(keyword)
         if entry is None:
             # Unrecognized keyword -- leave this span untouched (not
@@ -307,7 +326,7 @@ def scan_bracket_commands(text: str):
 
         i = end + len(END)
 
-    return ''.join(out_parts), commands, emphasis
+    return ''.join(out_parts), commands, emphasis, silences
 
 
 def do_ctrl(vv: VoiceVar) -> None:

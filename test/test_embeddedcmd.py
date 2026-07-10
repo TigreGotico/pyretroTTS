@@ -176,7 +176,7 @@ def test_regression_voice_set_never_queues_commands():
 def test_scan_bracket_commands_strips_and_parses_pbas():
     from lintalker._embeddedcmd import scan_bracket_commands
 
-    clean, cmds, _emph = scan_bracket_commands("[[pbas300]]hello world")
+    clean, cmds, _emph, _silences = scan_bracket_commands("[[pbas300]]hello world")
     assert clean == "hello world"
     assert cmds == [(0, C_absPitch, 300 << 16)]
 
@@ -184,7 +184,7 @@ def test_scan_bracket_commands_strips_and_parses_pbas():
 def test_scan_bracket_commands_word_index_tracks_preceding_words():
     from lintalker._embeddedcmd import scan_bracket_commands
 
-    clean, cmds, _emph = scan_bracket_commands("hello [[volm50]] world")
+    clean, cmds, _emph, _silences = scan_bracket_commands("hello [[volm50]] world")
     assert clean == "hello  world"
     assert cmds == [(1, C_absVol, 50 << 16)]
 
@@ -192,17 +192,17 @@ def test_scan_bracket_commands_word_index_tracks_preceding_words():
 def test_scan_bracket_commands_relative_sign():
     from lintalker._embeddedcmd import scan_bracket_commands
 
-    clean, cmds, _emph = scan_bracket_commands("[[pbas+50]]hello")
+    clean, cmds, _emph, _silences = scan_bracket_commands("[[pbas+50]]hello")
     assert cmds == [(0, C_relPitch, 50 << 16)]
 
-    clean, cmds, _emph = scan_bracket_commands("[[pbas-50]]hello")
+    clean, cmds, _emph, _silences = scan_bracket_commands("[[pbas-50]]hello")
     assert cmds == [(0, C_relPitch, -(50 << 16))]
 
 
 def test_scan_bracket_commands_unrecognized_keyword_left_untouched():
     from lintalker._embeddedcmd import scan_bracket_commands
 
-    clean, cmds, _emph = scan_bracket_commands("[[bogus123]]hello")
+    clean, cmds, _emph, _silences = scan_bracket_commands("[[bogus123]]hello")
     assert clean == "[[bogus123]]hello"
     assert cmds == []
 
@@ -210,11 +210,11 @@ def test_scan_bracket_commands_unrecognized_keyword_left_untouched():
 def test_scan_bracket_commands_cmnt_and_vers_are_stripped_noops():
     from lintalker._embeddedcmd import scan_bracket_commands
 
-    clean, cmds, emph = scan_bracket_commands("[[cmnt this is ignored]]hello")
+    clean, cmds, emph, _silences = scan_bracket_commands("[[cmnt this is ignored]]hello")
     assert clean == "hello"
     assert cmds == [] and emph == {}
 
-    clean, cmds, emph = scan_bracket_commands("[[vers65536]]hello")
+    clean, cmds, emph, _silences = scan_bracket_commands("[[vers65536]]hello")
     assert clean == "hello"
     assert cmds == [] and emph == {}
 
@@ -223,12 +223,12 @@ def test_scan_bracket_commands_dlim_changes_subsequent_delimiters():
     from lintalker._embeddedcmd import scan_bracket_commands
 
     # '<'=60, '>'=62: switch delimiters mid-text, then use them for pbas.
-    clean, cmds, _emph = scan_bracket_commands("[[dlim60 62]]<pbas60>hello")
+    clean, cmds, _emph, _silences = scan_bracket_commands("[[dlim60 62]]<pbas60>hello")
     assert clean == "hello"
     assert cmds == [(0, C_absPitch, 60 << 16)]
 
     # Old [[ ]] delimiters no longer recognized after a dlim switch.
-    clean, cmds, _emph = scan_bracket_commands("[[dlim60 62]][[pbas60]]hello")
+    clean, cmds, _emph, _silences = scan_bracket_commands("[[dlim60 62]][[pbas60]]hello")
     assert clean == "[[pbas60]]hello"
     assert cmds == []
 
@@ -257,12 +257,12 @@ def test_scan_bracket_commands_emph():
     next word, a plain per-token field copy (not a CMDQueue entry)."""
     from lintalker._embeddedcmd import scan_bracket_commands
 
-    clean, cmds, emph = scan_bracket_commands("[[emph+]]hello world")
+    clean, cmds, emph, _silences = scan_bracket_commands("[[emph+]]hello world")
     assert clean == "hello world"
     assert cmds == []
     assert emph == {0: "emphasize"}
 
-    clean, cmds, emph = scan_bracket_commands("hello [[emph-]]world")
+    clean, cmds, emph, _silences = scan_bracket_commands("hello [[emph-]]world")
     assert clean == "hello world"
     assert emph == {1: "deemphasize"}
 
@@ -273,6 +273,60 @@ def test_emph_override_reaches_word_emphasis_field():
     sa = collect_fe_tokens("hello world", emphasis_overrides={1: "emphasize"})
     assert sa.words[0].word_emphasis == "none"
     assert sa.words[1].word_emphasis == "emphasize"
+
+
+def test_scan_bracket_commands_slnc():
+    """Regression test for Parse_slnc_Command (EmbeddedCmd.c:741-751):
+    `[[slnc500]]` inserts a real silence, embedData>>16 giving back the
+    plain millisecond value (500)."""
+    from lintalker._embeddedcmd import scan_bracket_commands
+
+    clean, cmds, emph, silences = scan_bracket_commands("hello [[slnc500]]world")
+    assert clean == "hello world"
+    assert silences == {1: 500}
+
+
+def test_silence_override_inserts_real_sil_with_duration():
+    """Regression test for the _assembly.collect_fe_tokens integration:
+    a silence_overrides entry inserts a real _SIL_ phoneme with
+    kSilenceDuration set and the duration recorded in note_buf, one
+    slot ahead of the plain (no-override) phoneme count."""
+    from lintalker._assembly import collect_fe_tokens
+    from lintalker._consts import kSilenceDuration
+    from lintalker._phonemes import _SIL_
+
+    sa_plain = collect_fe_tokens("hello world")
+    sa_slnc = collect_fe_tokens("hello world", silence_overrides={1: 500})
+
+    assert len(sa_slnc.phon_buf) == len(sa_plain.phon_buf) + 1
+
+    sil_indices = [
+        i for i, (p, c) in enumerate(zip(sa_slnc.phon_buf, sa_slnc.ctrl_buf))
+        if p == _SIL_ and (c & kSilenceDuration)
+    ]
+    assert len(sil_indices) == 1
+    assert sa_slnc.note_buf[sil_indices[0]] == 500
+
+
+def test_slnc_applied_end_to_end_via_build_phoneme_plan():
+    """Regression test for the full pipeline: EC_slnc's duration
+    (frame count = ms // kFrameTime) ends up in the final dur_Buf at
+    the inserted _SIL_'s position."""
+    from lintalker.api import build_phoneme_plan, new_voice
+    from lintalker._data import Fred_Voice
+    from lintalker._consts import kSilenceDuration, kFrameTime
+    from lintalker._phonemes import _SIL_
+
+    vv = new_voice(Fred_Voice)
+    phon, ctrl, dur, pf, pt, pfl, endp = build_phoneme_plan(
+        Fred_Voice, "hello [[slnc500]]world", vv
+    )
+    hits = [
+        i for i, (p, c) in enumerate(zip(phon, ctrl))
+        if p == _SIL_ and (c & kSilenceDuration)
+    ]
+    assert len(hits) == 1
+    assert dur[hits[0]] == 500 // kFrameTime
 
 
 if __name__ == "__main__":

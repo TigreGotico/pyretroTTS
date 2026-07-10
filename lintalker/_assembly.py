@@ -178,6 +178,7 @@ from ._consts import (
     kTerm_Bound, kPrep_Start, kVerb_Start, kSilenceTypeShift, kSilenceTypeField,
     kBND_Pause, kBND_Decl, kBND_Quest, kBND_Emph, kBND_None,
     kBND_Sep1, kBND_Sep2, kBND_Sep3, kBND_Sep4, kBND_Sep5, kBND_Sep6,
+    kSilenceDuration,
 )
 from ._morph import _pos_count_and_hi_rank
 from ._phonemes import (
@@ -349,6 +350,7 @@ class SentenceAssembly:
 
     phon_buf: list = field(default_factory=lambda: [_SIL_])
     ctrl_buf: list = field(default_factory=lambda: [0])
+    note_buf: list = field(default_factory=lambda: [0])   # phon_Buf_1-side user_Note_Buf1 equivalent (EC_slnc durations)
     word_count: int = 0
     stress_counter: int = 0
     end_punctuation: int = 0
@@ -547,7 +549,11 @@ def _place_phrasing(words: list) -> list:
     return mid_bnds
 
 
-def collect_fe_tokens(text: str, emphasis_overrides: Optional[dict] = None) -> SentenceAssembly:
+def collect_fe_tokens(
+    text: str,
+    emphasis_overrides: Optional[dict] = None,
+    silence_overrides: Optional[dict] = None,
+) -> SentenceAssembly:
     """Adapted port of `Collect_FE_Tokens` (`BackEnd.c:3712-4157`).
 
     `emphasis_overrides`, if given, is a `{word_index: "emphasize"|
@@ -556,6 +562,18 @@ def collect_fe_tokens(text: str, emphasis_overrides: Optional[dict] = None) -> S
     field right after this clause's token list is built -- mirrors
     `FrontEnd.c:343-344`/`369-370`/`460-461` copying `vv->NewEmphasis`
     straight into the next-created token's `tokEmphasis` field.
+
+    `silence_overrides`, if given, is a `{word_index: duration}` dict
+    (from `_embeddedcmd.scan_bracket_commands`'s `slnc` support, `duration`
+    already `>>16`-scaled to a plain integer): a real `_SIL_` phoneme is
+    inserted right before that word's own phonemes, with `kSilenceDuration`
+    set on its `ctrl_buf` slot and `duration` recorded in the parallel
+    `note_buf` slot -- mirrors `Parse_Embedded_Command`'s `EC_slnc` case
+    (`BackEnd.c`: `user_Note_Buf1[...] = embedData; phon_Ctrl_Buf_1[...]
+    |= kSilenceDuration; Store_Phon_In_PhonBuf_1(_SIL_)`), consumed by
+    `_moduration.mod_duration`'s existing `kSilenceDuration` branch
+    (reads `vv.user_Note_Buf2[i]` for that `_SIL_`'s duration instead of
+    the generic `BoundryDurTbl` lookup).
 
     Walks `_frontend.tokenize(text)` word-by-word (stand-in for the real
     `e_ParseNextWord_FUNC` token source -- see module docstring), applying
@@ -605,6 +623,7 @@ def collect_fe_tokens(text: str, emphasis_overrides: Optional[dict] = None) -> S
         while len(sa.phon_buf) <= i:
             sa.phon_buf.append(None)
             sa.ctrl_buf.append(0)
+            sa.note_buf.append(0)
 
     def flag_current(flag: int) -> None:
         ensure(in_index[0])
@@ -678,6 +697,15 @@ def collect_fe_tokens(text: str, emphasis_overrides: Optional[dict] = None) -> S
             _sil_idx = store(_SIL_)
             sa.ctrl_buf[_sil_idx] |= (_mid_bnd << kSilenceTypeShift)
             sa.ctrl_buf[_sil_idx] |= kVerb_Start
+
+        # --- EC_slnc embedded silence (BackEnd.c's Parse_Embedded_Command
+        # case EC_slnc): a real _SIL_ phoneme with kSilenceDuration set and
+        # the requested duration recorded in note_buf, inserted right
+        # before this word's own phonemes (see silence_overrides above).
+        if silence_overrides and _wi in silence_overrides:
+            _slnc_idx = store(_SIL_)
+            sa.ctrl_buf[_slnc_idx] |= kSilenceDuration
+            sa.note_buf[_slnc_idx] = silence_overrides[_wi]
 
         word_start_indices.append(in_index[0])
         flag_current(kWord_Start)
