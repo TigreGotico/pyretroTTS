@@ -60,6 +60,8 @@ BATTERY: dict[str, list[str]] = {
     "questions": ["what time is it", "are you there", "what is that"],
     "abbrev": ["etc.", "doctor smith is here", "mister jones went home",
                "dr. smith"],
+    "title": ["dr. smith", "st. john", "the dr. is in", "doctor smith",
+              "i saw dr. smith", "mr. jones"],
     "verbs": ["birds sing", "he went home", "she runs to the store",
               "i went to the park"],
     "funcword": ["you are here", "that is a cat", "give it to me",

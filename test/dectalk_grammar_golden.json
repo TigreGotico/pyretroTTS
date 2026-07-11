@@ -76,6 +76,14 @@
    "mister jones went home",
    "dr. smith"
   ],
+  "title": [
+   "dr. smith",
+   "st. john",
+   "the dr. is in",
+   "doctor smith",
+   "i saw dr. smith",
+   "mr. jones"
+  ],
   "verbs": [
    "birds sing",
    "he went home",
@@ -1277,6 +1285,105 @@
     116
    ]
   ],
+  "dr. smith": [
+   [
+    7680,
+    111,
+    7728,
+    7686,
+    7729,
+    7727,
+    7695,
+    111,
+    7721,
+    7711,
+    103,
+    7682,
+    7719,
+    116
+   ]
+  ],
+  "st. john": [
+   [
+    7680,
+    111,
+    7721,
+    7683,
+    7712,
+    7727,
+    111,
+    7735,
+    103,
+    7686,
+    7712,
+    116
+   ]
+  ],
+  "the dr. is in": [
+   [
+    7680,
+    111,
+    7720,
+    7697,
+    111,
+    7728,
+    7706,
+    103,
+    7687,
+    7718,
+    111,
+    7682,
+    7722,
+    111,
+    7682,
+    7712,
+    116
+   ]
+  ],
+  "doctor smith": [
+   [
+    7680,
+    111,
+    7728,
+    103,
+    7690,
+    7729,
+    7727,
+    7695,
+    111,
+    7721,
+    7711,
+    103,
+    7682,
+    7719,
+    116
+   ]
+  ],
+  "i saw dr. smith": [
+   [
+    7680,
+    111,
+    102,
+    7687,
+    113,
+    7721,
+    103,
+    7690,
+    111,
+    7728,
+    7706,
+    103,
+    7687,
+    7718,
+    111,
+    7721,
+    7711,
+    103,
+    7682,
+    7719,
+    116
+   ]
+  ],
   "birds sing": [
    [
     7680,
@@ -1692,22 +1799,22 @@
     ]
    ]
   },
-  "dr. smith": {
+  "mr. jones": {
    "ref": [
     [
      7680,
      111,
-     7728,
-     7686,
-     7729,
+     7711,
+     7682,
+     7721,
      7727,
      7695,
      111,
-     7721,
-     7711,
+     7735,
      103,
-     7682,
-     7719,
+     7691,
+     7712,
+     7722,
      116
     ]
    ],
@@ -1715,18 +1822,18 @@
     [
      7680,
      111,
-     7728,
-     103,
-     7690,
-     7729,
-     7727,
-     7695,
-     111,
-     7721,
      7711,
      103,
      7682,
-     7719,
+     7721,
+     7727,
+     7695,
+     111,
+     7735,
+     103,
+     7691,
+     7712,
+     7722,
      116
     ]
    ]
@@ -1803,14 +1910,18 @@
   "a big red dog",
   "a dog and a cat",
   "a dog and a cat",
+  "are you there",
   "birds sing",
   "cats",
   "cats and dogs",
   "cwm",
   "cwtch",
+  "doctor smith",
   "doctor smith is here",
   "dogs",
   "dogs and cats",
+  "dr. smith",
+  "dr. smith",
   "etc.",
   "fish swim deep",
   "give it to me",
@@ -1819,6 +1930,7 @@
   "he walks home",
   "he went home",
   "hello world",
+  "i saw dr. smith",
   "i went to the park",
   "it is on the table",
   "jwt",
@@ -1833,6 +1945,7 @@
   "she runs to the store",
   "she walks",
   "sit down now",
+  "st. john",
   "that is a cat",
   "that is a cat",
   "the a",
@@ -1840,6 +1953,7 @@
   "the books",
   "the cat sat",
   "the dogs",
+  "the dr. is in",
   "the little red hen",
   "the quick brown fox jumps",
   "the sun is bright",
@@ -1850,7 +1964,6 @@
   "what time is it",
   "yes, no, maybe",
   "yes, no, maybe, sure",
-  "you are here",
-  "are you there"
+  "you are here"
  ]
 }

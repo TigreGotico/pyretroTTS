@@ -1,5 +1,5 @@
 """Residual US text->PCM edges: the `y`-vowel word-vs-speller decision (`why`)
-and the still-open `Dr.`-title abbreviation disambiguation (`dr. smith`)."""
+and the `Dr.`-title abbreviation disambiguation (`dr. smith`)."""
 from __future__ import annotations
 
 import os
@@ -78,11 +78,10 @@ def test_gate_bites_without_y_vowel() -> None:
     assert wrong != want
 
 
-def test_dr_title_abbreviation_is_open() -> None:
-    # `Dr. <Name>` reads through the unported `pdoctor`/`pdrive` parser
-    # disambiguation (`cmd/par_*.c`): the port expands `dr` -> the full word
-    # `doctor` (stressed, AO vowel) where the oracle emits the destressed title
-    # form (AA vowel). This asserts the known residual, so closing it flips here.
+def test_dr_title_abbreviation_is_closed() -> None:
+    # `Dr. <Name>` reads through the ported `pdoctor`/`pdrive` disambiguation
+    # (`title_abbrev_us.py`, `ls_task.c:2910`): before a name `dr` reads as the
+    # destressed title form (`pdoctor`, AA vowel), sample-exact vs the oracle.
     d = _load_dict()
     capture = _oracle()
     if d is None or capture is None:
@@ -92,4 +91,4 @@ def test_dr_title_abbreviation_is_open() -> None:
     text = "dr. smith"
     u = capture(0, text)
     want = struct.pack(f"<{len(u.pcm)}h", *u.pcm)
-    assert sentence_to_pcm(0, text, d) != want
+    assert sentence_to_pcm(0, text, d) == want
