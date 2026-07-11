@@ -53,13 +53,15 @@ the suffix's phonemes appended, driven by the verbatim `ls_suff.c`
 `suffix_table`/`suffix_index` trie (`suffix_data.py`) -- `dogs -> dog + Z`,
 `cats -> cat + S`, `boxes -> box + IX Z`.
 
-What remains is the **in-context function-word reduction** (the stressed article
-`a` reduced to a schwa; the clause-final citation promotion of a lone `for`/`to`/
-`and`), the **question-final content-word restress**, and the **digit-path
-number reading** (`l_us_pr1.c` / `l_us_con.c`, whose 100-and-up `and` uses
-`VPSTART` and its own phonemes where the spelled-out words use `PPSTART`, and
-whose currency reader spells `dollars` itself rather than through the
-dictionary). Homographs and the other languages also remain.
+The **in-context article reduction** and the **digit-path number/currency
+reading** are now ported. The single-character word `a` reduces to the schwa
+article mid-clause (`grammar_us.article_a_codes`, `ls_task.c:2632-2645`), and
+integers, ordinals, currency and decimals are read by the digit path's own
+phoneme lists (`numbers_us.number_token_send_codes`, `l_us_pr1.c`/`l_us_con.c`),
+so `123`, `2005`, `$5`, `$5.25` and the whole number/article battery frame and
+render bit-exact. What remains is the **question-final content-word restress**,
+the four-digit year-pairs reading (`1100` -> "eleven hundred"), the abbreviation
+title stress (`dr. smith`), homographs, and the other languages.
 
 | Piece | Module | State |
 |---|---|---|
@@ -85,12 +87,13 @@ dictionary). Homographs and the other languages also remain.
 | `lts/` rule/prefix/feature tables (`acna_lswtab`, `acna_lsbtab`, `feats`, `pfeat`, `preftab`, `ls_fold`) | `lts_rules_data.py` | read verbatim from `libtts_us.so` |
 | text -> phonemes -> PCM wiring (lone word) | `text_us.py` | **sample-exact vs oracle WAV (dict + rule, 10 voices)** |
 | sentence front end: clause split, framing, terminators (`cmd/`, `ls_task.c`) | `sentence_us.py` | **whole-sentence text -> PCM sample-exact vs oracle (plain statements, comma lists, speller; 10 voices)** |
-| number / currency / ordinal expansion (`l_us_con.c`) | `numbers_us.py` | word sequence matches oracle (0-99 framed bit-exact; 100+ needs the grammar parser) |
+| digit-path number / currency / ordinal / decimal reading (`l_us_pr1.c` `ls_proc_do_number`/`ls_proc_do_digit_group`, `ls_task.c` currency, `l_us_con.c` phone lists) | `numbers_us.py` | **pre-`ph/` stream + text -> PCM bit-exact vs oracle (integers, `$`, ordinals, decimals; 10 voices); four-digit year-pairs not read** |
 | vowelless-word speller + letter-name table (`ls_spel.c`, `l_us_spe.c`) | `spell_us.py` | **pre-`ph/` stream + PCM bit-exact vs oracle** |
 | abbreviation table (`l_us_con.c`) | `sentence_us.py` | word sequence matches oracle; framing bit-exact where the word markers suffice |
 | word-level syntactic marking: form-class phrase markers, `sdic[]` closed class (`ls_dict.c`, `l_us_con.c`) | `grammar_us.py` | **VPSTART/PPSTART bit-exact vs oracle for dict verbs, preps, and `for`/`and`/`to`** |
 | inflectional-suffix morphology (`ls_suff.c` `suffix_table`/`suffix_index`) | `morph_us.py`, `suffix_data.py` | **stem + suffix codes bit-exact vs oracle for plurals / `-ed` / `-ing` / possessive; text -> PCM sample-exact across ten voices** |
-| in-context function-word reduction, question-final restress, digit-path numbers | — | **not ported** |
+| in-context article reduction (`ls_task.c:2632-2645`) | `grammar_us.py` | **schwa article bit-exact vs oracle (framing + PCM, 10 voices)** |
+| question-final restress; four-digit year-pairs; abbreviation title stress | — | **not ported** |
 
 ## The oracle
 
@@ -544,24 +547,23 @@ capture per input suffices.
 
 ### What is stubbed (US)
 
-- **In-context function-word reduction and clause-final promotion.** The word
-  markers are ported (`grammar_us.py`, see below), but the reduction of a
-  stressed citation form in context is not: the article `a` (dictionary `[S1 EY]`)
-  stays long instead of reducing to a schwa, and a lone clause-final `for`/`to`/
-  `and` is not re-stressed to its citation form. This reduction is driven by the
-  `WORD_CLASS` control phone the C ships down the pipe (`ls_util.c:800`) and the
-  `ph_sort.c:1116` kludge, neither of which is fed/run in this path.
+- **The in-context article reduction is ported** (`grammar_us.article_a_codes`,
+  `ls_task.c:2632-2645`): the single-character word `a` reduces to a schwa
+  mid-clause and keeps the citation `[S1 EY]` clause-finally. What remains of
+  function-word reduction is the clause-final re-stress of a lone `for`/`to`/
+  `and`, driven by the `ph_sort.c:1116` kludge (`allophones.py`); where the port
+  feeds the correct markers this is already PCM-exact.
 - **Question-final content-word restress** (`what is *that*`): the clause-final
-  content word takes primary stress in a question; not reproduced.
+  content word takes primary stress in a question; being ported on a sibling
+  branch (`ph_sort.c` / `allophones.py`).
 - **Inflectional morphology** (`dogs -> dog + s`, `-ed`/`-ing`/`-s`/possessive).
   The `ls_suff.c` suffix trie is not extracted; an inflected miss is pronounced
   by the letter-to-sound rules, which is usually right but not always bit-exact.
-- **Homograph / duplicate-grapheme selection.** Needs the part-of-speech pass.
-- **Number and abbreviation framing.** `numbers_us.py` and the abbreviation table
-  produce the correct **word sequence** (`123 -> one hundred and twenty three`,
-  `Dr. -> doctor`), matching the oracle; but 100-and-up numbers and multi-word
-  abbreviation contexts run back through the grammar parser above, so their framed
-  `symbols[]` (and PCM) are not yet bit-exact. Numbers 0-99 frame bit-exactly.
+- **The digit-path number / currency reading is ported**
+  (`numbers_us.number_token_send_codes`, `l_us_pr1.c`/`l_us_con.c`): integers,
+  ordinals, currency (`$5`, `$5.25`) and decimals frame and render bit-exact via
+  the reader's own phone lists. The four-digit **year-pairs** reading (`1100` ->
+  "eleven hundred") and multi-word abbreviation stress (`dr. smith`) remain.
 - **Homograph / duplicate-grapheme selection.** Needs the part-of-speech pass;
   a hit returns the record the search lands on.
 - **`[:phoneme on]` phonetic-input decoding** (`cmd/cm_phon.c`) and `[:dv]`,
@@ -679,47 +681,61 @@ bit-exactly (27 of the set) so the gate bites on any framing regression.
 
 ### Measured coverage (voice 0, oracle diff over the sentence battery)
 
-Before/after the inflectional-suffix morphology (`morph_us.py`), voice 0, over
-the `test/test_dectalk_grammar.py` battery (now 56 texts: the original 48 plus an
-eight-text `inflection` category). The `before` column is the state after the
-word-level syntactic marking (`grammar_us.py`); the `after` column is what the
-port reproduces today; the gate is `test/dectalk_grammar_golden.json`.
+Before/after the in-context article reduction (`grammar_us.article_a_codes`) and
+the digit-path number/currency reading (`numbers_us.number_token_send_codes`),
+voice 0, over the original 56-text `test/test_dectalk_grammar.py` battery. The
+`before` column is the state after the inflectional-suffix morphology
+(`morph_us.py`); the `after` column is what the port reproduces today; the gate
+is `test/dectalk_grammar_golden.json` (whose battery is extended to 71 unique
+texts -- five new number/currency/decimal and article categories -- so both
+mechanisms are exercised broadly).
 
 | Category | framing before → after | text -> PCM before → after |
 |---|---|---|
 | plain multi-word statements | 12/12 → 12/12 | 12/12 → 12/12 |
 | comma / semicolon lists | 4/4 → 4/4 | 4/4 → 4/4 |
 | vowelless speller words | 4/4 → 4/4 | 4/4 → 4/4 |
-| numbers | 7/9 → 6/9 | 7/9 → 6/9 |
+| numbers | 6/9 → **9/9** | 6/9 → **9/9** |
 | questions | 1/3 → 1/3 | 2/3 → 2/3 |
 | abbreviations | 3/4 → 3/4 | 3/4 → 3/4 |
 | dictionary verbs (VPSTART) | 4/4 → 4/4 | 4/4 → 4/4 |
-| function words | 2/4 → 2/4 | 3/4 → 3/4 |
-| conjunctions / preps (`and`/`for`) | 2/4 → **3/4** | 2/4 → **3/4** |
-| inflection (plurals / `-ed` / `-ing`) | — → **8/8** | — → **8/8** |
-| **total** | 39/48 → **47/56** | 41/48 → **49/56** |
+| function words | 2/4 → **3/4** | 3/4 → **4/4** |
+| conjunctions / preps (`and`/`for`) | 3/4 → **4/4** | 3/4 → **4/4** |
+| inflection (plurals / `-ed` / `-ing`) | 8/8 → 8/8 | 8/8 → 8/8 |
+| **total** | 47/56 → **52/56** | 49/56 → **54/56** |
 
-The morphology port makes `dogs and cats` (and the whole eight-text inflection
-category) framing- and PCM-exact. The one number that moved the other way, `$5`
-("five dollars"), is not a morphology regression: the port now pronounces the
-lone stem `dollars` bit-exactly (`dollar` + `Z`), and `$5` diverges only because
-the C's **currency reader** spells `dollars` with its own reduced vowel through
-the digit path, which the LTS rule used to fake -- so `$5` now belongs to the
-digit-path residual below. The remaining `after` misses are the three unported
-mechanisms: the article `a` not reduced (`that is a cat`, `a dog and a cat`) and
-the funcword framing (`give it to me`); the question-final restress (`what is
-that`, `are you there`); and the digit-path number/currency reading (`123`,
-`2005`, `$5`). `dr. smith` is an abbreviation-stress edge (title before a name)
-outside the four mechanisms.
+The article reduction makes `that is a cat` and `a dog and a cat` framing- and
+PCM-exact (the article `a` reduces to a schwa mid-clause); the digit path makes
+`123`, `2005`, `$5` (and the whole extended number/currency/decimal battery)
+bit-exact -- `$5` is closed by porting the real currency reader (its `pdollar`
+vowel), as anticipated. The two remaining voice-0 PCM misses are outside these
+two mechanisms: the question `are you there` (the unported question-final
+restress) and `dr. smith` (an abbreviation title-stress edge). The two remaining
+framing-only misses (`what is that`, `give it to me`) are already PCM-exact via
+the ported `phsort` clause-final promotion / restress.
 
-The 47 framing-exact and 49 voice-0 PCM-exact texts are locked by
+The 52 framing-exact and 54 voice-0 PCM-exact texts are locked by
 `test/dectalk_grammar_golden.json`; `test_pcm_exact_all_voices` verifies each
-PCM-exact text stays sample-exact across all ten voices (490/490 renders), and
-`test_golden_gate_bites` verifies the gate bites when the verb marker is removed.
-`test/test_dectalk_wordclass.py` gates the morphology mechanism specifically: the
-suffix strip and sibilant selection in CI (stub stem dictionary, mutation-gated
-against the `suffix_table` bytes), and -- oracle-gated -- the inflection battery
-text -> PCM sample-exact across the ten voices (80/80 renders).
+PCM-exact text stays sample-exact across all ten voices, and
+`test_golden_gate_bites` verifies the gate bites. `test/test_dectalk_wordclass.py`
+gates the morphology mechanism; `test/test_dectalk_funcword_numbers.py` gates the
+two mechanisms here: the article schwa reduction and the digit-path phone lists
+in CI (mutation-gated), and -- oracle-gated -- the article and number/currency
+batteries text -> PCM sample-exact across the ten voices.
+
+### Are these two mechanisms bit-exact?
+
+**Yes, both.** The in-context article reduction and the digit-path number /
+currency / ordinal / decimal reading are pre-`ph/` stream **and** whole-sentence
+text -> PCM **sample-exact vs the oracle across all ten voices** for their whole
+battery scope (integers of any length that decompose through the scale/`and`
+reader, `$`/`$X.YY` currency, ordinals, decimals; the schwa article). They close
+the `numbers`, `funcword` and `conj` battery categories to full PCM parity. The
+one number shape not read the C's way is the four-digit **year-pairs** reading
+(`1100` -> "eleven hundred", `2019` -> "twenty nineteen"), whose C dispatch is an
+unreached path in this build (`ls_proc_do_4_digits` has no live caller); a plain
+four-digit integer instead reads through the scale reader (`2005` -> "two
+thousand and five", which the oracle also does).
 
 ### Full text-to-PCM through the public engine
 
@@ -784,34 +800,54 @@ re-enters the same `Dictionary`; a stem miss falls through to the rules.
 
 ### Is full US DECtalk text-to-speech parity reached?
 
-**Not yet, for general running text.** Plain statements, comma/semicolon lists,
+**Nearly, for general running text.** Plain statements, comma/semicolon lists,
 spelled words, dictionary-verb sentences, `for`/`and`/`to` conjunction/prep
-sentences, **inflected words (plurals, `-ed`, `-ing`, possessive)**, most
-numbers, and most abbreviations are whole-sentence text -> PCM **sample-exact vs
-the oracle across all ten voices** (the 49 PCM-exact battery texts, 490/490 voice
-renders). Inflectional morphology, one of the four residuals named in the last
-pass, is now closed.
+sentences, **inflected words (plurals, `-ed`, `-ing`, possessive)**, **the schwa
+article `a`**, **digit-path numbers / currency / ordinals / decimals**, and most
+abbreviations are whole-sentence text -> PCM **sample-exact vs the oracle across
+all ten voices** (the 54 PCM-exact battery texts). The in-context article
+reduction and the digit-path number reading, two of the residuals named in the
+last pass, are now closed.
 
-**Three mechanisms remain**, each isolated to its C site:
+## The in-context article reduction (`grammar_us.article_a_codes`)
 
-1. **In-context function-word reduction** -- the stressed article `a` reduced to
-   a schwa mid-clause (lone `a` stays the citation `EY`), driven by the
-   `WORD_CLASS` control phone the word-reading path ships down the pipe
-   (`lts/ls_util.c:800-826`). Affects `that is a cat`, `a dog and a cat`,
-   `give it to me` (framing only; several are already PCM-exact via the ported
-   `ph_sort.c:1116` clause-final promotion in `allophones.py`).
-2. **Question-final content-word restress** -- under a `?` terminal the final
-   content word is restressed `S2 -> S1` (`ph_sort.c:1316` sets the question
-   flag `cbsymbol`, feeding the `phinton` intonation path). Affects `what is
-   that` (PCM-exact, framing diff) and `are you there`.
-3. **Digit-path number / currency reading** -- integers `>= 100`, years, and
-   currency are read by the digit path (`lts/l_us_pr1.c`, `lts/l_us_con.c`) with
-   its own phrase markers (100-and-up `and` carries `VPSTART`, not the
-   spelled-out `PPSTART`) and its own phoneme spellings (`dollars` reduced, not
-   via the dictionary). Affects `123`, `2005`, `$5`.
+The single-character word `a` has two readings (`ls_task.c:2632-2645`): the
+dictionary citation spelling `['e]` = `[S1, EY]`, used when it sits against
+punctuation or the input end, and the reduced article `[SPECIALWORD, US_AX]`
+(form class `FC_ART`), used when the next item is whitespace -- another word
+follows before any punctuation. `article_a_codes` returns the reduced schwa body
+for a non-clause-final `a` and None (keep citation) otherwise; `sentence_us`
+splices it. `phsort` (`ph_sort.c:1024`, `allophones.py:672`) deletes the
+`SPECIALWORD`, so the post-`phsort` body the oracle emits -- and the body spliced
+here -- is the bare `US_AX`. This makes `that is a cat` and `a dog and a cat`
+framing- and PCM-exact; a lone `a` (or `the a`) keeps the citation `[S1, EY]`.
 
-Closing these three is the next step; the general running-text battery is not yet
-100% sample-exact across ten voices.
+## The digit-path number / currency reading (`numbers_us.number_token_send_codes`)
+
+A digit token is read by the digit path (`ls_proc_do_number`,
+`ls_proc_do_digit_group`, `l_us_pr1.c`; the currency wrapper in `ls_task.c`) by
+shipping fixed phoneme+marker lists (`l_us_con.c`) straight into the phone
+stream, not by expanding to words and re-looking-them-up. Two of those lists
+diverge from the dictionary and are why the word path could not be bit-exact: the
+hundreds/scale `and` (`pand`) carries a `VPSTART` and the vowel `EH` (not the
+closed-class `sdic` `and`), and currency `dollar(s)` (`pdollar`) uses the vowel
+`AA` with no schwa (not the dictionary stem). `number_token_send_codes` ports the
+right-justified three-digit-group integer reader (with the `VPSTART` / `pand` /
+comma scale connectors), the ordinal (`pordin`), currency (`$X`, `$X.YY` ->
+`... dollars and ... cents`) and decimal (`ppoint`) paths, over the phone lists
+transcribed verbatim from `l_us_con.c`. `sentence_us` emits its raw code stream
+for a numeric token in place of the word layer. This makes `123`, `2005`, `$5`,
+`$5.25` and the number/currency/decimal battery bit-exact. The four-digit
+year-pairs reading (`1100` -> "eleven hundred") is not reproduced: its C
+dispatch (`ls_proc_do_4_digits`) has no live caller in this build, so a plain
+four-digit integer reads through the scale reader instead.
+
+**One mechanism remains** for the general battery, isolated to its C site: the
+**question-final content-word restress** -- under a `?` terminal the final content
+word is restressed `S2 -> S1` (`ph_sort.c:1316` question flag `cbsymbol`, feeding
+`phinton`). It affects `what is that` (PCM-exact, framing diff) and `are you
+there`, and is being ported on a sibling branch. The abbreviation title stress
+(`dr. smith`) also remains.
 
 ## The phoneme -> PCM chain composes (sample-exact, 10 voices)
 

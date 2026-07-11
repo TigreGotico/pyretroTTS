@@ -113,10 +113,12 @@ def test_ordinal_and_digits() -> None:
     assert say_digits("14") == ["one", "four"]
 
 
-def test_number_token_expansion() -> None:
-    assert _expand_token("3.14") == ["three", "point", "one", "four"]
-    assert _expand_token("$5") == ["five", "dollars"]
-    assert _expand_token("1st") == ["first"]
+def test_number_token_kept_for_digit_path() -> None:
+    # A numeric/currency token is kept whole; `_word_symbols` reads it through
+    # the digit path (`number_token_send_codes`), not the word layer.
+    assert _expand_token("3.14") == ["3.14"]
+    assert _expand_token("$5") == ["$5"]
+    assert _expand_token("1st") == ["1st"]
     assert _expand_token("cat") == ["cat"]
 
 
