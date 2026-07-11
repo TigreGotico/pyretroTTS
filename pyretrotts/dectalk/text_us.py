@@ -25,6 +25,7 @@ from __future__ import annotations
 
 from .dictionary import Dictionary
 from .lts_rules import pronounce
+from .morph_us import suffix_codes
 
 # cmd/phsort framing for a lone statement word (PFUSA<<PSFONT == 7680; the word
 # marker 111 and clause-final PERIOD 116 are l_com_ph.h prosody codes).
@@ -34,11 +35,20 @@ _PERIOD = 116
 
 
 def word_to_codes(word: str, dictionary: Dictionary | None) -> tuple[list[int], str]:
-    """Phoneme+stress send codes for `word`; ``"dict"`` hit or ``"rule"`` miss."""
+    """Phoneme+stress send codes for `word`; ``"dict"``/``"suffix"``/``"rule"``.
+
+    Mirrors `ls_dict_find_word` (`ls_dict.c:450-458`): a main-dictionary hit
+    wins; on a miss an inflectional suffix is stripped and the stem re-looked-up
+    (`morph_us.suffix_codes`, `ls_suff.c`); only if that fails do the
+    letter-to-sound rules pronounce the word.
+    """
     if dictionary is not None:
         hit = dictionary.lookup(word)
         if hit is not None:
             return hit, "dict"
+        suff = suffix_codes(word, dictionary)
+        if suff is not None:
+            return suff, "suffix"
     return list(pronounce(word).codes), "rule"
 
 
