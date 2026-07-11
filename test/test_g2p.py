@@ -89,3 +89,20 @@ def test_letter_to_sound_handles_a_word_no_dictionary_knows():
     """`zorbnax` is in no dictionary; every engine still sounds it out."""
     for engine in ENGINES:
         assert len(phonemize("zorbnax", engine)) >= 6
+
+
+def test_ipa_notation_re_expresses_the_native_phonemes():
+    assert phonemize("photograph", "macintalk", notation="ipa") == [
+        "f", "oʊ", "ɾ", "ə", "g", "ɹ", "æ", "f"]
+    assert phonemize("hello", "dectalk", notation="ipa")[:1] == ["h"]
+    assert phonemize("hello", "sam", notation="ipa")
+
+
+def test_native_notation_is_the_default_and_unchanged():
+    assert phonemize("hello", "macintalk") == ["h", "EH", "l", "OW"]
+    assert phonemize("hello", "macintalk", notation="native") == ["h", "EH", "l", "OW"]
+
+
+def test_an_unknown_notation_is_rejected():
+    with pytest.raises(ValueError, match="unknown notation"):
+        phonemize("hello", "macintalk", notation="klingon")
