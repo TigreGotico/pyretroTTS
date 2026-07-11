@@ -88,22 +88,34 @@ class FeatureBundle:
 # --- vowel formant table (male voice, Hz): F1, F2, F3 -----------------------
 # F1 tracks openness (higher = more open), F2 tracks backness (higher = more
 # front) and rounding lowers F2/F3.
+#
+# The English monophthongs are calibrated to the *shipped DECtalk* US male target
+# ROM (``pyretrotts.dectalk.targets.US_MALTAR`` / ``US_MALDIP``, the steady value
+# of each vowel's own trajectory on this exact synthesizer) and cross-checked
+# against measured American-English formants (Hillenbrand, Getty, Clark & Wheeler
+# 1995 JASA 97(5) Table V, adult males; Peterson & Barney 1952 JASA 24(2)). The
+# key correction over a naive Peterson-Barney transcription is F3: on this synth
+# DECtalk keeps English F3 in a 2300-2800 Hz band (e.g. /i/ F3 2500-2779, not
+# 3010), so an over-high F3 pushed vowels out of the region the DECtalk cascade
+# is tuned for. Non-English cardinals and front-rounded vowels use Klatt 1980
+# (JASA 67(3), synthesis-tuned), Catford 1988 and Vallee 1994, with F3 held to
+# the same synth band for consistency.
 _VOWELS: dict[str, tuple[int, int, int]] = {
-    "i": (270, 2290, 3010), "y": (270, 1850, 2100),
-    "ɪ": (390, 1990, 2550), "ʏ": (390, 1700, 2100),
-    "e": (400, 2100, 2600), "ø": (400, 1600, 2200),
-    "ɛ": (530, 1840, 2480), "œ": (530, 1560, 2200),
-    "æ": (660, 1720, 2410), "a": (750, 1450, 2590),
-    "ɶ": (750, 1400, 2400),
-    "ɨ": (320, 1650, 2400), "ʉ": (320, 1400, 2000),
-    "ɘ": (430, 1500, 2500), "ɵ": (470, 1400, 2200),
-    "ə": (500, 1500, 2500), "ɜ": (550, 1450, 2500),
-    "ɞ": (560, 1480, 2400), "ɐ": (650, 1450, 2500),
-    "ʌ": (640, 1190, 2390), "ɑ": (750, 1090, 2440),
-    "ɒ": (700, 950, 2400), "ɔ": (570, 840, 2410),
-    "o": (430, 900, 2400), "ɤ": (460, 1310, 2400),
-    "ʊ": (440, 1020, 2240), "u": (300, 870, 2240),
-    "ɯ": (300, 1390, 2200),
+    "i": (300, 2200, 2600), "y": (300, 1800, 2300),
+    "ɪ": (480, 1700, 2500), "ʏ": (450, 1600, 2200),
+    "e": (450, 1950, 2500), "ø": (430, 1550, 2400),
+    "ɛ": (620, 1650, 2500), "œ": (560, 1450, 2400),
+    "æ": (680, 1650, 2500), "a": (750, 1500, 2500),
+    "ɶ": (750, 1350, 2400),
+    "ɨ": (320, 1650, 2400), "ʉ": (320, 1400, 2200),
+    "ɘ": (450, 1500, 2500), "ɵ": (470, 1400, 2300),
+    "ə": (550, 1300, 2550), "ɜ": (560, 1400, 2500),
+    "ɞ": (560, 1450, 2400), "ɐ": (650, 1400, 2500),
+    "ʌ": (620, 1200, 2550), "ɑ": (780, 1150, 2600),
+    "ɒ": (700, 1000, 2500), "ɔ": (650, 1000, 2500),
+    "o": (500, 900, 2450), "ɤ": (460, 1300, 2450),
+    "ʊ": (480, 1100, 2450), "u": (350, 900, 2300),
+    "ɯ": (320, 1350, 2300),
 }
 
 #: vowels the table stores as rounded (drives lip-rounding secondary articulation)
