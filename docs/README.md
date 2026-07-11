@@ -40,6 +40,8 @@ Jump straight to the internals.
 - **[g2p.md](g2p.md)** — the grapheme-to-phoneme API: all three front ends
   exposed without synthesis, the `markers` option, and the DECtalk-dictionary
   caveat.
+- **[ipa.md](ipa.md)** — IPA as a universal input notation: `say_ipa`,
+  `phonemize(notation="ipa")`, the per-engine mapping, and the honest loss table.
 
 ## The engines at a glance
 
