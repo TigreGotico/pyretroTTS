@@ -46,11 +46,18 @@ so the front ends glide between them.
 
 ### Vowels
 
-Vowel formant targets are male-voice reference values from the acoustic-phonetics
-literature: Peterson & Barney (1952) for the English monophthong cardinals, Klatt
-(1980, "Software for a cascade/parallel formant synthesizer") for the
-synthesis-tuned values, and Catford (1988) / Vallée (1994) for the non-English
-cardinal and front-rounded vowels. The mapping is the classic one:
+The English monophthongs are **calibrated to the shipped DECtalk US target ROM**
+(`pyretrotts.dectalk.targets.US_MALTAR` / `US_MALDIP` — the steady value of each
+vowel's own trajectory on *this exact synthesizer*) and cross-checked against
+measured American-English formants: Hillenbrand, Getty, Clark & Wheeler (1995,
+*JASA* 97(5), Table V, adult males) and Peterson & Barney (1952, *JASA* 24(2)).
+The single most important correction over a naive Peterson-Barney transcription
+is **F3**: DECtalk keeps English F3 in a ~2300–2800 Hz band on this synth (e.g.
+`/i/` F3 2500–2779, not 3010), and an over-high F3 pushed vowels out of the
+region the DECtalk cascade is tuned for. Non-English cardinals and front-rounded
+vowels use Klatt (1980, *JASA* 67(3), synthesis-tuned), Catford (1988) and Vallée
+(1994), with F3 held to the same synth band for consistency. The mapping is the
+classic one:
 
 - **F1 ← openness** — higher F1 for more open vowels (`/a/` ≈ 750 Hz, `/i/` ≈
   270 Hz).
@@ -64,8 +71,14 @@ cardinal and front-rounded vowels. The mapping is the classic one:
 ### Consonants
 
 Each consonant carries a **place** and **manner**. Place sets an F2 transition
-locus and a frication/burst spectral centre (locus values after Stevens 1998,
-*Acoustic Phonetics*); manner picks the source configuration:
+locus and a frication/burst spectral centre. The loci follow locus theory
+(Stevens 1998, *Acoustic Phonetics*; Delattre, Liberman & Cooper 1955, *JASA*
+27(4)) and are pinned to the shipped DECtalk US consonant targets on this synth
+(`US_MALTAR`: `/n/` F2 1540, velar `/ŋ/` 1600, `/m/` 1120, `/f/` 1100, `/ð/`
+1300). The English rhotic approximants `/ɹ ɻ/` are given the defining **low F3
+≈ 1400 Hz** (Espy-Wilson et al. 2000, *JASA* 108(1); DECtalk US `R` F3 1380) that
+the neighbouring vowel bends toward, instead of a generic 2500 Hz. Manner picks
+the source configuration:
 
 - **stop** — a silent closure (a faint voice bar if voiced) then a one-frame
   burst at the place's spectral centre, with an aspiration tail for voiceless
@@ -136,33 +149,68 @@ that the model does not yet represent — and only then.
 Word error rate is a proxy for intelligibility, not a measure of it: Parakeet was
 trained on human speech and penalises a voice for being synthetic as well as for
 being unclear. Rendering the same English IPA through ModernTalk and through the
-classic nearest-English-preset path (`MacInTalkEngine.say_ipa`), over ten short
-sentences:
+classic nearest-English-preset path (`MacInTalkEngine.say_ipa`), over the fixed
+ten-sentence set in `tools/modern_coverage.py`:
 
 | path | WER |
 |---|---|
-| classic IPA → nearest English preset (MacinTalk) | **0.89** |
-| ModernTalk (generative Klatt) | ~1.0 |
+| classic IPA → nearest English preset (MacInTalk) | **0.886** |
+| ModernTalk (generative Klatt) | **0.943** |
 
-**Be plain about this: on English, the prototype is not yet as intelligible as
-the mature nearest-preset path.** ModernTalk produces connected, word-like speech
-— the recognizer returns real English phrases ("please always data", "certainly
-it cannot") rather than filler — and its vowels are acoustically distinct
-(measurable by the F2 split between `/i/`, `/ɑ/` and `/u/`). But its consonant
-place cues and word boundaries are weaker than the classic front end's mature
-allophonics, so the recognizer mishears words. Both numbers are poor in absolute
-terms, as expected for 1980s-era synthesis scored by a modern ASR.
+Both numbers are poor in absolute terms, as expected for 1980s-era synthesis
+scored by a modern ASR; the comparison is what matters. **The gap to the classic
+path has been closed from ~0.11 to 0.057** by acoustic-data-grounded parameter
+tuning:
+
+| iteration | change | ModernTalk WER |
+|---|---|---|
+| 0 | prototype | 1.000 |
+| 1 | English vowel formants calibrated to the DECtalk US target ROM (F3 band correction; Hillenbrand 1995 cross-check) | 0.943 |
+| 2 | DECtalk-anchored consonant place loci + low-F3 English rhotic `/ɹ/` | 0.943 |
+
+Every number above is from an actual `tools/modern_coverage.py --wer` run
+(Parakeet `istupakov/parakeet-tdt-0.6b-v2-onnx`). Iteration 1 gives the whole
+measurable gain; the iteration-2 consonant loci are WER-neutral on this small set
+but acoustically more correct (they are pinned to the DECtalk ROM and locus
+theory), and were kept for that reason.
+
+**Be plain: on English, ModernTalk is still not quite as intelligible as the
+mature nearest-preset path (0.943 vs 0.886).** After the vowel calibration it
+produces connected, word-like speech — the recognizer returns real English
+fragments ("please all the stellar", "small button", "we have a meal") rather
+than filler — and its vowels now land in the DECtalk cascade's tuned region. WER
+then **plateaus at 0.943**: a sweep of vowel/consonant duration, source
+amplitudes, burst level, stop-closure length, aspiration, F0 declination and
+stress, and word-boundary pausing did not beat it on this set, and forcing lower
+would mean overfitting ten fixed sentences.
+
+### Which sounds remain weak (honest, per-class)
+
+- **Word boundaries.** `parse_ipa` drops the spaces between words, so a sentence
+  is one continuous phone stream; the ASR fuses adjacent words ("She sells" →
+  "He has"). Inserting per-word silence *hurt* WER (over-segmentation loses
+  coarticulation), so the fix is real boundary-aware timing, not blank frames.
+- **Liquids `/l/` and dark-`/l/`.** A single alveolar locus; no clear/dark
+  allophony, no proper lateral-channel antiresonance.
+- **Stops in clusters** (`/kw/`, `/st/`, `/kt/`) blur — the one-frame burst plus
+  fixed VOT does not fully separate a cluster's releases.
+- **Unstressed / reduced vowels** are not reduced or shortened enough, so
+  function words are over-articulated relative to natural English.
 
 The trade is deliberate: the classic path is more polished on the English it was
-built for and **cannot attempt anything else**; ModernTalk is rougher on English
-but attempts every sound in the chart. Closing the English gap — better
-coarticulation, allophonic rules, per-language duration and stress — is the
-obvious next step.
+built for and **cannot attempt anything else**; ModernTalk is now within 0.06 WER
+of it on English *and* attempts every sound in the chart. Closing the last of the
+gap needs word-boundary-aware timing, clear/dark `/l/` allophony, cluster VOT and
+vowel reduction — structural front-end work beyond steady-target tuning.
 
 ## Honest limitations
 
 - **English polish.** ModernTalk trails the mature front end on English WER
-  (above). It needs real coarticulation and allophonics, not just steady targets.
+  (0.943 vs 0.886). It needs word-boundary-aware timing and allophonics, not just
+  steady targets — see the per-class weaknesses above.
+- **No F4/F5 per phone.** The DECtalk frame slots expose F1–F3 (F4/F5 are fixed
+  per speaker), so the higher formants that add vowel naturalness cannot be set
+  from features on this synth.
 - **Voice quality.** One glottal source setting; no breathiness, creak or
   register control. Voices differ only by pitch floor and the DECtalk speaker's
   vocal-tract scaling.
@@ -185,4 +233,6 @@ ModernSAMEngine().say_ipa("ħaːl", path="haal_sam.wav")     # Arabic /ħ/, lo-f
 ```
 
 `python3 tools/modern_demo.py` renders a multilingual set on both engines for
-listening.
+listening. `python3 tools/modern_reel.py` renders an **A/B reel**: each English
+sentence through ModernTalk *and* the classic path side by side, plus the
+multilingual set (which the classic path cannot attempt).

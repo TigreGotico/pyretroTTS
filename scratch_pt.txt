@@ -1,0 +1,6 @@
+2026-07-11 15:57:37.993 - OVOS - ovos_plugin_manager.installation:installation module - WARNING - Deprecation version=3.0. Caller=ovos_plugin_manager.plugin_entry:8. ovos_plugin_manager.installation module is deprecated and will be removed in v3.0
+2026-07-11 15:57:38.033 - OVOS - ovos_plugin_manager.plugin_entry:plugin_entry module - WARNING - Deprecation version=3.0. Caller=ovos_plugin_manager:2. ovos_plugin_manager.plugin_entry module is deprecated and will be removed in v3.0
+2026-07-11 15:57:38.106 - OVOS - ovos_plugin_manager.templates.solvers:<module>:15 - WARNING - Deprecation version=3.0.0. Caller=ovos_yes_no_solver:6. ovos_plugin_manager.templates.solvers has been deprecated and will be removed in the next major release.
+Please migrate your code to use AbstractAgentEngine.
+The new classes live in ovos_plugin_manager.templates.agents
+..........

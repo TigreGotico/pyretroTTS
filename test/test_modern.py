@@ -33,6 +33,22 @@ def test_vowel_formants_track_openness_and_backness():
     assert decompose("i").f2 > decompose("u").f2
 
 
+def test_english_vowel_f3_sits_in_the_dectalk_synth_band():
+    # The DECtalk US target ROM keeps English F3 in a ~2300-2800 Hz band on this
+    # synth (see features._VOWELS calibration note). A vowel table with F3 far
+    # above that band (the pre-calibration /i/ F3 was 3010) pushes vowels out of
+    # the region the cascade is tuned for and hurts intelligibility.
+    for sym in ("i", "ɪ", "ɛ", "æ", "ɑ", "ʌ", "ɔ", "o", "ʊ", "u", "ə"):
+        assert 2200 <= decompose(sym).f3 <= 2800, sym
+
+
+def test_english_rhotic_approximant_has_low_f3():
+    # /ɹ/ is defined acoustically by a low F3 (DECtalk US R F3 = 1380); the
+    # neighbouring vowel must bend toward it, not toward a 2500 Hz default.
+    assert decompose("ɹ").f3 <= 1600
+    assert decompose("ɹ").rhotic
+
+
 def test_diacritics_fold_into_features():
     assert decompose("ãː").nasal and decompose("ãː").long
     assert decompose("ɚ").rhotic
