@@ -78,6 +78,28 @@ class Engine(ABC):
         voice = voice or next(iter(self.voices))
         return pcm_to_wav(self.synthesize(source, voice), path)
 
+    def say_ipa(
+        self, ipa: str, voice: str | None = None, path: str | None = None
+    ) -> bytes:
+        """Render an IPA string in `voice`, returning raw 16-bit mono PCM.
+
+        The IPA is translated into this engine's own phonetic alphabet and
+        rendered through its existing synthesis seam; it never runs the text
+        front end. When `path` is given the PCM is also written to a WAV file.
+        See `pyretrotts.ipa.IPA_LOSS` for what each engine cannot represent.
+        """
+        from .ipa import parse_ipa
+
+        voice = voice or next(iter(self.voices))
+        pcm = self._render_ipa(parse_ipa(ipa), voice)
+        if path is not None:
+            pcm_to_wav(pcm, path, self.sample_rate)
+        return pcm
+
+    def _render_ipa(self, clauses: list, voice: str) -> bytes:
+        """Render parsed IPA clauses to PCM through this engine's seam."""
+        raise NotImplementedError
+
     @property
     def sample_rate(self) -> int:
         return SamplingRate
@@ -105,6 +127,17 @@ class MacInTalkEngine(Engine):
 
     def synthesize(self, source: str, voice: str = "Fred") -> bytes:
         return synthesize_text(self.voices[voice], source)
+
+    def _render_ipa(self, clauses: list, voice: str) -> bytes:
+        from .api import synthesize_plan
+        from .ipa import ipa_to_native
+
+        voice_dict = self.voices[voice]
+        plans, _fallbacks = ipa_to_native("macintalk", clauses)
+        out = bytearray()
+        for plan in plans:
+            out += synthesize_plan(voice_dict, plan)
+        return bytes(out)
 
 
 class DECtalkEngine(Engine):
@@ -184,6 +217,23 @@ class DECtalkEngine(Engine):
 
     def sing(self, source: str, path: str, voice: str = "Perfect Paul") -> str:
         return pcm_to_wav(self.synthesize(source, voice), path)
+
+    def _render_ipa(self, clauses: list, voice: str) -> bytes:
+        """Render IPA through the ported DECtalk phoneme synthesizer.
+
+        Unlike plain text, phoneme rendering needs no FONIX dictionary, so this
+        path runs on every DECtalk voice. The 11025 Hz core is doubled to the
+        22050 Hz this engine reports, matching `_native_synthesize`.
+        """
+        from .dectalk.consts import SAMPLE_RATE_HZ
+        from .dectalk.phclause import speak_phonemes
+        from .ipa import ipa_to_native
+
+        index = self._NATIVE_INDEX.get(voice, 0)
+        native_clauses, _fallbacks = ipa_to_native("dectalk", clauses)
+        samples = speak_phonemes(index, native_clauses)
+        pcm = struct.pack(f"<{len(samples)}h", *samples)
+        return _upsample_2x(pcm) if SAMPLE_RATE_HZ * 2 == SamplingRate else pcm
 
     def render(self, score: DECtalkScore, default_voice: str = "Perfect Paul") -> bytes:
         """Render a parsed score, honouring each segment's voice."""
