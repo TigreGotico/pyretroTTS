@@ -642,8 +642,16 @@ closes each clause with the code that drives `phinton`'s clause-final intonation
 |---|---|---|
 | `,` `;` `:` | `COMMA` (115) | continuation rise, new clause |
 | `.` or unpunctuated end | `PERIOD` (116) | declarative fall |
-| `?` | `QUEST` (117) | question rise |
+| `?` (yes/no) | `QUEST` (117) | question rise |
+| `?` (wh-word) | `PERIOD` (116) | declarative fall |
 | `!` | `EXCLAIM` (118) | exclamation |
+
+A `?` clause opening with a wh-word (`what`, `why`, `who`, `how`, `where`,
+`when`, `which`, `whose`, `whom`) reads with the falling `PERIOD` terminator, not
+the `QUEST` rise (`ls_task.c` terminator selection); only a yes/no question keeps
+`QUEST`. With that, wh-questions (`what is that?`, `who are you?`,
+`what time is it?`, `where is it?`, `which way?`) render text -> PCM sample-exact
+across all ten voices.
 
 Each comma/period/question/exclaim opens a separate clause, exactly as the C
 flushes one `symbols[]` per clause to `phclause`; F0 and `phsettar` state carry
@@ -713,6 +721,18 @@ two mechanisms: the question `are you there` (the unported question-final
 restress) and `dr. smith` (an abbreviation title-stress edge). The two remaining
 framing-only misses (`what is that`, `give it to me`) are already PCM-exact via
 the ported `phsort` clause-final promotion / restress.
+
+### Wh-question terminator
+
+A `?` clause opening with a wh-word takes the falling `PERIOD` terminator, not the
+`QUEST` rise (see the terminator table above). With that one selection,
+`what is that?`, `who are you?`, `what time is it?`, `where is it?` and
+`which way?` render text -> PCM sample-exact across all ten voices;
+`test/test_dectalk_question.py` gates it (terminator selection in CI, oracle-gated
+PCM across the ten voices, and a mutation gate). The residual `?` cases are yes/no
+questions on a `be`-form auxiliary (`are you there?`, `is it cold?` -- a leading
+`S2` on the auxiliary; note `do`/`can` yes/no questions already render exact) and
+a `why` text-reading edge, both still open.
 
 The 52 framing-exact and 54 voice-0 PCM-exact texts are locked by
 `test/dectalk_grammar_golden.json`; `test_pcm_exact_all_voices` verifies each

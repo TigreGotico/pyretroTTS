@@ -48,6 +48,13 @@ _TERMINATORS: dict[str, int] = {
     ".": _PERIOD, "?": _QUEST, "!": _EXCLAIM,
 }
 
+# A `?` clause opening with a wh-word reads with a falling PERIOD terminator, not
+# the QUEST rise; only a yes/no question keeps QUEST (`ls_task.c` terminator
+# selection).
+_WH_WORDS = frozenset(
+    {"what", "why", "who", "how", "where", "when", "which", "whose", "whom"}
+)
+
 # US abbreviation expansions (`l_us_con.c` abbreviation handling). Each maps a
 # lowercased token (period stripped) to the word sequence it reads as.
 ABBREVIATIONS: dict[str, list[str]] = {
@@ -93,7 +100,10 @@ def _split_clauses(text: str) -> list[_Clause]:
                 last_abbrev = False
                 i += 1
                 continue
-            clauses.append(_Clause(tuple(words), _TERMINATORS[tok]))
+            terminator = _TERMINATORS[tok]
+            if tok == "?" and words and words[0].lower() in _WH_WORDS:
+                terminator = _PERIOD
+            clauses.append(_Clause(tuple(words), terminator))
             words = []
             last_abbrev = False
             i += 1
