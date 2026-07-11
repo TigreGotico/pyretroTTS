@@ -59,9 +59,11 @@ article mid-clause (`grammar_us.article_a_codes`, `ls_task.c:2632-2645`), and
 integers, ordinals, currency and decimals are read by the digit path's own
 phoneme lists (`numbers_us.number_token_send_codes`, `l_us_pr1.c`/`l_us_con.c`),
 so `123`, `2005`, `$5`, `$5.25` and the whole number/article battery frame and
-render bit-exact. What remains is the **question-final content-word restress**,
-the four-digit year-pairs reading (`1100` -> "eleven hundred"), the abbreviation
-title stress (`dr. smith`), homographs, and the other languages.
+render bit-exact. The **`Dr.`/`St.` title-abbreviation disambiguation** is now
+ported too (`title_abbrev_us.py`, `ls_task.c:2910`), so `dr. smith` renders
+sample-exact. What remains is the **question-final content-word restress** (a
+framing-only note; PCM-exact via `phsort`), the four-digit year-pairs reading
+(`1100` -> "eleven hundred"), homographs, and the other languages.
 
 | Piece | Module | State |
 |---|---|---|
@@ -703,21 +705,22 @@ mechanisms are exercised broadly).
 | vowelless speller words | 4/4 → 4/4 | 4/4 → 4/4 |
 | numbers | 6/9 → **9/9** | 6/9 → **9/9** |
 | questions | 1/3 → 1/3 | 2/3 → 2/3 |
-| abbreviations | 3/4 → 3/4 | 3/4 → 3/4 |
+| abbreviations | 3/4 → **4/4** | 3/4 → **4/4** |
 | dictionary verbs (VPSTART) | 4/4 → 4/4 | 4/4 → 4/4 |
 | function words | 2/4 → **3/4** | 3/4 → **4/4** |
 | conjunctions / preps (`and`/`for`) | 3/4 → **4/4** | 3/4 → **4/4** |
 | inflection (plurals / `-ed` / `-ing`) | 8/8 → 8/8 | 8/8 → 8/8 |
-| **total** | 47/56 → **52/56** | 49/56 → **55/56** |
+| **total** | 47/56 → **53/56** | 49/56 → **56/56** |
 
 The article reduction makes `that is a cat` and `a dog and a cat` framing- and
 PCM-exact (the article `a` reduces to a schwa mid-clause); the digit path makes
 `123`, `2005`, `$5` (and the whole extended number/currency/decimal battery)
 bit-exact -- `$5` is closed by porting the real currency reader (its `pdollar`
 vowel), as anticipated. The clause-head be-form `S2` (below) closes `are you
-there` (the last question PCM miss). The **sole remaining voice-0 PCM miss** is
-`dr. smith` -- the unported `Dr.`-title abbreviation disambiguation. The three
-remaining framing-only misses (`what is that`, `are you there`, `give it to me`)
+there` (the last question PCM miss), and the `Dr.`-title disambiguation
+(`title_abbrev_us.py`, below) closes `dr. smith` -- the battery is now **56/56
+text -> PCM sample-exact** across all ten voices. The three remaining
+framing-only misses (`what is that`, `are you there`, `give it to me`)
 are all PCM-exact via the ported `phsort` clause-final promotion / restress: the
 symbol stream carries an `S2` where the oracle records an `S1` on a pronoun, and
 `phsort` reconciles the two before the VTM.
@@ -765,20 +768,36 @@ letter by letter. Adding `y` to `spell_us._VOWELS` makes `why not?` and the
 `test_gate_bites_without_y_vowel`). A token with no `a/e/i/o/u/y` (`pqr`, `tv`)
 is still spelled.
 
-### `dr. smith` -- still open (parser subsystem)
+### `dr. smith` -- closed (`Dr.`/`St.` title-abbreviation disambiguation)
 
-`Dr.` is context-disambiguated by the C: before a proper name it reads as the
-**destressed** title `doctor` (oracle `[D, AA, K, T, RR]` -- no `S1`, `AA` vowel),
-elsewhere (`the dr. is in`) as `drive` (`[D, RR, S1, AY, V]`). Both forms are
-dedicated data symbols `pdoctor`/`pdrive` (`lts/ltsnames.h:193-194`) selected by
-the capitalization/name-detection logic in the unported `cmd/par_*.c` parser; the
-`AA` title vowel is not derivable from the full-word `doctor` entry (dictionary
-`[D, S1, AO, K, T, RR]`, which `doctor smith` renders exactly). Reproducing this
-is a parser subsystem, not a small rule, so it is left as the one open residual:
-`sentence_us.ABBREVIATIONS` expands `dr` -> the full word `doctor`, so `dr. smith`
-diverges from the oracle (`test_dr_title_abbreviation_is_open` locks the gap).
+`Dr.` and `St.` are context-disambiguated by the C: before a proper name they read
+as the **destressed** title `doctor`/`saint` (oracle `pdoctor` `[D, AA, K, T, RR]`
+-- no `S1`, `AA` vowel -- and `psaint` `[S, EY, N, T]`), elsewhere (`the dr. is in`)
+as `drive`/`street` (`pdrive` `[D, R, S1, AY, V]`, `pstreet` `[S, T, R, S2, IY, T]`).
+The four fixed phone lists live in `l_us_con.c:615-629`; the selection is
+`ls_task_Dr_St_process` (`ls_task.c:2910`), **not** the general `cmd/par_*.c`
+parser -- it is a self-contained lookahead over the one following word. The rule
+(reached only when a `.` follows the abbreviation, `ls_task.c:2931`):
 
-The 52 framing-exact and 54 voice-0 PCM-exact texts are locked by
+- the following word is capitalized and is not itself a back-to-back `Dr`/`St`
+  (`ls_task.c:2944-2955`): **title**;
+- the following word is capitalized but exactly `Dr`/`St` (`ls_task.c:2947`, the
+  GL 1997 back-to-back fix): **word**;
+- the following word is lowercase and the abbreviation is the sentence's first
+  word (`cur_word_index == 1`, `ls_task.c:2961`): **title**;
+- clause-final (no following word) or otherwise: **word**.
+
+Only `Dr` and `St` have dedicated title symbols; `Mr`/`Mrs`/`Ms` expand through
+the ordinary abbreviation table. `title_abbrev_us.py` ports the four phone lists
+(trailing `SIL` dropped, as with the `sdic[]` entries) and the selection rule;
+`sentence_us.py` emits the resolved title/word body for a `.`-terminated `dr`/`st`
+instead of the full-word `doctor`/`saint` expansion. `dr. smith`, `st. john`,
+`the dr. is in`, `doctor smith` (control) and `i saw dr. smith` are all
+framing- and PCM-exact across ten voices (`test/test_dectalk_title.py`,
+mutation-gated by `test_gate_bites_on_swapped_title_and_word`;
+`test/test_dectalk_residual.py::test_dr_title_abbreviation_is_closed`).
+
+The 53 framing-exact and 56 voice-0 PCM-exact texts are locked by
 `test/dectalk_grammar_golden.json`; `test_pcm_exact_all_voices` verifies each
 PCM-exact text stays sample-exact across all ten voices, and
 `test_golden_gate_bites` verifies the gate bites. `test/test_dectalk_wordclass.py`
@@ -864,23 +883,27 @@ re-enters the same `Dictionary`; a stem miss falls through to the rules.
 
 ### Is full US DECtalk text-to-speech parity reached?
 
-**NO -- one text-reading residual remains: `dr. smith`.** Everything else in the
-general running-text battery is whole-sentence text -> PCM **sample-exact vs the
-oracle across all ten voices**: plain statements, comma/semicolon lists, spelled
-words, dictionary-verb sentences, `for`/`and`/`to` conjunction/prep sentences,
-**inflected words (plurals, `-ed`, `-ing`, possessive)**, **the schwa article
-`a`**, **digit-path numbers / currency / ordinals / decimals**, **wh-questions**,
-**yes/no questions on a `be`-form auxiliary**, and **`y`-vowel words (`why`)**
-(the 55 PCM-exact battery texts). This pass closed two of the three residuals
-named last time: the clause-head be-form `S2` (yes/no `is it cold?`/`are you
+**YES -- the general running-text battery is now 56/56 text -> PCM sample-exact
+across all ten voices.** Every text is whole-sentence text -> PCM **sample-exact
+vs the oracle across all ten voices**: plain statements, comma/semicolon lists,
+spelled words, dictionary-verb sentences, `for`/`and`/`to` conjunction/prep
+sentences, **inflected words (plurals, `-ed`, `-ing`, possessive)**, **the schwa
+article `a`**, **digit-path numbers / currency / ordinals / decimals**,
+**wh-questions**, **yes/no questions on a `be`-form auxiliary**, **`y`-vowel words
+(`why`)**, and **the `Dr.`/`St.` title-abbreviation disambiguation (`dr. smith`)**.
+This pass closed the last of the three residuals named earlier -- the `Dr.`-title
+reading -- after the clause-head be-form `S2` (yes/no `is it cold?`/`are you
 there?`) and the `y`-vowel speller decision (`why not?`).
 
-The **one remaining gap** is `dr. smith`: the `Dr.`-title abbreviation
-disambiguation (`pdoctor`/`pdrive`, `lts/ltsnames.h:193-194`, selected by the
-unported `cmd/par_*.c` capitalization/name parser). It is a parser subsystem, not
-a small rule, so full US DECtalk text->speech parity is **not yet reached**; the
-exact and only outstanding residual is `dr. smith` (destressed `AA`-vowel title
-`doctor`, C site `cmd/par_*.c` + `lts/ltsnames.h:193`).
+`dr. smith` was closed by porting `ls_task_Dr_St_process` (`ls_task.c:2910`) and
+the four `l_us_con.c:615-629` phone lists into `title_abbrev_us.py`: the
+disambiguation is a self-contained one-word lookahead, **not** the general
+`cmd/par_*.c` parser. Framing carries three PCM-exact-only misses (`what is that`,
+`are you there`, `give it to me`) where the symbol stream holds an `S2` the
+oracle records as `S1` on a pronoun and `phsort` reconciles before the VTM; those
+are the unported nuclear-stress reassignment of `cmd/par_*.c`, framing-only. **Full
+US DECtalk text -> speech parity for the running-text battery is reached (56/56
+PCM across ten voices).**
 
 ## The in-context article reduction (`grammar_us.article_a_codes`)
 
