@@ -23,9 +23,25 @@ for all ten voices** from a phoneme+stress+sentence-structure `symbols[]` stream
 (the `lts/`/`cmd/` output). The `lts/` letter-to-sound rule engine that pronounces
 out-of-dictionary words is now ported too (`lts_rules.py`); a lone dictionary or
 rule-driven word composes text -> phonemes -> PCM sample-exact vs the oracle.
-What remains for full text-to-speech is multi-word/clause sentence framing plus
-numbers, abbreviations, homographs, the vowelless-word speller, and the other
-languages.
+
+The **multi-word / multi-clause sentence front end** is now ported
+(`sentence_us.py`): text is split into clauses on punctuation, each word is framed
+with an inter-word boundary marker, and each clause is closed by the intonation
+terminator (comma/semicolon/colon continuation-rise, period declarative fall,
+question rise, exclamation). Numbers, currency, ordinals and abbreviations expand
+to words first (`numbers_us.py`, the abbreviation table), and a vowelless token is
+spelled letter by letter (`spell_us.py`). For sentences the C's syntactic parser
+leaves at plain word boundaries -- plain statements, comma lists, and spelled
+words -- this composes **whole-sentence text -> PCM sample-exact vs the oracle
+across all ten voices** (see the sentence section below), and drives
+`DECtalkEngine.synthesize` natively when the FONIX dictionary is present.
+
+What remains for arbitrary running text is the C's English **grammar/POS parser**
+(`cmd/par_*.c`, `l_us_con.c`): it promotes some word boundaries to phrase markers
+(`PPSTART`/`VPSTART`/`RELSTART`), reassigns function-word stress, does
+morphological dictionary lookup, and reads numbers/abbreviations back through the
+same phrase machinery. That layer is not ported; homographs and the other
+languages also remain.
 
 | Piece | Module | State |
 |---|---|---|
@@ -50,7 +66,11 @@ languages.
 | `lts/` letter-to-sound rules (`ls_rule*`, `ls_adju*`, `l_us_ad1`) | `lts_rules.py` | **pre-`ph/` stream exact vs oracle for out-of-dictionary alphabetic words (188/189 rule-eligible)** |
 | `lts/` rule/prefix/feature tables (`acna_lswtab`, `acna_lsbtab`, `feats`, `pfeat`, `preftab`, `ls_fold`) | `lts_rules_data.py` | read verbatim from `libtts_us.so` |
 | text -> phonemes -> PCM wiring (lone word) | `text_us.py` | **sample-exact vs oracle WAV (dict + rule, 10 voices)** |
-| numbers, abbreviations, homograph POS, word speller | — | **not ported** |
+| sentence front end: clause split, framing, terminators (`cmd/`, `ls_task.c`) | `sentence_us.py` | **whole-sentence text -> PCM sample-exact vs oracle (plain statements, comma lists, speller; 10 voices)** |
+| number / currency / ordinal expansion (`l_us_con.c`) | `numbers_us.py` | word sequence matches oracle (0-99 framed bit-exact; 100+ needs the grammar parser) |
+| vowelless-word speller + letter-name table (`ls_spel.c`, `l_us_spe.c`) | `spell_us.py` | **pre-`ph/` stream + PCM bit-exact vs oracle** |
+| abbreviation table (`l_us_con.c`) | `sentence_us.py` | word sequence matches oracle (framing needs the grammar parser) |
+| English grammar/POS parser: phrase markers, function-word stress, homograph POS | — | **not ported** |
 
 ## The oracle
 
@@ -504,9 +524,20 @@ capture per input suffices.
 
 ### What is stubbed (US)
 
-- **Number and abbreviation expansion.** `123 -> "one hundred twenty three"`,
-  `Dr. -> "doctor"` etc. (`lts/`) are not ported; the oracle captures show the
-  expected expansions for the future work.
+- **The English grammar/POS parser** (`cmd/par_*.c`, `l_us_con.c`). This is the
+  single remaining barrier to full text parity. It promotes some word boundaries
+  to phrase markers (`PPSTART`/`VPSTART`/`RELSTART`), reassigns function-word
+  stress (a lone function word like `you`/`are`/`that` is emphasised, reduced in
+  context), does morphological dictionary lookup (`dogs -> dog + s`), and reads
+  numbers and abbreviations back through the same phrase machinery. `sentence_us.py`
+  reproduces the framing the parser leaves at plain word boundaries; where the
+  parser inserts a phrase marker or restresses a word the ported framing diverges
+  by exactly that marker/stress.
+- **Number and abbreviation framing.** `numbers_us.py` and the abbreviation table
+  produce the correct **word sequence** (`123 -> one hundred and twenty three`,
+  `Dr. -> doctor`), matching the oracle; but 100-and-up numbers and multi-word
+  abbreviation contexts run back through the grammar parser above, so their framed
+  `symbols[]` (and PCM) are not yet bit-exact. Numbers 0-99 frame bit-exactly.
 - **Homograph / duplicate-grapheme selection.** Needs the part-of-speech pass;
   a hit returns the record the search lands on.
 - **`[:phoneme on]` phonetic-input decoding** (`cmd/cm_phon.c`) and `[:dv]`,
@@ -572,6 +603,80 @@ spoken with no markup: dictionary lookup or, on a miss, the rule engine, then th
 voices (`test/test_dectalk_lts_rules.py`, oracle-gated:
 10/10 OOD words at voice 0, 111 612/111 612 samples; verified dict+rule across
 voices).
+
+## The sentence front end (`sentence_us.py`)
+
+`sentence_to_clauses` turns whole text into the per-clause `symbols[]` streams
+the C hands to `phclause` -- the same pre-`ph/` boundary the lone-word path
+targets, extended to sentences. It tokenizes text, splits it into clauses on
+punctuation, frames each clause as `FONT, (WBOUND + word body)*, terminator`, and
+closes each clause with the code that drives `phinton`'s clause-final intonation:
+
+| Punctuation | Terminator | `phinton` |
+|---|---|---|
+| `,` `;` `:` | `COMMA` (115) | continuation rise, new clause |
+| `.` or unpunctuated end | `PERIOD` (116) | declarative fall |
+| `?` | `QUEST` (117) | question rise |
+| `!` | `EXCLAIM` (118) | exclamation |
+
+Each comma/period/question/exclaim opens a separate clause, exactly as the C
+flushes one `symbols[]` per clause to `phclause`; F0 and `phsettar` state carry
+across those clauses (`synthesize_clauses`, already ported). Before framing, a
+numeric or currency token expands to words (`numbers_us.py`), a known abbreviation
+expands from the table, and a token with no vowel is spelled letter by letter
+(`spell_us.py`, whose per-letter phoneme streams are captured verbatim from the
+oracle). Every produced word then runs through `text_us.word_to_codes` (dictionary
+or rule) like a typed word.
+
+The boundary marker emitted here is the plain `WBOUND` (111). The C's syntactic
+parser instead promotes some boundaries to phrase markers and restresses function
+words; that grammar layer is not ported (see *What is stubbed*), so the framing is
+faithful for clauses the parser leaves at plain word boundaries.
+
+### Verification
+
+`tools/dump_dectalk_sentence.py` captures the oracle's per-clause `phclause` input
+over a varied set (plain statements, comma/semicolon lists, a question, numbers,
+an abbreviation, and vowelless speller words) into
+`test/dectalk_sentence_golden.json`, recording only the texts the port reproduces
+bit-exactly (28 of the set) so the gate bites on any framing regression.
+`test/test_dectalk_sentence.py`:
+
+- **CI-safe** (no oracle, no dictionary): clause splitting + terminators, the
+  speller against its golden capture (4/4 bit-exact), and the number/abbreviation
+  **word sequences** (`123 -> one hundred and twenty three`, `2005 -> two thousand
+  and five`, `$5 -> five dollars`, `Dr. -> doctor`). A mutation of the terminator
+  no longer matches the golden (`test_golden_gate_bites`).
+- **dictionary-gated**: every golden text reframes bit-exactly to the oracle
+  `symbols[]`.
+- **oracle-gated**: whole-sentence **text -> PCM is sample-exact vs the oracle WAV
+  across all ten voices** over plain statements, a comma list, and a spelled word
+  (`test_sentence_text_to_pcm_all_voices`: 60/60 renders exact, ~1.03M samples).
+
+### Measured coverage (voice 0, oracle diff over a 38-sentence battery)
+
+| Category | framing bit-exact | text -> PCM sample-exact |
+|---|---|---|
+| plain multi-word statements | 14/15 | 13/15 |
+| comma / semicolon lists | 3/3 | 3/3 |
+| vowelless speller words | 4/4 | 4/4 |
+| numbers | 5/9 | 7/9 |
+| questions | 1/3 | 1/3 |
+| abbreviations | 1/4 | 1/4 |
+
+The misses are all attributable to the unported grammar/POS parser (phrase
+markers on function words like `and`, and clause-final content-word restressing in
+questions) except `the cat sat`, which is a residual `phclause` divergence
+independent of framing: feeding the **oracle's own** captured `symbols[]` for it
+through `speak_phonemes` reproduces the same 528-sample difference.
+
+### Full text-to-PCM through the public engine
+
+`DECtalkEngine.synthesize(text, voice)` now renders plain text through this native
+chain for the ten voices when the FONIX `dtalk_us.dic` is present (located via
+`$DECTALK_DIR` or the built oracle `dist/`), falling back to the MacinTalk
+substitute voices when it is not (as in CI). For the bit-exact scope the returned
+bytes equal the oracle WAV PCM exactly.
 
 What remains for arbitrary running text is the **multi-word / multi-clause
 framing** -- the inter-word markers, comma/question clause splitting, and the
