@@ -40,6 +40,9 @@ TEXTS = [
     "what is that? really?",            # two questions
     "no. absolutely not. never again.",  # three short clauses
     "hello there. how are you?",        # statement then question
+    "the cat sat",                      # final /t/ release -> silence (leftover K)
+    "he got a big cat",                 # cross-word final stop into silence
+    "stop the truck",                   # word-final /k/ into silence
 ]
 
 
