@@ -44,15 +44,23 @@ MANNER_TAP = "tap"
 
 #: place name -> (F2 locus Hz, frication/burst spectral centre Hz, ordinal).
 #: The ordinal (front-to-back rank) drives the articulatory distance metric.
+#: F2 loci follow locus theory (Stevens 1998, *Acoustic Phonetics*; Delattre,
+#: Liberman & Cooper 1955 JASA 27(4)) and are pinned to the shipped DECtalk US
+#: consonant targets on this exact synth (US_MALTAR: /n/ 1540, velar /ŋ/ 1600,
+#: /m/ 1120, /f/ 1100, /ð/ 1300). The alveolar CV-transition locus is held at
+#: 1700 (measured best on this front end; DECtalk's /t d n/ closure value 1540-
+#: 1600 is the locus a full transition model bends *toward*, not the target
+#: itself). Frication centres are the noise spectral peaks in Stevens 1998
+#: (sibilant /s/ ~5-8 kHz, /ʃ/ ~2.5-3.5 kHz).
 PLACES: dict[str, tuple[int, int, int]] = {
     "bilabial": (1000, 1000, 0),
     "labiodental": (1100, 4500, 1),
-    "dental": (1700, 4200, 2),
+    "dental": (1400, 4200, 2),
     "alveolar": (1700, 5200, 3),
-    "postalveolar": (2000, 3000, 4),
+    "postalveolar": (1800, 3000, 4),
     "retroflex": (1600, 2500, 5),
-    "palatal": (2200, 3200, 6),
-    "velar": (1300, 1900, 7),
+    "palatal": (2100, 3200, 6),
+    "velar": (1600, 1900, 7),
     "uvular": (1050, 1500, 8),
     "pharyngeal": (1000, 1200, 9),
     "glottal": (1500, 1000, 10),
@@ -288,12 +296,23 @@ def decompose(symbol: str) -> FeatureBundle:
     if base in _CONSONANTS:
         place, manner, voiced, lateral = _CONSONANTS[base]
         locus, center, _ = PLACES[place]
+        # English rhotic approximants /ɹ ɻ/ are defined acoustically by a very
+        # low F3 (Espy-Wilson et al. 2000 JASA 108(1); DECtalk US R F2 1030,
+        # F3 1380), which the neighbouring vowel bends toward. Give them the
+        # low F2/F3 locus rather than the generic alveolar/retroflex values.
+        rhotic_appr = base in ("ɹ", "ɻ")
+        if rhotic_appr:
+            f2_locus, f3_locus = 1100, 1400
+        elif place == "retroflex":
+            f2_locus, f3_locus = locus, 1600
+        else:
+            f2_locus, f3_locus = locus, 2500
         b = FeatureBundle(
             symbol, False, voiced=voiced, lateral=lateral,
             nasal=(manner == MANNER_NASAL),
-            rounded=base in _ROUND_CONSONANTS,
+            rounded=base in _ROUND_CONSONANTS, rhotic=rhotic_appr,
             f1=(280 if manner in (MANNER_NASAL, MANNER_STOP) else 400),
-            f2=locus, f3=(1600 if place == "retroflex" else 2500),
+            f2=f2_locus, f3=f3_locus,
             fric_center=center, manner=manner, place=place)
         if base in _ROUND_CONSONANTS:  # /w/, /ɥ/ lip rounding
             b = replace(b, f2=max(700, b.f2 - 300))
