@@ -1,0 +1,425 @@
+{
+ "note": "UK oracle raw pre-ph/ phoneme+stress stream (ls_util_send_phone, DECTALK_LTS_DUMP) and PCM length, libtts_uk.so voice 0. Fixture for the UK front-end port; codes are raw indices (<100 phoneme, >=100 prosody).",
+ "font": "PFUK=0x1D",
+ "battery": {
+  "car": {
+   "codes": [
+    49,
+    103,
+    6
+   ],
+   "pcm_len": 11999,
+   "phon_decodes": true
+  },
+  "water": {
+   "codes": [
+    121,
+    24,
+    103,
+    10,
+    47,
+    17,
+    26
+   ],
+   "pcm_len": 13064,
+   "phon_decodes": true
+  },
+  "nurse": {
+   "codes": [
+    32,
+    103,
+    15,
+    41
+   ],
+   "pcm_len": 12496,
+   "phon_decodes": true
+  },
+  "square": {
+   "codes": [
+    41,
+    49,
+    24,
+    103,
+    20
+   ],
+   "pcm_len": 13490,
+   "phon_decodes": true
+  },
+  "near": {
+   "codes": [
+    32,
+    19
+   ],
+   "pcm_len": 11360,
+   "phon_decodes": true
+  },
+  "cure": {
+   "codes": [
+    49,
+    103,
+    23
+   ],
+   "pcm_len": 12141,
+   "phon_decodes": true
+  },
+  "north": {
+   "codes": [
+    32,
+    103,
+    10,
+    39
+   ],
+   "pcm_len": 11999,
+   "phon_decodes": true
+  },
+  "start": {
+   "codes": [
+    41,
+    47,
+    103,
+    6,
+    47
+   ],
+   "pcm_len": 13561,
+   "phon_decodes": true
+  },
+  "hello world": {
+   "codes": [
+    28,
+    17,
+    27,
+    103,
+    11,
+    111,
+    24,
+    103,
+    15,
+    27,
+    48
+   ],
+   "pcm_len": 18247,
+   "phon_decodes": true
+  },
+  "computer": {
+   "codes": [
+    121,
+    49,
+    17,
+    31,
+    45,
+    103,
+    25,
+    14,
+    47,
+    17,
+    26
+   ],
+   "pcm_len": 15336,
+   "phon_decodes": true
+  },
+  "better": {
+   "codes": [
+    121,
+    46,
+    103,
+    4,
+    47,
+    17,
+    26
+   ],
+   "pcm_len": 12496,
+   "phon_decodes": true
+  },
+  "thirty": {
+   "codes": [
+    39,
+    103,
+    15,
+    47,
+    1
+   ],
+   "pcm_len": 13490,
+   "phon_decodes": true
+  },
+  "father": {
+   "codes": [
+    121,
+    37,
+    103,
+    6,
+    40,
+    17,
+    26
+   ],
+   "pcm_len": 13206,
+   "phon_decodes": true
+  },
+  "letter": {
+   "codes": [
+    121,
+    27,
+    103,
+    4,
+    47,
+    17,
+    26
+   ],
+   "pcm_len": 12709,
+   "phon_decodes": true
+  },
+  "about": {
+   "codes": [
+    17,
+    46,
+    102,
+    8,
+    47
+   ],
+   "pcm_len": 13561,
+   "phon_decodes": true
+  },
+  "because": {
+   "codes": [
+    46,
+    18,
+    49,
+    102,
+    29,
+    42
+   ],
+   "pcm_len": 14555,
+   "phon_decodes": true
+  },
+  "answer": {
+   "codes": [
+    121,
+    103,
+    6,
+    32,
+    41,
+    17,
+    26
+   ],
+   "pcm_len": 13490,
+   "phon_decodes": true
+  },
+  "after": {
+   "codes": [
+    121,
+    6,
+    37,
+    47,
+    17,
+    26
+   ],
+   "pcm_len": 12780,
+   "phon_decodes": true
+  },
+  "dance": {
+   "codes": [
+    48,
+    103,
+    6,
+    32,
+    41
+   ],
+   "pcm_len": 13916,
+   "phon_decodes": true
+  },
+  "tomato": {
+   "codes": [
+    47,
+    17,
+    31,
+    103,
+    6,
+    47,
+    11
+   ],
+   "pcm_len": 16117,
+   "phon_decodes": true
+  },
+  "schedule": {
+   "codes": [
+    43,
+    103,
+    4,
+    48,
+    16,
+    27
+   ],
+   "pcm_len": 14342,
+   "phon_decodes": true
+  },
+  "garage": {
+   "codes": [
+    50,
+    103,
+    5,
+    26,
+    6,
+    44
+   ],
+   "pcm_len": 14484,
+   "phon_decodes": true
+  },
+  "either": {
+   "codes": [
+    121,
+    7,
+    40,
+    17,
+    26
+   ],
+   "pcm_len": 11715,
+   "phon_decodes": true
+  },
+  "herb": {
+   "codes": [
+    28,
+    103,
+    15,
+    46
+   ],
+   "pcm_len": 12496,
+   "phon_decodes": true
+  },
+  "vase": {
+   "codes": [
+    38,
+    103,
+    6,
+    41
+   ],
+   "pcm_len": 12851,
+   "phon_decodes": true
+  },
+  "zebra": {
+   "codes": [
+    42,
+    103,
+    4,
+    46,
+    26,
+    17
+   ],
+   "pcm_len": 12922,
+   "phon_decodes": true
+  },
+  "yes": {
+   "codes": [
+    25,
+    103,
+    4,
+    41
+   ],
+   "pcm_len": 11999,
+   "phon_decodes": true
+  },
+  "ship": {
+   "codes": [
+    43,
+    103,
+    2,
+    45
+   ],
+   "pcm_len": 11928,
+   "phon_decodes": true
+  },
+  "measure": {
+   "codes": [
+    121,
+    31,
+    103,
+    4,
+    44,
+    17,
+    26
+   ],
+   "pcm_len": 12283,
+   "phon_decodes": true
+  },
+  "church": {
+   "codes": [
+    54,
+    103,
+    15,
+    54
+   ],
+   "pcm_len": 13916,
+   "phon_decodes": true
+  },
+  "judge": {
+   "codes": [
+    55,
+    103,
+    9,
+    55
+   ],
+   "pcm_len": 12709,
+   "phon_decodes": true
+  },
+  "thin": {
+   "codes": [
+    39,
+    103,
+    2,
+    32
+   ],
+   "pcm_len": 11360,
+   "phon_decodes": true
+  },
+  "then": {
+   "codes": [
+    40,
+    102,
+    4,
+    32
+   ],
+   "pcm_len": 11076,
+   "phon_decodes": true
+  },
+  "sing": {
+   "codes": [
+    113,
+    41,
+    103,
+    2,
+    33
+   ],
+   "pcm_len": 11573,
+   "phon_decodes": true
+  },
+  "little": {
+   "codes": [
+    27,
+    103,
+    2,
+    47,
+    34
+   ],
+   "pcm_len": 12993,
+   "phon_decodes": true
+  },
+  "red": {
+   "codes": [
+    26,
+    103,
+    4,
+    48
+   ],
+   "pcm_len": 11857,
+   "phon_decodes": true
+  },
+  "sun": {
+   "codes": [
+    41,
+    103,
+    9,
+    32
+   ],
+   "pcm_len": 11857,
+   "phon_decodes": true
+  }
+ }
+}
