@@ -36,11 +36,23 @@ words -- this composes **whole-sentence text -> PCM sample-exact vs the oracle
 across all ten voices** (see the sentence section below), and drives
 `DECtalkEngine.synthesize` natively when the FONIX dictionary is present.
 
-What remains for arbitrary running text is the C's English **grammar/POS parser**
-(`cmd/par_*.c`, `l_us_con.c`): it promotes some word boundaries to phrase markers
-(`PPSTART`/`VPSTART`/`RELSTART`), reassigns function-word stress, does
-morphological dictionary lookup, and reads numbers/abbreviations back through the
-same phrase machinery. That layer is not ported; homographs and the other
+The **word-level syntactic marking** is now ported (`grammar_us.py`): the US
+front end has **no runtime grammar/POS parser** -- the `cmd/par_*.c` files are a
+character-level text preprocessor, not a syntactic parser, and none of the
+phrase-marker form-class names (`PPSTART`/`VPSTART`) is referenced in the
+compiled path. The phrase markers `phclause` reads come from the **word-reading
+path**: a dictionary word's stored **form-class bits** (`ls_dict.c:759-763`)
+promote its boundary to `VPSTART` (a verb) or `PPSTART` (a prep phrase), and the
+closed-class mini-dictionary `sdic[]` (`l_us_con.c:1157`) pronounces `for`/`and`/
+`to` from a fixed `PPSTART`-led list. `grammar_us.py` reproduces both, so
+dictionary verbs, `for`/`and`/`to`, and prep-phrase words frame bit-exactly.
+
+What remains is the **in-context function-word reduction** (the stressed article
+`a` reduced to a schwa; the clause-final citation promotion of a lone `for`/`to`/
+`and`), the **question-final content-word restress**, **inflectional morphology**
+(`dogs -> dog + s`, the `ls_suff.c` suffix trie is not extracted), and the
+**digit-path number reading** (`l_us_pr1.c`, whose 100-and-up `and` uses
+`VPSTART` where the spelled-out words use `PPSTART`). Homographs and the other
 languages also remain.
 
 | Piece | Module | State |
@@ -69,8 +81,9 @@ languages also remain.
 | sentence front end: clause split, framing, terminators (`cmd/`, `ls_task.c`) | `sentence_us.py` | **whole-sentence text -> PCM sample-exact vs oracle (plain statements, comma lists, speller; 10 voices)** |
 | number / currency / ordinal expansion (`l_us_con.c`) | `numbers_us.py` | word sequence matches oracle (0-99 framed bit-exact; 100+ needs the grammar parser) |
 | vowelless-word speller + letter-name table (`ls_spel.c`, `l_us_spe.c`) | `spell_us.py` | **pre-`ph/` stream + PCM bit-exact vs oracle** |
-| abbreviation table (`l_us_con.c`) | `sentence_us.py` | word sequence matches oracle (framing needs the grammar parser) |
-| English grammar/POS parser: phrase markers, function-word stress, homograph POS | — | **not ported** |
+| abbreviation table (`l_us_con.c`) | `sentence_us.py` | word sequence matches oracle; framing bit-exact where the word markers suffice |
+| word-level syntactic marking: form-class phrase markers, `sdic[]` closed class (`ls_dict.c`, `l_us_con.c`) | `grammar_us.py` | **VPSTART/PPSTART bit-exact vs oracle for dict verbs, preps, and `for`/`and`/`to`** |
+| in-context function-word reduction, question-final restress, inflectional morphology, digit-path numbers | — | **not ported** |
 
 ## The oracle
 
@@ -524,15 +537,19 @@ capture per input suffices.
 
 ### What is stubbed (US)
 
-- **The English grammar/POS parser** (`cmd/par_*.c`, `l_us_con.c`). This is the
-  single remaining barrier to full text parity. It promotes some word boundaries
-  to phrase markers (`PPSTART`/`VPSTART`/`RELSTART`), reassigns function-word
-  stress (a lone function word like `you`/`are`/`that` is emphasised, reduced in
-  context), does morphological dictionary lookup (`dogs -> dog + s`), and reads
-  numbers and abbreviations back through the same phrase machinery. `sentence_us.py`
-  reproduces the framing the parser leaves at plain word boundaries; where the
-  parser inserts a phrase marker or restresses a word the ported framing diverges
-  by exactly that marker/stress.
+- **In-context function-word reduction and clause-final promotion.** The word
+  markers are ported (`grammar_us.py`, see below), but the reduction of a
+  stressed citation form in context is not: the article `a` (dictionary `[S1 EY]`)
+  stays long instead of reducing to a schwa, and a lone clause-final `for`/`to`/
+  `and` is not re-stressed to its citation form. This reduction is driven by the
+  `WORD_CLASS` control phone the C ships down the pipe (`ls_util.c:800`) and the
+  `ph_sort.c:1116` kludge, neither of which is fed/run in this path.
+- **Question-final content-word restress** (`what is *that*`): the clause-final
+  content word takes primary stress in a question; not reproduced.
+- **Inflectional morphology** (`dogs -> dog + s`, `-ed`/`-ing`/`-s`/possessive).
+  The `ls_suff.c` suffix trie is not extracted; an inflected miss is pronounced
+  by the letter-to-sound rules, which is usually right but not always bit-exact.
+- **Homograph / duplicate-grapheme selection.** Needs the part-of-speech pass.
 - **Number and abbreviation framing.** `numbers_us.py` and the abbreviation table
   produce the correct **word sequence** (`123 -> one hundred and twenty three`,
   `Dr. -> doctor`), matching the oracle; but 100-and-up numbers and multi-word
@@ -653,22 +670,37 @@ bit-exactly (28 of the set) so the gate bites on any framing regression.
   across all ten voices** over plain statements, a comma list, and a spelled word
   (`test_sentence_text_to_pcm_all_voices`: 60/60 renders exact, ~1.03M samples).
 
-### Measured coverage (voice 0, oracle diff over a 38-sentence battery)
+### Measured coverage (voice 0, oracle diff over a 48-sentence battery)
 
-| Category | framing bit-exact | text -> PCM sample-exact |
+Before/after the word-level syntactic marking (`grammar_us.py`), voice 0, over
+the `test/test_dectalk_grammar.py` battery. The `after` column is what the port
+reproduces today; the gate is `test/dectalk_grammar_golden.json`.
+
+| Category | framing before → after | text -> PCM before → after |
 |---|---|---|
-| plain multi-word statements | 14/15 | 13/15 |
-| comma / semicolon lists | 3/3 | 3/3 |
-| vowelless speller words | 4/4 | 4/4 |
-| numbers | 5/9 | 7/9 |
-| questions | 1/3 | 1/3 |
-| abbreviations | 1/4 | 1/4 |
+| plain multi-word statements | 12/12 → 12/12 | 11/12 → 11/12 |
+| comma / semicolon lists | 4/4 → 4/4 | 4/4 → 4/4 |
+| vowelless speller words | 4/4 → 4/4 | 4/4 → 4/4 |
+| numbers | 6/9 → **7/9** | 6/9 → **7/9** |
+| questions | 1/3 → 1/3 | 2/3 → 2/3 |
+| abbreviations | 2/4 → **3/4** | 2/4 → **3/4** |
+| dictionary verbs (VPSTART) | 0/4 → **4/4** | 1/4 → **4/4** |
+| function words | 2/4 → 2/4 | 3/4 → 3/4 |
+| conjunctions / preps (`and`/`for`) | 0/4 → **2/4** | 1/4 → **2/4** |
+| **total** | **31/48 → 39/48** | **34/48 → 40/48** |
 
-The misses are all attributable to the unported grammar/POS parser (phrase
-markers on function words like `and`, and clause-final content-word restressing in
-questions) except `the cat sat`, which is a residual `phclause` divergence
-independent of framing: feeding the **oracle's own** captured `symbols[]` for it
-through `speak_phonemes` reproduces the same 528-sample difference.
+The `after` misses are the residuals listed under *What is stubbed*: the article
+`a` not reduced (`that is a cat`, `a dog and a cat`), the question-final restress
+(`what is that`, `are you there`), plural morphology (`dogs and cats`), and the
+digit-path 100-and-up number reading. One plain-statement PCM miss (`the cat
+sat`) is a residual `phclause` divergence independent of framing: feeding the
+**oracle's own** captured `symbols[]` for it through `speak_phonemes` reproduces
+the same difference (being addressed on a separate branch).
+
+The 39 framing-exact and 40 voice-0 PCM-exact texts are locked by
+`test/dectalk_grammar_golden.json`; `test_pcm_exact_all_voices` verifies each
+PCM-exact text stays sample-exact across all ten voices (400/400 renders), and
+`test_golden_gate_bites` verifies the gate bites when the verb marker is removed.
 
 ### Full text-to-PCM through the public engine
 
@@ -678,12 +710,54 @@ chain for the ten voices when the FONIX `dtalk_us.dic` is present (located via
 substitute voices when it is not (as in CI). For the bit-exact scope the returned
 bytes equal the oracle WAV PCM exactly.
 
-What remains for arbitrary running text is the **multi-word / multi-clause
-framing** -- the inter-word markers, comma/question clause splitting, and the
-word-reading front end (which also owns the vowelless-word speller, numbers,
-abbreviations, and homograph part-of-speech) -- none of which is ported. Lone
-alphabetic words (dictionary or rule) are full text-to-speech today; sentences
-are not.
+## The word-level syntactic marking (`grammar_us.py`)
+
+The premise that a syntactic **parser** stands between text and the phoneme
+stream turns out to be wrong for the compiled US path. `cmd/par_*.c` is a
+character-level text preprocessor (digit ranges, ambiguous characters), not a
+POS parser, and the phrase-marker names (`PPSTART`/`VPSTART`/`RELSTART`) appear
+nowhere in the compiled tree. The markers `phclause` reads are produced entirely
+in the **word-reading path**, one word at a time:
+
+- **Dictionary form class** (`ls_dict.c:759-763`). A hit's stored 32-bit
+  form-class field (`include/fc_def.tab`; the compiled path's `DICT_FC_ACCESS`
+  is the identity) gates two markers: `PPSTART` when `(fc & PPHRASE) == PPHRASE`
+  (`PPHRASE = FC_PREP|FC_CHARACTER`) and `VPSTART` when `(fc & VPHRASE) ==
+  VPHRASE` or `fc == FC_VERB` (`VPHRASE = FC_VERB|FC_CHARACTER`, `ls_defs.h:658`).
+  So `sing` (`0x20000`, exactly `FC_VERB`) and `went` (`0x2020000`, `VPHRASE`)
+  get `VPSTART`; `walk`/`run` (`FC_VERB|FC_NOUN`) do not.
+- **The closed-class mini-dictionary `sdic[]`** (`l_us_con.c:1157`, searched
+  before the main dictionary by `ls_task_minidic_search`). `for`/`and`/`to` are
+  pronounced from a `PPSTART`-led fixed list, carrying a prep-phrase marker and
+  their reduced pronunciation.
+
+`grammar_us.word_markers` reproduces both; `sentence_us` emits the returned
+markers ahead of each word's phonemes (the verb marker replacing the plain
+boundary, exactly as the `ph_task.c:870-897` collapse does). The reduced `sdic`
+phonemes for `for`/`and`/`to` are the values the oracle emits, matching
+`l_all_ph.h`.
+
+The stress edits above this -- the clause-final function-word promotion
+(`ph_sort.c:1116`) and the general reductions -- run inside `phclause`'s `phsort`
+stage (`allophones.py`), so where the port feeds the correct pre-`phsort`
+markers, the PCM is already sample-exact even when the captured (post-`phsort`)
+`symbols[]` differ by that promotion (e.g. `what is that`, `give it to me`,
+`went` are PCM-exact despite a framing diff on the final function word).
+
+### Is full US DECtalk text-to-speech parity reached?
+
+**Not yet, for general running text.** Plain statements, comma/semicolon lists,
+spelled words, dictionary-verb sentences, `for`/`and`/`to` conjunction/prep
+sentences, most numbers, and most abbreviations are whole-sentence text -> PCM
+**sample-exact vs the oracle across all ten voices** (the 40 PCM-exact battery
+texts, 400/400 voice renders). The single remaining gap is the **in-context
+function-word treatment the word-reading path applies through the `WORD_CLASS`
+channel and the `phsort` reduction kludge** -- concretely: the stressed article
+`a` not reduced to a schwa, a lone clause-final `for`/`to`/`and` not promoted to
+its citation form, the question-final content-word restress, and inflectional
+morphology (`dogs`). These are the documented residuals; closing them (feeding
+the `WORD_CLASS` control phone and extracting the `ls_suff.c` suffix trie) is the
+next step.
 
 ## The phoneme -> PCM chain composes (sample-exact, 10 voices)
 
