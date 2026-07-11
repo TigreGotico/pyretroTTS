@@ -23,6 +23,9 @@ reciter is a single rule engine with no dictionary at all.
     >>> phonemize("photograph", engine="sam")
     ['F', 'AA', 'T', 'AA', 'G', 'R', 'AE', 'F']
 
+    >>> phonemize("photograph", notation="ipa")
+    ['f', 'oʊ', 'ɾ', 'ə', 'g', 'ɹ', 'æ', 'f']
+
 They disagree about the vowels and the notation. MacinTalk has the word in its
 dictionary and flaps the `t`; DECtalk sounds it out with its own rules; SAM does
 too, letter by letter, and gets `AA` twice.
@@ -152,21 +155,69 @@ def _sam_phonemes(text: str, phonetic: bool = False) -> list[str]:
     return out
 
 
-def phonemize(text: str, engine: str = "macintalk", markers: bool = False) -> list[str]:
-    """The phonemes `engine` would say `text` with, as its own mnemonics.
+def _ipa_phonemes(text: str, engine: str) -> list[str]:
+    """The engine's own front end, its native ids re-expressed as IPA."""
+    from .ipa import native_to_ipa
+
+    if engine == "macintalk":
+        ids = [p for p in words_to_phonemes(text) if p < kNumPhoneme]
+        return native_to_ipa("macintalk", ids)
+    if engine == "dectalk":
+        from .dectalk.sentence_us import sentence_to_clauses
+
+        codes: list[int] = []
+        for clause in sentence_to_clauses(text, _dectalk_dictionary()):
+            codes.extend(clause.symbols)
+        return native_to_ipa("dectalk", codes)
+    return native_to_ipa("sam", _sam_indices(text))
+
+
+def _sam_indices(text: str) -> list[int]:
+    """SAM's reciter output as phoneme indices (the ids the synthesizer speaks)."""
+    from .sam import prosody, reciter
+    from .sam.phonemes import END
+
+    upper = text.upper().encode("latin-1", "replace")
+    encoded = reciter.text_to_phonemes(upper)
+    if encoded is None:
+        return []
+    state = prosody.Buffers(encoded[:254])
+    state.phonemeindex[255] = 32
+    if not prosody.parser1(state):
+        return []
+    out: list[int] = []
+    for index in state.phonemeindex:
+        if index == END:
+            break
+        out.append(index)
+    return out
+
+
+def phonemize(
+    text: str, engine: str = "macintalk", notation: str = "native", markers: bool = False
+) -> list[str]:
+    """The phonemes `engine` would say `text` with.
+
+    With `notation="native"` (the default) the phonemes come back in the
+    engine's own mnemonics; with `notation="ipa"` they are re-expressed as IPA,
+    which is lossy in the same way `say_ipa` is (see `pyretrotts.ipa.IPA_LOSS`).
 
     With `markers`, MacinTalk and DECtalk also emit the word-boundary and
     stress opcodes their engines carry alongside the sounds. SAM has none.
     Use `phonemize_words` to keep the words apart.
     """
     engine = engine.lower()
+    if engine not in ENGINES:
+        raise ValueError(f"unknown engine {engine!r}; expected one of {sorted(ENGINES)}")
+    if notation == "ipa":
+        return _ipa_phonemes(text, engine)
+    if notation != "native":
+        raise ValueError(f"unknown notation {notation!r}; expected 'native' or 'ipa'")
     if engine == "macintalk":
         return _macintalk_phonemes(text, _MACINTALK, markers)
     if engine == "dectalk":
         return _dectalk_phonemes(text, markers)
-    if engine == "sam":
-        return _sam_phonemes(text)
-    raise ValueError(f"unknown engine {engine!r}; expected one of {sorted(ENGINES)}")
+    return _sam_phonemes(text)
 
 
 def phonemize_words(text: str, engine: str = "macintalk") -> list[Pronunciation]:
