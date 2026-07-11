@@ -30,6 +30,8 @@ from enum import Enum
 from . import lts, uk_phonemes
 from .settar import Allophones, us_gettar
 from .settar_uk import uk_gettar
+from .timing import us_phtiming
+from .timing_uk import uk_phtiming
 
 
 class Language(str, Enum):
@@ -58,6 +60,9 @@ class LanguageProfile:
     arpa_pairs: dict[int, tuple[str, str]]
     total_allophones: int
     gettar: Callable[[Allophones, int, int], int]
+    phtiming: Callable[..., list[int]]
+    nfcomma: int
+    nfperiod: int
 
     def code(self, index: int) -> int:
         """Font-shifted phoneme code for a raw inventory `index`."""
@@ -89,6 +94,9 @@ _US_PROFILE = LanguageProfile(
     arpa_pairs={k: v for k, v in lts._ARPA_PAIRS.items() if k < 57},
     total_allophones=57,
     gettar=us_gettar,
+    phtiming=us_phtiming,
+    nfcomma=16,
+    nfperiod=75,
 )
 
 _UK_PROFILE = LanguageProfile(
@@ -100,6 +108,9 @@ _UK_PROFILE = LanguageProfile(
     arpa_pairs=uk_phonemes.UK_ARPA_PAIRS,
     total_allophones=uk_phonemes.UK_TOT_ALLOPHONES,
     gettar=uk_gettar,
+    phtiming=uk_phtiming,
+    nfcomma=14,
+    nfperiod=94,
 )
 
 _PROFILES: dict[Language, LanguageProfile] = {
