@@ -23,10 +23,13 @@ is NOT covered by this project's MIT licence. See NOTICE.
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 
 from . import lts, uk_phonemes
+from .settar import Allophones, us_gettar
+from .settar_uk import uk_gettar
 
 
 class Language(str, Enum):
@@ -54,6 +57,7 @@ class LanguageProfile:
     phoneme_codes: dict[str, int]
     arpa_pairs: dict[int, tuple[str, str]]
     total_allophones: int
+    gettar: Callable[[Allophones, int, int], int]
 
     def code(self, index: int) -> int:
         """Font-shifted phoneme code for a raw inventory `index`."""
@@ -84,6 +88,7 @@ _US_PROFILE = LanguageProfile(
     phoneme_codes=lts.US_PHONEME_CODES,
     arpa_pairs={k: v for k, v in lts._ARPA_PAIRS.items() if k < 57},
     total_allophones=57,
+    gettar=us_gettar,
 )
 
 _UK_PROFILE = LanguageProfile(
@@ -94,6 +99,7 @@ _UK_PROFILE = LanguageProfile(
     phoneme_codes=uk_phonemes.UK_PHONEME_CODES,
     arpa_pairs=uk_phonemes.UK_ARPA_PAIRS,
     total_allophones=uk_phonemes.UK_TOT_ALLOPHONES,
+    gettar=uk_gettar,
 )
 
 _PROFILES: dict[Language, LanguageProfile] = {
