@@ -90,6 +90,11 @@ FSTRESS_1 = 0o1
 FBOUNDARY = 0o740
 FVPNEXT = 0o240
 FSENTENDS = 0o400
+# `phonemes[SAFETY]` shares the `allophons[]` buffer with the allophone output
+# (`ph_claus.c:597`); `phalloph` overwrites `allophons[0..nallotot-1]`, so slots
+# at or past `nallotot` still hold the surviving input phonemes.
+SAFETY = 8
+
 # place() bits (`ph_defs.h:308-310`, plus F2BACK* used by us_gettar rules).
 FDENTAL = 0o2
 FPALATL = 0o4
@@ -180,6 +185,13 @@ class PhsettarState:
     allodurs: tuple[int, ...]
     nallotot: int
     malfem: int
+    # `gettar`'s USP_K test reads `allophons[]` raw (`ph_setar.c:2072`), so past
+    # `nallotot` it sees whatever the shared `phonemes`/`allophons` buffer still
+    # holds. `rawbuf` reconstructs that buffer: the `phsort` input phonemes, then
+    # the `phalloph` output and its `GEN_SIL` terminator (`ph_aloph1.c:1538`),
+    # then the post-`phinton` stream -- so a `phinton` insert overwrites the
+    # terminator and re-exposes leftover input, matching the C exactly.
+    rawbuf: tuple[int, ...] = ()
     param: list[Parameter] = field(default_factory=lambda: [Parameter() for _ in range(NPARAM)])
     nphone: int = 0
     durfon: int = 0
@@ -221,6 +233,13 @@ class PhsettarState:
             return self.allophons[n]
         return GEN_SIL
 
+    def raw_allophon(self, n: int) -> int:
+        """`allophons[n]` read raw (no `get_phone` clamp), as `gettar`'s USP_K
+        test does (`ph_setar.c:2072`), from the reconstructed shared buffer."""
+        if 0 <= n < len(self.rawbuf):
+            return self.rawbuf[n]
+        return 0
+
     def feat(self, n: int) -> int:
         if 0 <= n < len(self.allofeats):
             return self.allofeats[n]
@@ -228,6 +247,36 @@ class PhsettarState:
 
     def _stream(self) -> Allophones:
         return Allophones(self.allophons, self.allofeats, self.nallotot, self.malfem)
+
+
+def build_rawbuf(
+    phonemes: tuple[int, ...],
+    nphonetot: int,
+    alloph_ph: tuple[int, ...],
+    allophons: tuple[int, ...],
+    nallotot: int,
+) -> tuple[int, ...]:
+    """Reconstruct the shared `allophons[]`/`phonemes[]` buffer past `nallotot`.
+
+    Mirrors the C: `init_phclause` zeroes it (`ph_claus.c:578`); `phsort` lays the
+    input phonemes at `[SAFETY..]` with a `GEN_SIL` terminator; `phalloph`
+    overwrites `[0..nallo_ph)` and writes its own `GEN_SIL` terminator at
+    `nallo_ph` (`ph_aloph1.c:1538`); `phinton` inserts/deletes leave the final
+    `[0..nallotot)` stream, so an insert past `nallo_ph` overwrites that
+    terminator and re-exposes the untouched leftover input.
+    """
+    nallo_ph = len(alloph_ph)
+    size = max(nallotot, nallo_ph, SAFETY + nphonetot) + 2
+    buf = [0] * size
+    for i in range(nphonetot):
+        buf[SAFETY + i] = phonemes[i]
+    buf[SAFETY + nphonetot] = GEN_SIL
+    for j in range(nallo_ph):
+        buf[j] = alloph_ph[j]
+    buf[nallo_ph] = GEN_SIL
+    for j in range(nallotot):
+        buf[j] = allophons[j]
+    return tuple(buf)
 
 
 def phone_feature(phone: int) -> int:
@@ -282,7 +331,7 @@ def gettar(st: PhsettarState, phone: int) -> int:
             count += 1
         idx = index[count]
         tartemp = us_gettar(stream, st.np, phone + idx)
-        if st.get_phone(phone + idx) == USP_K:
+        if st.raw_allophon(phone + idx) == USP_K:
             if st.np == PF2:
                 tartemp += 300
             elif st.np == PF3:
