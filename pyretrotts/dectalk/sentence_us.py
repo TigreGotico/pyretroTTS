@@ -29,6 +29,7 @@ import re
 from dataclasses import dataclass
 
 from .dictionary import Dictionary
+from .grammar_us import SDIC, word_markers
 from .numbers_us import expand_number_token, say_cardinal
 from .spell_us import is_spelled, spell_codes
 from .text_us import word_to_codes
@@ -124,8 +125,14 @@ def _word_symbols(word: str, dictionary: Dictionary | None) -> list[int]:
             out.append(_WBOUND)
             out.extend(_font(c) for c in letter)
         return out
-    codes, _src = word_to_codes(word.lower(), dictionary)
-    return [_WBOUND, *(_font(c) for c in codes)]
+    low = word.lower()
+    markers = word_markers(low, dictionary)
+    if low in SDIC:
+        body = SDIC[low]
+    else:
+        body, _src = word_to_codes(low, dictionary)
+    lead = list(markers) if markers is not None else [_WBOUND]
+    return [*lead, *(_font(c) for c in body)]
 
 
 def _clause_symbols(clause: _Clause, dictionary: Dictionary | None) -> tuple[int, ...]:
