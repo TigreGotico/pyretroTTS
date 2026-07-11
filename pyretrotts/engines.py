@@ -149,14 +149,18 @@ class DECtalkEngine(Engine):
     def _native_synthesize(self, text: str, voice: str) -> bytes | None:
         """Render plain text through the ported DECtalk chain, or None if it can't.
 
-        Requires the FONIX `dtalk_us.dic`; when it is absent (as in CI) this
-        returns None and `synthesize` falls back to the MacinTalk substitute.
+        The DECtalk synthesizer runs at 11025 Hz; its output is doubled to the
+        22050 Hz this engine reports, so every voice speaks at one rate. Requires
+        the FONIX `dtalk_us.dic`; when it is absent (as in CI) this returns None
+        and `synthesize` falls back to the MacinTalk substitute.
         """
         if self._native_dict is None or voice not in self._NATIVE_INDEX:
             return None
+        from .dectalk.consts import SAMPLE_RATE_HZ
         from .dectalk.sentence_us import sentence_to_pcm
 
-        return sentence_to_pcm(self._NATIVE_INDEX[voice], text, self._native_dict)
+        native = sentence_to_pcm(self._NATIVE_INDEX[voice], text, self._native_dict)
+        return _upsample_2x(native) if SAMPLE_RATE_HZ * 2 == SamplingRate else native
 
     @property
     def voices(self) -> dict[str, Voice]:
@@ -266,6 +270,24 @@ def scale_to_headroom(pcm: bytes, headroom: float = _HEADROOM) -> bytes:
         return pcm
     gain = limit / peak
     return struct.pack(f"<{len(samples)}h", *(int(v * gain) for v in samples))
+
+
+def _upsample_2x(pcm: bytes) -> bytes:
+    """Double a 16-bit PCM stream's rate by linear interpolation.
+
+    A sample is emitted, then the midpoint to the next, matching how the
+    MacinTalk synthesizer doubles its own 11025 Hz core to 22050 Hz.
+    """
+    if len(pcm) < 2:
+        return pcm
+    samples = struct.unpack(f"<{len(pcm) // 2}h", pcm)
+    doubled: list[int] = []
+    for current, following in zip(samples, samples[1:], strict=False):
+        doubled.append(current)
+        doubled.append((current + following) // 2)
+    doubled.append(samples[-1])
+    doubled.append(samples[-1])
+    return struct.pack(f"<{len(doubled)}h", *doubled)
 
 
 def pcm_duration(pcm: bytes) -> float:
