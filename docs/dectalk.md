@@ -1349,6 +1349,31 @@ stream from the `DECTALK_LTS_DUMP` instrumentation of `ls_util_send_phone`
 - **UK intonation/timing differ.** The oracle's per-clause `T` line for UK voice 0
   is `200 160 19114 17749 ...` vs US `180 180 18245 17314 ...` -- the UK
   `p_uk_vdf_tune*.c` / `p_uk_tim.c` layer, distinct from US.
+- **UK `ph/` target ROM -- extracted verbatim, gated** (`targets_uk.py`,
+  `targets_transitions_uk.py`, `tools/dump_dectalk_uk_targets.py`). The per-phoneme
+  Klatt target ROM of `p_uk_rom.c` (`uk_maltar`/`uk_femtar` 7x57, `uk_maldip` 432,
+  `uk_femdip` 366, `uk_malamp`/`uk_femamp` 542, `uk_place`/`uk_begtyp`/`uk_endtyp`/
+  `uk_ptram` 57, `uk_featb` 101 shorts, and the transition ROM `uk_maleloc`/
+  `uk_femloc` 866, `uk_plocu` 228, `uk_inhdr`/`uk_burdr` 57) is read from the built
+  `libtts_uk.so` symbols at their resolved addresses -- guaranteed identical to the
+  compiled reference, cross-checked against the ELF symbol sizes. `parini`,
+  `partyp`, `divtab`, `lineartilt` are language-shared and reused from
+  `targets.py`/`targets_transitions.py`.
+- **UK `uk_gettar` -- ported under the language seam** (`settar_uk.py`,
+  `test/test_dectalk_uk_targets_golden.py`, 7 tests). `uk_gettar` (`p_uk_st1.c:76`)
+  is a faithful line-by-line port of the UK target-lookup, indexing `targets_uk.py`,
+  differing from `us_gettar` exactly where the C does: no `-1` fallback chain for
+  the formant params (`p_uk_st1.c:100-108`); the unstressed `-4` reduction applies
+  to both AV and AP (`:198-204`); `[h]` aspiration 50/52 not 53/60 (`:184-192`);
+  TILT `+10` for `[ow]` (`:296`). `language.LanguageProfile.gettar` selects it by
+  language: US routes through `settar.us_gettar` unchanged (its goldens do not
+  move), UK through `settar_uk.uk_gettar`, mirroring the C `all_gettar[font]`
+  dispatch (`ph_setar.c:351`, `all_gettar[0x1D] == uk_gettar`). The UK oracle
+  carries no isolated `gettar`/target dump (`DECTALK_TAR_DUMP` exists only in
+  `libtts_us.so`), so `uk_gettar` is guarded by a deterministic regression digest
+  over synthetic streams (mutation-biting) over the byte-exact ROM; the
+  call-for-call oracle proof arrives with the UK `phsettar` port below, gated via
+  `DECTALK_PHS_DUMP` (compiled into `libtts_uk.so`, verified present).
 
 ### What remains for full UK (and what gr/fr/sp/la will each need)
 
@@ -1360,7 +1385,16 @@ the US 56/56 standard therefore requires, in order:
 
 1. extract the UK `ph/` ROMs from `libtts_uk.so` (a dumper like the US
    `tools/dump_dectalk_targets.py`), then port `uk_gettar` + the UK `phsettar`
-   path and UK timing/intonation, gating phoneme -> PCM against the UK oracle;
+   path and UK timing/intonation, gating phoneme -> PCM against the UK oracle.
+   **Done so far:** the ROM extraction (`targets_uk.py`, `targets_transitions_uk.py`)
+   and `uk_gettar` (`settar_uk.py`) under the `LanguageProfile` seam. **Remaining
+   for phoneme -> PCM:** the UK `phsettar` smooth rules (`uk_forw_smooth_rules`
+   `p_uk_st1.c:446`, `uk_back_smooth_rules` `:834`, `uk_special_rules` `:1240`,
+   `UKP_special_coartic` `:305`), UK timing (`us_phtiming` analogue in `p_uk_tim.c`),
+   and UK intonation (`p_uk_vdf_tune*.c` + the shared `pht0draw`/`phinton`). The
+   compiled `libtts_uk.so` carries `DECTALK_PHS_DUMP`/`DECTALK_TIM_DUMP`/
+   `DECTALK_VTM_DUMP`, so each stage gates against the oracle exactly as the US
+   port did. Until those land, UK **phoneme -> PCM is not yet bit-exact**;
 2. load `dtalk_uk.dic` (the loader is shared) and port the UK LTS rules
    (`lts/l_uk_ru1.c`/`l_uk_rta.c`/`l_uk_suf*.c`/`l_uk_ad1.c`), gating the pre-`ph/`
    stream against the `DECTALK_LTS_DUMP` capture;
