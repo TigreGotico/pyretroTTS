@@ -27,18 +27,38 @@ from pyretrotts.modern.features import DIPHTHONGS  # noqa: E402
 ASR_MODEL = "istupakov/parakeet-tdt-0.6b-v2-onnx"
 ASR_RATE = 16000
 
-#: English IPA set: (reference words, broad IPA transcription).
+#: English IPA set: (reference words, broad General-American IPA transcription).
+#: The core ten are the fixed Harvard-style sentences of ``tools/intelligibility.
+#: py`` (SENTENCES), transcribed here in broad GenAm so the intelligibility gate
+#: is not gameable on a handful of short phrases; three phonetically-varied
+#: sentences (dense /ʒ/, /θ/ and mixed onsets) are added for breadth.
 ENGLISH = [
-    ("the quick brown fox", "ðə kwɪk braʊn fɑks"),
-    ("she sells sea shells", "ʃi sɛlz si ʃɛlz"),
-    ("please call stella", "pliz kɔl stɛlə"),
-    ("how much wood", "haʊ mʌtʃ wʊd"),
-    ("we were away a year ago", "wi wɜr əˈweɪ ə jɪr əˈgoʊ"),
-    ("hello world", "həˈloʊ wɜrld"),
-    ("the small pup", "ðə smɔl pʌp"),
-    ("bring these things", "brɪŋ ðiz θɪŋz"),
-    ("glue the sheet", "glu ðə ʃit"),
-    ("peter picked a peck", "pitər pɪkt ə pɛk"),
+    ("the quick brown fox jumps over the lazy dog",
+     "ðə kwɪk braʊn fɑks dʒʌmps oʊvər ðə leɪzi dɔg"),
+    ("she sells sea shells by the sea shore",
+     "ʃi sɛlz si ʃɛlz baɪ ðə si ʃɔr"),
+    ("please call stella and ask her to bring these things",
+     "pliz kɔl stɛlə ænd æsk hər tu brɪŋ ðiz θɪŋz"),
+    ("the rain in spain falls mainly on the plain",
+     "ðə reɪn ɪn speɪn fɔlz meɪnli ɑn ðə pleɪn"),
+    ("how much wood would a woodchuck chuck",
+     "haʊ mʌtʃ wʊd wʊd ə wʊdtʃʌk tʃʌk"),
+    ("peter piper picked a peck of pickled peppers",
+     "pitər paɪpər pɪkt ə pɛk ʌv pɪkəld pɛpərz"),
+    ("the birch canoe slid on the smooth planks",
+     "ðə bɜrtʃ kəˈnu slɪd ɑn ðə smuð plæŋks"),
+    ("glue the sheet to the dark blue background",
+     "glu ðə ʃit tu ðə dɑrk blu bækgraʊnd"),
+    ("we were away a year ago",
+     "wi wɜr əˈweɪ ə jɪr əˈgoʊ"),
+    ("the small pup gnawed a hole in the sock",
+     "ðə smɔl pʌp nɔd ə hoʊl ɪn ðə sɑk"),
+    ("hello world",
+     "həˈloʊ wɜrld"),
+    ("the boy threw three free throws",
+     "ðə bɔɪ θru θri fri θroʊz"),
+    ("measure the pleasure of leisure",
+     "ˈmɛʒər ðə ˈplɛʒər ʌv ˈliʒər"),
 ]
 
 #: Multilingual set exercising sounds English lacks.
@@ -120,8 +140,10 @@ def wer() -> None:
     refs, mod_hyp, cls_hyp = [], [], []
     print(f"{'reference':28s} {'ModernTalk':26s} {'classic IPA-preset':26s}")
     for text, ipa in ENGLISH:
-        m = transcribe(modern.say_ipa(ipa), 11025)
-        c = transcribe(classic.say_ipa(ipa), 22050)
+        # Track each engine's real rate so the resampler measures the voice, not
+        # a rate mismatch. ModernTalk now emits 22050 Hz like every other engine.
+        m = transcribe(modern.say_ipa(ipa), modern.sample_rate)
+        c = transcribe(classic.say_ipa(ipa), classic.sample_rate)
         refs.append(text)
         mod_hyp.append(m)
         cls_hyp.append(c)
