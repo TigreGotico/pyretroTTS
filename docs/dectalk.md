@@ -1402,25 +1402,52 @@ the US 56/56 standard therefore requires, in order:
    (ported for fidelity, documented inert). The `GEN_SIL` boundary TILT target/
    transition depends on `parstochip[OUT_TLT]` (the previous drawn frame) and is
    validated at the end-to-end PCM stage, not the phone-by-phone `phsettar` gate.
-   **Remaining for phoneme -> PCM:**
-   - **UK timing** (`uk_phtiming`, `p_uk_tim.c`): a ~15-point delta over the
-     ported `us_phtiming` (`timing.py`, which models `p_us_tim0.c` == the build's
-     `p_us_tim.c`, verified) -- `dpause` 14/15 -> 4/5, percentage constants
-     (`N70/N80/N85/N90PRCNT`), `durmin` floors 3 -> 6 and 10 -> 14, `[LX]` vs
-     `[RX]` phone ranges, the `[HX]` 11-frame cap removed, `FWBNEXT` -> `FVPNEXT`.
-     Gating caveat: `DECTALK_TIM_DUMP` is compiled into `p_us_tim0.c` only -- the
-     UK path (`uk_phtiming`) carries **no** timing dump, so gating needs either the
-     `PHS_DUMP` `A`-line `allodurs` (post-`phinton`, so conflated with intonation)
-     or adding the dump snippet to `p_uk_tim.c` and rebuilding `libtts_uk.so`.
-   - **UK intonation**: `phinton`/`pht0draw` are **language-shared** (`ph_claus.c:356`
-     dispatches only French away from `phinton`), so no rule port is needed -- UK
-     reuses the already-bit-exact US `intonation.py`. What remains is the UK
-     *per-voice* F0/`phdraw` scalars (the `p_uk_vdf*.c` speaker-def layer, analogous
-     to `phclause.PH_SPEAKERS`), captured verbatim from the oracle per UK voice.
-   Until UK timing + the UK voice-def scalars land and the end-to-end
+   **Progress toward phoneme -> PCM:**
+   - **UK timing -- ported, bit-exact, gated** (`timing_uk.uk_phtiming`,
+     `p_uk_tim.c:107`; `test/test_dectalk_uk_timing.py`). It is the UK-parameterized
+     analogue of `timing.us_phtiming` (the US path is unchanged and its goldens do
+     not move). Every delta vs US was verified against `p_uk_tim.c`: the
+     `LANG_british` `init_timing` (+20 rate, `sprat0 -= 40` floor 65, so `-r 180`
+     runs at effective 200 with `sprat0 = 160`, `timeref 80`, `sprat1 19114`,
+     `sprat2 17749`), `GEN_SIL` pause `4/5` with floor 2 and the
+     `feanex & (FVOICD | FOBST)` gate, Rule 2 `number_words >= 4` with `[LX]` only,
+     the nasal-lengthening rules, the Rule 7 `durmin < 6` floor, Rule 6
+     `>= FWBNEXT`, the Rule 9 nasal `N70PRCNT` and `arg1 < 500 -> 4196` clamp, the
+     Rule 13 plosive-plosive guard and `N120PRCNT` nasal, the voiced/voiceless
+     plosive rule, Rule 18 (`FSONCON`), Rule 17 `prcnt += 10`, dropped Rule 20, Rule
+     23 gated `prcnt > 50` with `N40PRCNT`, the `[RR]` `durmin` floor 13, Rule 25
+     (`N130PRCNT`), the word-initial `[HX]` Rule 26, the absolute stop-`durmin`
+     floors 6/6/14, and the stressed-syllabic sonorant time-alignment pass. `nfcomma`
+     14 / `nfperiod` 94 (`ph_claus.c:229`) and `uk_mindur` (`p_uk_rom.c:142`) are UK.
+     Gating caveat solved: `DECTALK_TIM_DUMP` is `p_us_tim0.c`-only, so a UK timing
+     dump (`DECTALK_UKTIM_DUMP`) was added to `p_uk_tim.c` in the instrumented build
+     copy and `libtts_uk.so` rebuilt (`ph_timng.o` -> relink). It dumps the entry
+     `allophons`/`allofeats`/rate factors/`number_words` and the exit `allodurs`.
+     Result: **72 clauses / 1360 durations bit-exact across the 8 UK voices**; a
+     committed real-capture golden (`dectalk_uk_timing_vectors.json`) re-checks it in
+     CI without the oracle, mutation-verified to bite. `LanguageProfile` gains
+     `phtiming`/`nfcomma`/`nfperiod`, selecting `uk_phtiming` by language.
+   - **UK per-voice scalars -- measured** (`phclause.PH_SPEAKERS_UK`,
+     `test/test_dectalk_uk_speakers.py`). UK ships **8** voices. The five `phdraw`
+     scalars (`malfem`, `spdefb1off`, `f0_dep_tilt`, `spdeftltoff`, `spdeflaxprcnt`)
+     are captured from the oracle (`DECTALK_PH_DUMP` E-line + `PHS_DUMP` A-line
+     `malfem`) and are **byte-identical to US voices 0..7** -- the `[:dv]` speaker
+     definitions are language-independent. The seven F0 scalars come from that same
+     shared speaker-def resolution.
+   - **UK intonation -- NOT language-shared (scope correction).** The earlier note
+     that `phinton`/`pht0draw` are shared is **wrong** per the C: `ph_inton0.c` and
+     `ph_drwt01.c` each carry a **separate `#ifdef ENGLISH_UK` function body**
+     (`phinton` at `ph_inton0.c:154` under `#if defined NWSNOAA || defined
+     ENGLISH_UK`, vs the US `phinton` at `:1327` in the `#else`; likewise `pht0draw`
+     at `ph_drwt01.c:277` vs `:2383`), and `ph_draw.c` has further `ENGLISH_UK`
+     conditionals. So UK **phinton + pht0draw are a separate rule port** (~1000 and
+     ~2000 lines), not a reuse of `intonation.py`. This is the remaining blocker for
+     end-to-end UK phoneme -> PCM. `phalloph` also has UK deltas
+     (`ph_aloph1.c`/`ph_aloph2.c`, `ENGLISH_UK`), though `phsort` has none.
+   Until the UK `phinton`/`pht0draw` rule bodies are ported and the end-to-end
    `DECTALK_VTM_DUMP` gate closes, UK **phoneme -> PCM is not yet bit-exact**;
-   `phclause` is deliberately left US-only (wiring `phsettar_uk` alone would pair
-   UK targets with US timing);
+   `phclause` is deliberately left US-only (wiring `phsettar_uk` + `uk_phtiming`
+   alone still lacks the UK F0 contour);
 2. load `dtalk_uk.dic` (the loader is shared) and port the UK LTS rules
    (`lts/l_uk_ru1.c`/`l_uk_rta.c`/`l_uk_suf*.c`/`l_uk_ad1.c`), gating the pre-`ph/`
    stream against the `DECTALK_LTS_DUMP` capture;

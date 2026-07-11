@@ -97,6 +97,22 @@ PH_SPEAKERS: tuple[PhSpeaker, ...] = (
 )
 
 
+# UK per-voice `ph/` speaker scalars. DECtalk's British front end ships eight
+# voices (`libtts_uk.so`), the same `[:dv]` speaker definitions as US voices 0..7,
+# resolved by the language-independent `ph/p_uk_vdf*.c` (setspdef) layer. The five
+# `phdraw` scalars (`malfem`, `spdefb1off`, `f0_dep_tilt`, `spdeftltoff`,
+# `spdeflaxprcnt`) are **measured** per UK voice from the instrumented oracle
+# (`DECTALK_PH_DUMP` E-line, `ph_draw.c:352`) and are byte-identical to the US
+# voices 0..7. The seven F0 scalars (`f0basefall`..`assertiveness`) come from that
+# same shared speaker-def resolution; they are consumed only by `phinton`/
+# `pht0draw`, whose UK rule bodies (`ph_inton0.c:154`, `ph_drwt01.c:277`, active
+# under `#ifdef ENGLISH_UK`) are a **separate** unported port -- distinct C
+# functions from the US `phinton`/`pht0draw`, not the shared code the earlier notes
+# assumed. They are recorded here for the UK phclause path and must be re-confirmed
+# against a UK-`phinton` capture when that stage lands.
+PH_SPEAKERS_UK: tuple[PhSpeaker, ...] = PH_SPEAKERS[:8]
+
+
 @dataclass(frozen=True)
 class Clause:
     """One clause's front-end output: the `symbols[]`/`user_durs[]` `phclause` reads.
