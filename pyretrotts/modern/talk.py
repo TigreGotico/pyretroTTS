@@ -20,15 +20,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ..dectalk import consts as C
-from ..dectalk.engine import frames_to_wav, synthesize_frames
+from ..dectalk.engine import synthesize_frames
 from ..dectalk.voices import SPEAKERS, VOICE_NAMES
-from ..ipa import Stress, parse_ipa
+from ..ipa import parse_ipa
 from .features import (
     DECOMPOSABLE_SYMBOLS,
     MANNER_AFFRICATE,
-    MANNER_APPROXIMANT,
     MANNER_FRICATIVE,
-    MANNER_LATERAL,
     MANNER_NASAL,
     MANNER_STOP,
     MANNER_TAP,
@@ -38,11 +36,21 @@ from .features import (
     expand,
     nearest_target,
 )
+from .prosody import SegmentPlan, coarticulate, plan_clause, reduce_vowel
+
+
+def _bound_on() -> bool:
+    import os
+
+    return os.environ.get("MP_BOUND", "1") != "0"
 
 __all__ = ["ModernTalkEngine", "FrameSpec"]
 
-SAMPLE_RATE_HZ = C.SAMPLE_RATE_HZ  # 11025
-_FRAME_MS = C.SAMPLES_PER_FRAME / SAMPLE_RATE_HZ * 1000.0  # ~6.44 ms
+#: native DECtalk vocal-tract-model rate; the engine reports twice this.
+CORE_RATE_HZ = C.SAMPLE_RATE_HZ  # 11025
+#: public output rate, matching every other engine (see ``sample_rate``).
+SAMPLE_RATE_HZ = CORE_RATE_HZ * 2  # 22050
+_FRAME_MS = C.SAMPLES_PER_FRAME / CORE_RATE_HZ * 1000.0  # ~6.44 ms
 
 # Amplitude levels (dB, as the AMPTABLE index the C engine expects).
 _AV_FULL = 60          # full voicing for vowels
@@ -52,19 +60,6 @@ _AV_BAR = 38           # voice bar under a voiced obstruent closure
 _AB_FRIC = 56          # strong frication through the bypass path
 _AP_ASPIR = 58         # aspiration / /h/ noise
 _BURST = 52            # stop-burst parallel level
-
-# Default per-phone durations in frames (before length/stress scaling).
-_DUR = {
-    "vowel": 13,
-    MANNER_STOP: 4,     # closure; the burst adds one more
-    MANNER_FRICATIVE: 9,
-    MANNER_AFFRICATE: 8,
-    MANNER_NASAL: 8,
-    MANNER_APPROXIMANT: 7,
-    MANNER_LATERAL: 7,
-    MANNER_TRILL: 8,
-    MANNER_TAP: 3,
-}
 
 # All decomposable symbols, used as the fallback target pool.
 _TARGET_POOL = DECOMPOSABLE_SYMBOLS
@@ -145,7 +140,7 @@ class ModernTalkEngine:
     """Generative Klatt front end that speaks arbitrary IPA.
 
     ``say_ipa`` accepts any IPA string -- English or not -- and returns 16-bit
-    mono PCM at 11025 Hz. Symbols the feature model cannot decompose fall back to
+    mono PCM at 22050 Hz. Symbols the feature model cannot decompose fall back to
     the articulatorily nearest reachable target rather than an English preset.
     """
 
@@ -160,25 +155,33 @@ class ModernTalkEngine:
     def __init__(self) -> None:
         self.voices = VOICE_NAMES
 
+    @property
+    def sample_rate(self) -> int:
+        """Output rate in Hz. The 11025 Hz core is doubled so ModernTalk emits
+        the same 22050 Hz every other engine reports (see ``engines.Engine``)."""
+        return SAMPLE_RATE_HZ
+
     # -- public API ---------------------------------------------------------
     def say_ipa(
         self, ipa: str, voice: str | None = None, path: str | None = None
     ) -> bytes:
-        """Render ``ipa`` in ``voice``; return PCM and optionally write a WAV."""
-        voice = voice or self.voices[0]
-        speaker = SPEAKERS[VOICE_NAMES.index(voice)]
-        frames = self._frames_for(ipa, voice)
-        pcm = _pack(synthesize_frames(speaker, frames))
+        """Render ``ipa`` in ``voice``; return 22050 Hz PCM, optionally a WAV."""
+        samples = self.synthesize_ipa(ipa, voice)
+        pcm = _pack(samples)
         if path is not None:
-            with open(path, "wb") as fh:
-                fh.write(frames_to_wav(speaker, frames))
+            _write_wav(pcm, path, SAMPLE_RATE_HZ)
         return pcm
 
     def synthesize_ipa(self, ipa: str, voice: str | None = None) -> list[int]:
-        """Return the raw 16-bit sample list for ``ipa``."""
+        """Return the 22050 Hz 16-bit sample list for ``ipa``.
+
+        The DECtalk core renders at 11025 Hz; its output is doubled by linear
+        interpolation to 22050 Hz, matching ``engines._upsample_2x``.
+        """
         voice = voice or self.voices[0]
         speaker = SPEAKERS[VOICE_NAMES.index(voice)]
-        return synthesize_frames(speaker, self._frames_for(ipa, voice))
+        core = synthesize_frames(speaker, self._frames_for(ipa, voice))
+        return _upsample_2x(core)
 
     def bundles(self, ipa: str) -> list[tuple[str, FeatureBundle, bool]]:
         """Decompose ``ipa`` to (symbol, bundle, fell_back) triples.
@@ -204,73 +207,112 @@ class ModernTalkEngine:
 
     def _frames_for(self, ipa: str, voice: str) -> list[list[int]]:
         base_f0 = self._BASE_F0.get(voice, 122)
-        frames: list[FrameSpec] = []
+        specs: list[FrameSpec] = []
+        seg_id: list[int] = []
+        seg_dur: list[int] = []
+        # (center_frame_index, f0_hz) anchors for the piecewise-linear contour.
+        anchors: list[tuple[int, float]] = []
+        seg_counter = 0
+
+        def emit(fs: list[FrameSpec], f0: float | None) -> None:
+            nonlocal seg_counter
+            start = len(specs)
+            specs.extend(fs)
+            for _ in fs:
+                seg_id.append(seg_counter)
+                seg_dur.append(len(fs))
+            if f0 is not None and fs:
+                anchors.append((start + len(fs) // 2, f0))
+            seg_counter += 1
+
         # Lead-in silence primes the post-speaker-definition ramp.
-        for _ in range(3):
-            frames.append(FrameSpec(tuple(_blank()), smooth=False))
+        emit([FrameSpec(tuple(_blank()), smooth=False) for _ in range(3)], None)
 
         clauses = parse_ipa(ipa)
-        for clause in clauses:
-            rising = clause.terminator == "?"
-            n_phones = max(1, len(clause.phones))
+        for ci, clause in enumerate(clauses):
+            bundles = [self._bundle(expand(p.symbol)[0])[0]
+                       for p in clause.phones]
+            plans = plan_clause(
+                clause, bundles, base_f0, is_last=ci == len(clauses) - 1)
             for idx, phone in enumerate(clause.phones):
-                # Declination plus a stress bump; a question rises at the end.
-                pos = idx / n_phones
-                f0 = base_f0 * (1.0 - 0.18 * pos)
-                if phone.stress == Stress.PRIMARY:
-                    f0 *= 1.12
-                elif phone.stress == Stress.SECONDARY:
-                    f0 *= 1.05
-                if rising and idx >= n_phones - 2:
-                    f0 *= 1.15
+                plan = plans[idx]
                 segments = expand(phone.symbol)
+                # Split the phone's duration across a diphthong's glide halves.
+                per = max(3, plan.dur_frames // len(segments))
                 for seg in segments:
                     bundle, _ = self._bundle(seg)
-                    frames.extend(self._phone_frames(
-                        bundle, phone.stress, f0, glide=len(segments) > 1))
+                    fs = self._phone_frames(bundle, plan, per)
+                    voiced = bundle.is_vowel or bundle.voiced
+                    emit(fs, plan.f0_hz if voiced else None)
+                # Pre-boundary word edge: a short unvoiced transition frame, not
+                # a silent gap (Wightman 1992; silence over-segments and hurts).
+                if (_bound_on() and plan.pre_boundary
+                        and idx != len(clause.phones) - 1):
+                    gap = _blank()
+                    gap[C.OUT_AV] = 0
+                    emit([FrameSpec(tuple(gap), smooth=False)], None)
             # A short pause between clauses.
-            for _ in range(4):
-                frames.append(FrameSpec(tuple(_blank()), smooth=False))
+            emit([FrameSpec(tuple(_blank()), smooth=False) for _ in range(4)],
+                 None)
 
-        return _smooth_formants(frames)
+        frames = [list(s.frame) for s in specs]
+        smoothable = [s.smooth for s in specs]
+        self._draw_f0(frames, anchors)
+        return coarticulate(
+            frames, smoothable, seg_id, seg_dur,
+            (C.OUT_F1, C.OUT_F2, C.OUT_F3))
+
+    @staticmethod
+    def _draw_f0(frames: list[list[int]], anchors: list[tuple[int, float]]) -> None:
+        """Set T0 on every voiced frame from a piecewise-linear F0 contour.
+
+        The contour runs through the per-segment F0 anchors ``plan_clause``
+        produced (declination + hat accents + boundary tone); interpolating
+        between successive anchors gives the accent rises and falls, clamped at
+        the ends.
+        """
+        if not anchors:
+            return
+        for k, frame in enumerate(frames):
+            if frame[C.OUT_AV] <= 0:
+                continue
+            f0 = _interp_anchor(anchors, k)
+            _set_pitch(frame, f0)
 
     def _phone_frames(
-        self, b: FeatureBundle, stress: Stress, f0: float, glide: bool = False
+        self, b: FeatureBundle, plan: SegmentPlan, dur: int
     ) -> list[FrameSpec]:
+        f0 = plan.f0_hz
         if b.is_vowel:
-            return self._vowel(b, stress, f0, glide)
+            return self._vowel(b, plan, dur)
         if b.manner == MANNER_STOP:
-            return self._stop(b, f0)
+            return self._stop(b, f0, dur)
         if b.manner == MANNER_AFFRICATE:
-            return self._stop(b, f0) + self._fricative(b, f0, frames=5)
+            return self._stop(b, f0, dur) + self._fricative(b, f0, frames=5)
         if b.manner == MANNER_FRICATIVE:
-            return self._fricative(b, f0, frames=_DUR[MANNER_FRICATIVE])
+            return self._fricative(b, f0, frames=dur)
         if b.manner == MANNER_NASAL:
-            return self._sonorant(b, f0, _AV_MURMUR, _DUR[MANNER_NASAL])
+            return self._sonorant(b, f0, _AV_MURMUR, dur)
         if b.manner == MANNER_TRILL:
-            return self._trill(b, f0)
+            return self._trill(b, f0, dur)
         if b.manner == MANNER_TAP:
-            return self._sonorant(b, f0, _AV_APPROX, _DUR[MANNER_TAP])
+            return self._sonorant(b, f0, _AV_APPROX, dur)
         # approximant / lateral
-        dur = _DUR.get(b.manner, 7)
         return self._sonorant(b, f0, _AV_APPROX, dur)
 
     def _vowel(
-        self, b: FeatureBundle, stress: Stress, f0: float, glide: bool = False
+        self, b: FeatureBundle, plan: SegmentPlan, dur: int
     ) -> list[FrameSpec]:
-        dur = _DUR["vowel"]
-        if glide:               # one half of a diphthong: keep it short
-            dur = 7
-        if b.long:
-            dur = round(dur * 1.6)
-        if stress == Stress.PRIMARY:
-            dur += 3
-        av = _AV_FULL if stress != Stress.NONE else _AV_FULL - 3
+        # Reduce/centralise an unstressed vowel toward schwa (Lindblom 1963);
+        # coarticulate() then lets its formants undershoot per its duration.
+        if plan.reduce > 0.0:
+            b = reduce_vowel(b, plan.reduce)
+        av = _AV_FULL if plan.reduce == 0.0 else _AV_FULL - 3
         out = []
-        for _ in range(dur):
+        for _ in range(max(2, dur)):
             f = _blank()
             _voiced_phone(f, b, av)
-            _set_pitch(f, f0)
+            _set_pitch(f, plan.f0_hz)
             out.append(FrameSpec(tuple(f)))
         return out
 
@@ -288,11 +330,11 @@ class ModernTalkEngine:
             out.append(FrameSpec(tuple(f)))
         return out
 
-    def _stop(self, b: FeatureBundle, f0: float) -> list[FrameSpec]:
+    def _stop(self, b: FeatureBundle, f0: float, dur: int = 4) -> list[FrameSpec]:
         out = []
         # Closure: silence, or a faint voice bar for a voiced stop. PH=0 lets the
         # limit-cycle ramp pull the tail to true silence.
-        for _ in range(_DUR[MANNER_STOP]):
+        for _ in range(max(2, dur)):
             f = _blank()
             if b.voiced:
                 f[C.OUT_AV] = _AV_BAR
@@ -347,10 +389,10 @@ class ModernTalkEngine:
             out.append(FrameSpec(tuple(f), smooth=(b.place != "glottal")))
         return out
 
-    def _trill(self, b: FeatureBundle, f0: float) -> list[FrameSpec]:
+    def _trill(self, b: FeatureBundle, f0: float, dur: int = 8) -> list[FrameSpec]:
         # Approximate a trill by amplitude-modulating a voiced approximant.
         out = []
-        for i in range(_DUR[MANNER_TRILL]):
+        for i in range(max(2, dur)):
             f = _blank()
             _voiced_phone(f, b, _AV_APPROX if i % 2 == 0 else _AV_BAR)
             _set_pitch(f, f0)
@@ -358,31 +400,35 @@ class ModernTalkEngine:
         return out
 
 
-def _smooth_formants(specs: list[FrameSpec]) -> list[list[int]]:
-    """Three-point moving average of F1/F2/F3 over smoothable frames.
+def _interp_anchor(anchors: list[tuple[int, float]], k: int) -> float:
+    """Piecewise-linear F0 (Hz) at frame ``k``, clamped outside the anchors."""
+    if k <= anchors[0][0]:
+        return anchors[0][1]
+    if k >= anchors[-1][0]:
+        return anchors[-1][1]
+    for (x0, y0), (x1, y1) in zip(anchors, anchors[1:], strict=False):
+        if x0 <= k <= x1:
+            if x1 == x0:
+                return y0
+            return y0 + (y1 - y0) * ((k - x0) / (x1 - x0))
+    return anchors[-1][1]
 
-    This is the coarticulation model: formants glide across phone boundaries
-    instead of jumping, giving the transitions a listener uses to hear place.
-    Stops and bursts (``smooth=False``) are excluded so their cues stay crisp.
+
+def _upsample_2x(samples: list[int]) -> list[int]:
+    """Double the sample rate by linear interpolation (11025 -> 22050 Hz).
+
+    Each sample is emitted, then the midpoint to the next, matching
+    ``engines._upsample_2x`` so ModernTalk and the classic DECtalk engine
+    resample the same way.
     """
-    frames = [list(s.frame) for s in specs]
-    slots = (C.OUT_F1, C.OUT_F2, C.OUT_F3)
-    out = [list(f) for f in frames]
-    n = len(frames)
-    for i in range(n):
-        if not specs[i].smooth:
-            continue
-        for slot in slots:
-            acc = frames[i][slot]
-            cnt = 1
-            for j in (i - 1, i + 1):
-                # Only glide into other smoothable, sound-bearing frames; never
-                # average a vowel's formants toward a silent frame's defaults,
-                # which would erase the vowel's identity.
-                if 0 <= j < n and specs[j].smooth and frames[j][C.OUT_AV] > 0:
-                    acc += frames[j][slot]
-                    cnt += 1
-            out[i][slot] = acc // cnt
+    if len(samples) < 2:
+        return list(samples)
+    out: list[int] = []
+    for cur, nxt in zip(samples, samples[1:], strict=False):
+        out.append(cur)
+        out.append((cur + nxt) // 2)
+    out.append(samples[-1])
+    out.append(samples[-1])
     return out
 
 
@@ -390,3 +436,13 @@ def _pack(samples: list[int]) -> bytes:
     import struct
 
     return struct.pack(f"<{len(samples)}h", *samples)
+
+
+def _write_wav(pcm: bytes, path: str, rate: int) -> None:
+    import wave
+
+    with wave.open(path, "wb") as fh:
+        fh.setnchannels(1)
+        fh.setsampwidth(2)
+        fh.setframerate(rate)
+        fh.writeframes(pcm)
