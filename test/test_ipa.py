@@ -234,3 +234,50 @@ def test_native_to_ipa_drops_prosodic_and_silence_codes():
 def test_round_trip_helper_matches_struct_expectations():
     pcm = SAMEngine().say_ipa("sæm")
     assert len(struct.unpack(f"<{len(pcm) // 2}h", pcm)) == len(pcm) // 2
+
+
+# --- SAM word separators / breath breakpoints -------------------------------
+
+# A punctuation-free Portuguese IPA phrase: many words, no clause terminators.
+# Its SAM run exceeds insert_breath's 232-frame window, so without word
+# separators the breath pass finds no breakpoint and loops forever.
+_PT_IPA = "bˈoŋ dˈiɐ eʊ suw ˌumɐ vˈɔʃ sˌiŋtˈɛtikɐ"
+
+
+def test_sam_payload_carries_word_separators():
+    """The IPA -> SAM payload spaces words the way the reciter does."""
+    clauses = parse_ipa(_PT_IPA)
+    source, _ = ipa_to_native("sam", clauses)
+    assert " " in source
+    # one separator per word boundary (seven words -> six gaps)
+    assert source.count(" ") == 6
+
+
+def test_parse_ipa_threads_word_boundaries():
+    (clause,) = parse_ipa("sæm iz hir")
+    assert clause.word_breaks  # boundaries are recorded, not dropped
+    # the boundary indices fall on the first phone of each later word
+    assert all(0 < b < len(clause.phones) for b in clause.word_breaks)
+
+
+@pytest.mark.timeout(30)
+def test_sam_say_ipa_no_punctuation_does_not_hang():
+    """Regression: a spaceless SAM run used to loop forever in insert_breath."""
+    pcm = SAMEngine().say_ipa(_PT_IPA, "Sam")
+    assert pcm
+    assert len(pcm) % 2 == 0
+
+
+@pytest.mark.timeout(30)
+def test_sam_say_ipa_long_no_punctuation_renders():
+    long_ipa = ("bˈoŋ dˈiɐ " * 6).strip()
+    pcm = SAMEngine().say_ipa(long_ipa, "Sam")
+    assert pcm
+
+
+@pytest.mark.timeout(30)
+def test_sam_spaceless_phonemes_cap_terminates():
+    """The defensive cap stops even a breakpoint-free phoneme run from looping."""
+    pcm = SAMEngine().speak_phonemes("DIYAX" * 40)
+    # malformed spaceless input never hangs; PCM may be empty but must return.
+    assert pcm is not None

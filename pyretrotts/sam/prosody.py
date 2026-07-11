@@ -380,7 +380,12 @@ def insert_breath(st: Buffers) -> None:
                 pos = (pos + 1) & 0xFF
                 insert(st, pos, 254, 0, 0)
         else:
-            pos = mem54
+            # No breakpoint (space) was seen in this >=232-frame run. The
+            # reference reciter never emits such spaceless runs, but malformed
+            # phonetic input can; falling back to mem54 == 255 would jump past
+            # the buffer's END sentinel and wrap to 0, looping forever. Break at
+            # the current position instead so progress is always made.
+            pos = pos if mem54 == 255 else mem54
             st.phonemeindex[pos] = 31
             st.phonemeLength[pos] = 4
             st.stress[pos] = 0
