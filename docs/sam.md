@@ -1,4 +1,4 @@
-# SAM — the shipped engine
+# SAM
 
 SAM (Software Automatic Mouth, Don't Ask Software, 1982) is the third engine in
 this repository, in `pyretrotts/sam/`. It is a bit-exact port of the C
@@ -9,9 +9,8 @@ opcode-by-opcode translation of SoftVoice, Inc.'s 6502 program.
 its own subpackage. Read `NOTICE` before redistributing anything. Every file in
 `pyretrotts/sam/` carries a header stating its provenance.
 
-For the design evaluation that preceded the port, see
-[sam-port-plan.md](sam-port-plan.md). For why SAM sounds nothing like the other
-two engines, see [history.md](history.md).
+For why SAM sounds nothing like the other two engines, see
+[history.md](history.md).
 
 ## What it is, technically
 
@@ -103,9 +102,9 @@ Two layers, the same discipline as the MacinTalk engine
 - **Unit tests** (`test/test_sam.py`) hold reciter strings, phoneme-table values
   and prosody-stage buffers taken from `sam -debug`, as inline literals.
 
-At the time of writing, the port is byte-exact against the C reference across
-every case tried: text and phonetic input, sing mode, punctuation, number
-reading, consonant clusters, and all six voice presets.
+The port is byte-exact against the C reference across every case tried: text and
+phonetic input, sing mode, punctuation, number reading, consonant clusters, and
+all six voice presets.
 
 ## Limitations
 

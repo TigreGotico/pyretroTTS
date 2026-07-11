@@ -1,8 +1,8 @@
 # Two synthesizers, one ancestor
 
-`pyretrotts` ports two engines. Both are formant synthesizers, both descend
-from the same research, and they are routinely confused with each other —
-including, for a while, by this repository's own documentation.
+`pyretrotts` ports three engines. Two of them — MacinTalk and DECtalk — are
+formant synthesizers that descend from the same research, and they are routinely
+confused with each other. The third, SAM, is older and works differently.
 
 ## Origins: MIT and the Klatt synthesizer
 
@@ -101,8 +101,7 @@ But formant synthesis has properties neither of those can offer:
   deterministic arithmetic. There is no black box to probe.
 
 See [architecture.md](architecture.md) for how the MacinTalk engine maps onto
-this codebase, and [dectalk-port-plan.md](dectalk-port-plan.md) for the state
-of the DECtalk port.
+this codebase, and [dectalk.md](dectalk.md) for the DECtalk port.
 
 ## SAM (Don't Ask Software, 1982) — the odd one out
 

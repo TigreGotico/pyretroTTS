@@ -125,4 +125,4 @@ In descending order of audible effect:
 2. **Exact arithmetic.** Removes the accumulated DC bias. Available today, off
    by default, unvalidated.
 3. **16-bit output.** Worth roughly 12 dB of quantization headroom that nothing
-   is currently using. Below the noise floor of everything above it.
+   else uses. Below the noise floor of everything above it.

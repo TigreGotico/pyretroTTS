@@ -6,13 +6,12 @@ Tim Schaaff, Copyright (c) 1991-1992 by Apple Computer, Inc."*). Text goes in
 one end, 16-bit mono PCM comes out the other, and every stage in between mirrors
 a function in the original C source.
 
-For the DECtalk engine — a different codebase by different authors, whose
-markup this repository also understands — see
-[dectalk-port-plan.md](dectalk-port-plan.md).
+For the DECtalk engine — a separate codebase by different authors, ported in
+its own right — see [dectalk.md](dectalk.md).
 
 This document maps the C onto the Python, describes the state the pipeline
-threads through, explains how the port is kept honest, and lists what it does
-not do.
+threads through, explains how the port is checked against the C reference, and
+lists what it does not do.
 
 For the theory behind formant synthesis, and how to build a voice, read
 [creating-voices.md](creating-voices.md). For what DECtalk is and why it
@@ -142,9 +141,9 @@ It shells out to a compiled `test_harness` for a voice and a text, captures the
 phoneme plan and the per-frame synthesis state, feeds the identical plan
 through the Python backend, and diffs both the frame controls and the PCM
 samples. Comparing frame controls alone is not enough — a voice can match every
-control value and still emit silence, which is how a `SampleWave` bug once
-survived. Run it with `python3 test/test_voices.py --all`; it needs
-`lintalker-c` built as a sibling directory.
+control value and still emit silence, so the PCM samples are diffed too. Run it
+with `python3 test/test_voices.py --all`; it needs `lintalker-c` built as a
+sibling directory.
 
 The unit tests hold values extracted from that harness as inline literals, so
 they need no C build:

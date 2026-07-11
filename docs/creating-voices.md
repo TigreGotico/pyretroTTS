@@ -1,9 +1,10 @@
 # Creating a voice in pyretrotts: from zero to hero
 
-This guide explains, from first principles, how DECtalk (and this port)
+This guide explains, from first principles, how MacinTalk's formant model
 turns a set of ~70 numbers into a speaking voice, and walks through
-building a new one. If you already know what a formant synthesizer is,
-skip to ["The voice dict"](#the-voice-dict).
+building a new one. It covers the MacinTalk engine's voice dicts, the
+seventeen built-in voices, and how to author your own. If you already know
+what a formant synthesizer is, skip to ["The voice dict"](#part-2-the-voice-dict).
 
 ## Part 1: the theory
 
@@ -13,7 +14,7 @@ A recorded human voice is just a sequence of air-pressure measurements
 (a waveform). If you want a computer to *generate* speech instead of
 *playing back* a recording, you need a model that can produce a waveform
 from a symbolic description ("here's the word CAT, here's how loud/fast/
-high-pitched to say it"). DECtalk uses a **formant synthesizer**: instead
+high-pitched to say it"). MacinTalk uses a **formant synthesizer**: instead
 of storing recorded audio, it models the physics of the human vocal tract
 directly. A "voice" in this scheme is a small set of parameters that bend
 that physical model into sounding like a particular speaker (or a cartoon
@@ -55,7 +56,7 @@ each position resonating at different frequencies.
   F3 in particular controls "R-coloring" (the difference between "ah" and
   "ar").
 
-Each phoneme (see `_phonemes.py` for the full list DECtalk recognizes —
+Each phoneme (see `_phonemes.py` for the full list MacinTalk recognizes —
 `_IY_` "ee", `_AA_` "ah", `_p_`, `_s_`, etc.) has its own target formant
 frequencies, stored in `_data.py`'s big per-phoneme tables (`PhonPitchTbl`
 and friends) — these are **shared across all voices** (a vowel's formant
