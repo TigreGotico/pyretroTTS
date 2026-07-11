@@ -50,6 +50,10 @@ _PPHRASE = _FC_PREP | _FC_CHARACTER
 
 # l_all_ph.h phoneme codes.
 _US_AE, _US_UH, _US_RR, _US_N, _US_F, _US_T, _US_D = 5, 13, 15, 32, 37, 47, 48
+_US_AX = 17
+
+# l_com_ph.h control code (`SPECIALWORD`, deleted by `phsort`, allophones.py:672).
+_SPECIALWORD = 120
 
 # l_us_con.c sdic[]: the closed-class words looked up before the main dictionary,
 # each pronounced from a PPSTART-led fixed list. The SIL that ends every sdic
@@ -60,6 +64,24 @@ SDIC: dict[str, tuple[int, ...]] = {
     "and": (_US_AE, _US_N, _US_D),
     "to": (_US_T, _US_UH),
 }
+
+
+def article_a_codes(word: str, clause_final: bool) -> tuple[int, ...] | None:
+    """Reduced schwa codes for a standalone in-context article ``a``, else None.
+
+    `ls_task.c:2632-2645` special-cases the single-character word ``a``/``A``:
+    when it is not stripped by an adjacent quote/paren and the next item is
+    whitespace (another word follows before any punctuation), it is read as the
+    reduced article ``[SPECIALWORD, US_AX]`` (form class `FC_ART`) instead of the
+    dictionary citation spelling ``['e]`` = ``[S1, EY]``. `phsort`
+    (`ph_sort.c:1024`, allophones.py:672) then deletes the `SPECIALWORD`, so the
+    post-`phsort` body the oracle emits is the bare schwa ``US_AX``; that is what
+    this returns. A clause-final ``a`` (against punctuation or the input end) is
+    not whitespace-followed, so it keeps the citation form -- return None then.
+    """
+    if word not in ("a", "A") or clause_final:
+        return None
+    return (_US_AX,)
 
 
 def _is_verb(fc: int) -> bool:
@@ -92,4 +114,4 @@ def word_markers(word: str, dictionary: Dictionary | None) -> tuple[int, ...] | 
     return None
 
 
-__all__ = ["SDIC", "word_markers"]
+__all__ = ["SDIC", "article_a_codes", "word_markers"]

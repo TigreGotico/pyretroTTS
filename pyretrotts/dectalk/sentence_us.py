@@ -29,8 +29,8 @@ import re
 from dataclasses import dataclass
 
 from .dictionary import Dictionary
-from .grammar_us import SDIC, word_markers
-from .numbers_us import expand_number_token, say_cardinal
+from .grammar_us import SDIC, article_a_codes, word_markers
+from .numbers_us import number_token_send_codes, say_cardinal
 from .spell_us import is_spelled, spell_codes
 from .text_us import word_to_codes
 
@@ -107,24 +107,34 @@ def _split_clauses(text: str) -> list[_Clause]:
 
 
 def _expand_token(tok: str) -> list[str]:
-    """Expand one raw token to the words it reads as (number/abbrev/plain)."""
+    """Expand one raw token to the words it reads as (abbrev/number/plain).
+
+    A numeric or currency token is kept as a single token: `_word_symbols`
+    reads it through the digit path (`number_token_send_codes`) rather than the
+    word/dictionary path. An abbreviation still expands to its word sequence.
+    """
     low = tok.lower()
     if low in ABBREVIATIONS:
         return ABBREVIATIONS[low]
-    num = expand_number_token(tok)
-    if num is not None:
-        return num
     return [tok]
 
 
-def _word_symbols(word: str, dictionary: Dictionary | None) -> list[int]:
+def _word_symbols(
+    word: str, dictionary: Dictionary | None, clause_final: bool
+) -> list[int]:
     """Font-shifted send codes for a single word, spelling vowelless tokens."""
+    number = number_token_send_codes(word)
+    if number is not None:
+        return [_WBOUND, *(_font(c) for c in number)]
     if is_spelled(word):
         out: list[int] = []
         for letter in spell_codes(word):
             out.append(_WBOUND)
             out.extend(_font(c) for c in letter)
         return out
+    article = article_a_codes(word, clause_final)
+    if article is not None:
+        return [_WBOUND, *(_font(c) for c in article)]
     low = word.lower()
     markers = word_markers(low, dictionary)
     if low in SDIC:
@@ -137,8 +147,9 @@ def _word_symbols(word: str, dictionary: Dictionary | None) -> list[int]:
 
 def _clause_symbols(clause: _Clause, dictionary: Dictionary | None) -> tuple[int, ...]:
     syms: list[int] = [_FONT]
-    for word in clause.words:
-        syms.extend(_word_symbols(word, dictionary))
+    last = len(clause.words) - 1
+    for i, word in enumerate(clause.words):
+        syms.extend(_word_symbols(word, dictionary, clause_final=i == last))
     syms.append(clause.terminator)
     return tuple(syms)
 
