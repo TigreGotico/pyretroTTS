@@ -62,6 +62,8 @@ class IpaClause:
     phones: tuple[IpaPhone, ...]
     #: the clause terminator character (`.`, `,`, `?`, `!`), or `""` at input end
     terminator: str = "."
+    #: phone indices a word boundary (source whitespace) falls immediately before
+    word_breaks: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -126,14 +128,18 @@ def parse_ipa(text: str) -> list[IpaClause]:
     """
     clauses: list[IpaClause] = []
     phones: list[IpaPhone] = []
+    breaks: list[int] = []
     pending = Stress.NONE
+    pending_break = False
     i, n = 0, len(text)
     while i < n:
         ch = text[i]
         if ch in _TERMINATORS:
-            clauses.append(IpaClause(tuple(phones), ch))
+            clauses.append(IpaClause(tuple(phones), ch, tuple(breaks)))
             phones = []
+            breaks = []
             pending = Stress.NONE
+            pending_break = False
             i += 1
             continue
         if ch == _PRIMARY:
@@ -145,6 +151,8 @@ def parse_ipa(text: str) -> list[IpaClause]:
             i += 1
             continue
         if ch.isspace():
+            if phones:
+                pending_break = True
             i += 1
             continue
         pair = text[i:i + 2]
@@ -155,13 +163,16 @@ def parse_ipa(text: str) -> list[IpaClause]:
         while i < n and text[i] in _DIACRITICS:
             symbol += text[i]
             i += 1
+        if pending_break:
+            breaks.append(len(phones))
+            pending_break = False
         if pending is not Stress.NONE and _is_vowel(symbol):
             phones.append(IpaPhone(symbol, pending))
             pending = Stress.NONE
         else:
             phones.append(IpaPhone(symbol, Stress.NONE))
     if phones:
-        clauses.append(IpaClause(tuple(phones), ""))
+        clauses.append(IpaClause(tuple(phones), "", tuple(breaks)))
     return clauses
 
 
@@ -324,6 +335,10 @@ _DEC_VOWEL_NAMES = frozenset({
 _SAM_PRIMARY = "5"
 _SAM_SECONDARY = "3"
 
+#: SAM's word/clause separator token (phoneme index 0); the reciter emits it
+#: between words so `insert_breath` has breakpoints to fall back to.
+_SAM_SEPARATOR = " "
+
 
 def _lookup(table: dict[str, str], symbol: str) -> tuple[str, bool]:
     """Map an IPA `symbol` to an engine name, dropping diacritics as a fallback.
@@ -396,9 +411,12 @@ def _dectalk_clause(clause: IpaClause) -> tuple[object, list[Fallback]]:
 
 def _sam_clause(clause: IpaClause) -> tuple[str, list[Fallback]]:
     sam_index = _sam_index()
+    breaks = frozenset(clause.word_breaks)
     parts: list[str] = []
     fallbacks: list[Fallback] = []
-    for phone in clause.phones:
+    for pos, phone in enumerate(clause.phones):
+        if pos in breaks:
+            parts.append(_SAM_SEPARATOR)
         name, fell = _lookup(_IPA_TO_SAM_NAME, phone.symbol)
         if fell:
             fallbacks.append(Fallback(phone.symbol, "sam", name))
@@ -445,6 +463,10 @@ def ipa_to_native(engine: str, clauses: list[IpaClause]) -> tuple[object, list[F
     if engine == "sam":
         parts = []
         for clause in clauses:
+            if parts:
+                # separate clauses the way the reciter does, so every clause
+                # seam is a breakpoint for `insert_breath`.
+                parts.append(_SAM_SEPARATOR)
             source, fell = _sam_clause(clause)
             parts.append(source)
             term = clause.terminator if clause.terminator in (".", ",", "?") else ""
