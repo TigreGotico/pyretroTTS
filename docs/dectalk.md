@@ -1386,15 +1386,41 @@ the US 56/56 standard therefore requires, in order:
 1. extract the UK `ph/` ROMs from `libtts_uk.so` (a dumper like the US
    `tools/dump_dectalk_targets.py`), then port `uk_gettar` + the UK `phsettar`
    path and UK timing/intonation, gating phoneme -> PCM against the UK oracle.
-   **Done so far:** the ROM extraction (`targets_uk.py`, `targets_transitions_uk.py`)
-   and `uk_gettar` (`settar_uk.py`) under the `LanguageProfile` seam. **Remaining
-   for phoneme -> PCM:** the UK `phsettar` smooth rules (`uk_forw_smooth_rules`
-   `p_uk_st1.c:446`, `uk_back_smooth_rules` `:834`, `uk_special_rules` `:1240`,
-   `UKP_special_coartic` `:305`), UK timing (`us_phtiming` analogue in `p_uk_tim.c`),
-   and UK intonation (`p_uk_vdf_tune*.c` + the shared `pht0draw`/`phinton`). The
-   compiled `libtts_uk.so` carries `DECTALK_PHS_DUMP`/`DECTALK_TIM_DUMP`/
-   `DECTALK_VTM_DUMP`, so each stage gates against the oracle exactly as the US
-   port did. Until those land, UK **phoneme -> PCM is not yet bit-exact**;
+   **Done so far:** the ROM extraction (`targets_uk.py`, `targets_transitions_uk.py`),
+   `uk_gettar` (`settar_uk.py`), and the UK `phsettar` smooth/coartic rules
+   (`phsettar_uk.py`) under the language seam. The UK `phsettar` port
+   (`uk_forw_smooth_rules` `p_uk_st1.c:446`, `uk_back_smooth_rules` `:834`,
+   `uk_special_rules` `:1240`, `UKP_special_coartic` `:305`) is gated against the
+   live `libtts_uk.so` `DECTALK_PHS_DUMP` over 8 voices x 6 utterances
+   (`test/test_dectalk_uk_phsettar.py`): **all 166144 interior (non-`GEN_SIL`)
+   audio-relevant `PARAMETER` fields are bit-exact.** Font-dispatch findings that
+   were load-bearing: the shared `ph/` accessors and the smooth-rule/gettar
+   dispatch select tables/rules by the phone's font byte, so the boundary
+   `GEN_SIL` (US font `0x1E00`) runs the *US* smooth rules and `us_gettar`; and the
+   current build's `make_dip`/`getendtar` special_coartic dispatch has no `PFUK`
+   branch, so `UKP_special_coartic` is compiled-in-but-never-invoked for UK
+   (ported for fidelity, documented inert). The `GEN_SIL` boundary TILT target/
+   transition depends on `parstochip[OUT_TLT]` (the previous drawn frame) and is
+   validated at the end-to-end PCM stage, not the phone-by-phone `phsettar` gate.
+   **Remaining for phoneme -> PCM:**
+   - **UK timing** (`uk_phtiming`, `p_uk_tim.c`): a ~15-point delta over the
+     ported `us_phtiming` (`timing.py`, which models `p_us_tim0.c` == the build's
+     `p_us_tim.c`, verified) -- `dpause` 14/15 -> 4/5, percentage constants
+     (`N70/N80/N85/N90PRCNT`), `durmin` floors 3 -> 6 and 10 -> 14, `[LX]` vs
+     `[RX]` phone ranges, the `[HX]` 11-frame cap removed, `FWBNEXT` -> `FVPNEXT`.
+     Gating caveat: `DECTALK_TIM_DUMP` is compiled into `p_us_tim0.c` only -- the
+     UK path (`uk_phtiming`) carries **no** timing dump, so gating needs either the
+     `PHS_DUMP` `A`-line `allodurs` (post-`phinton`, so conflated with intonation)
+     or adding the dump snippet to `p_uk_tim.c` and rebuilding `libtts_uk.so`.
+   - **UK intonation**: `phinton`/`pht0draw` are **language-shared** (`ph_claus.c:356`
+     dispatches only French away from `phinton`), so no rule port is needed -- UK
+     reuses the already-bit-exact US `intonation.py`. What remains is the UK
+     *per-voice* F0/`phdraw` scalars (the `p_uk_vdf*.c` speaker-def layer, analogous
+     to `phclause.PH_SPEAKERS`), captured verbatim from the oracle per UK voice.
+   Until UK timing + the UK voice-def scalars land and the end-to-end
+   `DECTALK_VTM_DUMP` gate closes, UK **phoneme -> PCM is not yet bit-exact**;
+   `phclause` is deliberately left US-only (wiring `phsettar_uk` alone would pair
+   UK targets with US timing);
 2. load `dtalk_uk.dic` (the loader is shared) and port the UK LTS rules
    (`lts/l_uk_ru1.c`/`l_uk_rta.c`/`l_uk_suf*.c`/`l_uk_ad1.c`), gating the pre-`ph/`
    stream against the `DECTALK_LTS_DUMP` capture;
