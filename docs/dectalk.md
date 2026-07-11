@@ -3,15 +3,15 @@
 This documents the Python port of the genuine DECtalk synthesizer, kept in
 `pyretrotts/dectalk/`. It is a separate engine from the MacinTalk port described
 in [architecture.md](architecture.md); the two share only test discipline, not
-code. For the standing multi-phase plan see
-[dectalk-port-plan.md](dectalk-port-plan.md).
+code.
 
 **Licensing.** Everything under `pyretrotts/dectalk/` descends from the
 Fonix/Force DECtalk C source, which FONIX Corporation declares proprietary and
 confidential. That subpackage is **not** covered by this project's MIT licence;
-every file in it carries the FONIX notice. See [NOTICE](../NOTICE). The shipping
-DECtalk markup dialect still renders through MacinTalk
-(`pyretrotts.engines.DECtalkEngine`); this port does not change what ships.
+every file in it carries the FONIX notice. See [NOTICE](../NOTICE).
+`DECtalkEngine` renders through the DECtalk synthesizer for the ten voices when a
+DECtalk dictionary is installed, and substitutes the nearest MacinTalk voice
+otherwise; the dictionary itself is not distributed with this package.
 
 ## Status
 
@@ -215,10 +215,8 @@ Paul defaults until `[:dv]` overrides it.
 
 ## Verification
 
-The synthesizer is proven in isolation, exactly as
-[dectalk-port-plan.md](dectalk-port-plan.md) Phase 1 prefers: parameter frames
-are captured from the C oracle and `vtm.py` is replayed over them, so no prosody
-(`ph/`) is dragged in.
+The synthesizer is proven in isolation: parameter frames are captured from the C
+oracle and `vtm.py` is replayed over them, so no prosody (`ph/`) is dragged in.
 
 - **`test/test_dectalk_oracle.py`** -- sample-for-sample diff of Python against
   the instrumented C, for all ten voices over five utterances. Skips without the
