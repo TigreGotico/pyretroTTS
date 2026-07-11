@@ -23,8 +23,33 @@ def test_an_unknown_engine_is_rejected():
 
 def test_the_engines_use_their_own_notation():
     assert phonemize("hello", "macintalk") == ["h", "EH", "l", "OW"]
-    assert phonemize("hello", "dectalk") == ["h", "eh", "l", "ow"]
+    assert phonemize("hello", "dectalk") == ["hx", "eh", "ll", "ow"]
     assert phonemize("hello", "sam") == ["/H", "EH", "L", "OW"]
+
+
+def test_dectalk_runs_its_own_front_end():
+    """DECtalk sounds a word out with its own rules, not MacinTalk's relabelled."""
+    assert phonemize("photograph", "dectalk") == \
+        ["f", "ow", "t", "ax", "g", "r", "ae", "f"]
+
+
+def test_dectalk_expands_numbers():
+    """A digit token reads as words through DECtalk's number reader."""
+    assert phonemize("21", "dectalk") == ["t", "w", "eh", "n", "t", "iy", "w", "ah", "n"]
+
+
+def test_dectalk_applies_inflectional_morphology():
+    """`dogs` is `dog` plus a voiced `-s`."""
+    dogs, = phonemize_words("dogs", "dectalk")
+    assert dogs.phonemes == ["d", "aa", "g", "z"]
+
+
+def test_dectalk_markers_carry_stress_and_boundaries():
+    plain = phonemize("hello", "dectalk")
+    marked = phonemize("hello", "dectalk", markers=True)
+    assert len(marked) > len(plain)
+    assert "s1" in marked and "s1" not in plain
+    assert "wbound" in marked
 
 
 def test_markers_are_dropped_by_default():
