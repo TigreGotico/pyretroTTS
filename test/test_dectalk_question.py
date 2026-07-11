@@ -72,6 +72,52 @@ def test_wh_question_pcm_all_voices() -> None:
     assert exact == total, f"{exact}/{total} wh-question renders sample-exact"
 
 
+# Yes/no questions on a clause-head be-form: the auxiliary carries a leading S2.
+_YESNO_AUX = ("are you there?", "is it cold?", "was it good?",
+              "were you here?", "is she home?", "are they ready?")
+
+
+def test_yesno_aux_pcm_all_voices() -> None:
+    d = _load_dict()
+    capture = _oracle()
+    if d is None or capture is None:
+        pytest.skip("oracle/dictionary not available")
+    from pyretrotts.dectalk.sentence_us import sentence_to_pcm
+
+    exact = total = 0
+    for text in _YESNO_AUX:
+        for voice in range(10):
+            u = capture(voice, text)
+            if u is None:
+                continue
+            total += 1
+            want = struct.pack(f"<{len(u.pcm)}h", *u.pcm)
+            exact += sentence_to_pcm(voice, text, d) == want
+    assert total > 0
+    assert exact == total, f"{exact}/{total} yes/no-aux renders sample-exact"
+
+
+def test_gate_bites_without_head_aux_stress() -> None:
+    # Dropping the clause-head be-form set makes `is it cold?` diverge: the S2
+    # rule has teeth. Verified against voice 0.
+    d = _load_dict()
+    capture = _oracle()
+    if d is None or capture is None:
+        pytest.skip("oracle/dictionary not available")
+    from pyretrotts.dectalk import sentence_us
+
+    text = "is it cold?"
+    u = capture(0, text)
+    want = struct.pack(f"<{len(u.pcm)}h", *u.pcm)
+    saved = sentence_us._HEAD_STRESS_AUX
+    try:
+        sentence_us._HEAD_STRESS_AUX = frozenset()
+        wrong = sentence_us.sentence_to_pcm(0, text, d)
+    finally:
+        sentence_us._HEAD_STRESS_AUX = saved
+    assert wrong != want
+
+
 def test_gate_bites_without_wh_terminator() -> None:
     # A wh-question rendered with QUEST diverges from the oracle: the gate has
     # teeth. Verified against voice 0 of the first wh-question.

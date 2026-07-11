@@ -1637,6 +1637,7 @@
     [
      7680,
      111,
+     102,
      7686,
      7706,
      111,
@@ -1849,6 +1850,7 @@
   "what time is it",
   "yes, no, maybe",
   "yes, no, maybe, sure",
-  "you are here"
+  "you are here",
+  "are you there"
  ]
 }
