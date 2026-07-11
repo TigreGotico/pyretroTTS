@@ -33,6 +33,7 @@ from .grammar_us import SDIC, article_a_codes, word_markers
 from .numbers_us import number_token_send_codes, say_cardinal
 from .spell_us import is_spelled, spell_codes
 from .text_us import word_to_codes
+from .title_abbrev_us import TITLE_ABBREVIATIONS, title_abbrev_body
 
 # l_com_ph.h prosody codes.
 _FONT = 7680
@@ -87,10 +88,17 @@ _TOKEN = re.compile(r"\$?\d[\d,]*(?:\.\d+)?(?:st|nd|rd|th)?|[A-Za-z][A-Za-z']*|[
 
 
 @dataclass(frozen=True)
+class _TitleWord:
+    """A title abbreviation resolved to its fixed phone body (`Dr.`/`St.`)."""
+
+    body: tuple[int, ...]
+
+
+@dataclass(frozen=True)
 class _Clause:
     """One clause's word list and its terminator code."""
 
-    words: tuple[str, ...]
+    words: tuple[str | _TitleWord, ...]
     terminator: int
 
 
@@ -102,8 +110,9 @@ def _split_clauses(text: str) -> list[_Clause]:
     """Tokenize `text` and split it into clauses on punctuation."""
     tokens = _TOKEN.findall(text)
     clauses: list[_Clause] = []
-    words: list[str] = []
+    words: list[str | _TitleWord] = []
     last_abbrev = False
+    word_seen = False
     i = 0
     while i < len(tokens):
         tok = tokens[i]
@@ -115,15 +124,38 @@ def _split_clauses(text: str) -> list[_Clause]:
                 i += 1
                 continue
             terminator = _TERMINATORS[tok]
-            if tok == "?" and words and words[0].lower() in _WH_WORDS:
+            first = words[0] if words else None
+            if (
+                tok == "?"
+                and isinstance(first, str)
+                and first.lower() in _WH_WORDS
+            ):
                 terminator = _PERIOD
             clauses.append(_Clause(tuple(words), terminator))
             words = []
             last_abbrev = False
             i += 1
             continue
+        # `Dr.`/`St.` before a name read from a dedicated title phone list; the
+        # disambiguation needs the `.` and the following word (`ls_task.c:2910`).
+        low = tok.lower()
+        if (
+            low in TITLE_ABBREVIATIONS
+            and i + 1 < len(tokens)
+            and tokens[i + 1] == "."
+        ):
+            follower = tokens[i + 2] if i + 2 < len(tokens) else None
+            next_word = follower if follower not in _TERMINATORS else None
+            body = title_abbrev_body(low, next_word, sentence_initial=not word_seen)
+            if body is not None:
+                words.append(_TitleWord(body))
+                word_seen = True
+                last_abbrev = False
+                i += 2
+                continue
         words.extend(_expand_token(tok))
-        last_abbrev = tok.lower() in ABBREVIATIONS
+        last_abbrev = low in ABBREVIATIONS
+        word_seen = True
         i += 1
     if words:
         clauses.append(_Clause(tuple(words), _PERIOD))
@@ -185,6 +217,10 @@ def _clause_symbols(
     syms: list[int] = [_FONT]
     last = len(clause.words) - 1
     for i, word in enumerate(clause.words):
+        if isinstance(word, _TitleWord):
+            syms.append(_WBOUND)
+            syms.extend(_font(c) for c in word.body)
+            continue
         head_aux = (
             sentence_initial and i == 0 and word.lower() in _HEAD_STRESS_AUX
         )
