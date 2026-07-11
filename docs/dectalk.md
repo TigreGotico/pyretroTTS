@@ -710,17 +710,36 @@ mechanisms are exercised broadly).
 | function words | 2/4 → **3/4** | 3/4 → **4/4** |
 | conjunctions / preps (`and`/`for`) | 3/4 → **4/4** | 3/4 → **4/4** |
 | inflection (plurals / `-ed` / `-ing`) | 8/8 → 8/8 | 8/8 → 8/8 |
-| **total** | 47/56 → **52/56** | 49/56 → **54/56** |
+| **total** | 47/56 → **52/56** | 49/56 → **55/56** |
 
 The article reduction makes `that is a cat` and `a dog and a cat` framing- and
 PCM-exact (the article `a` reduces to a schwa mid-clause); the digit path makes
 `123`, `2005`, `$5` (and the whole extended number/currency/decimal battery)
 bit-exact -- `$5` is closed by porting the real currency reader (its `pdollar`
-vowel), as anticipated. The two remaining voice-0 PCM misses are outside these
-two mechanisms: the question `are you there` (the unported question-final
-restress) and `dr. smith` (an abbreviation title-stress edge). The two remaining
-framing-only misses (`what is that`, `give it to me`) are already PCM-exact via
-the ported `phsort` clause-final promotion / restress.
+vowel), as anticipated. The clause-head be-form `S2` (below) closes `are you
+there` (the last question PCM miss). The **sole remaining voice-0 PCM miss** is
+`dr. smith` -- the unported `Dr.`-title abbreviation disambiguation. The three
+remaining framing-only misses (`what is that`, `are you there`, `give it to me`)
+are all PCM-exact via the ported `phsort` clause-final promotion / restress: the
+symbol stream carries an `S2` where the oracle records an `S1` on a pronoun, and
+`phsort` reconciles the two before the VTM.
+
+### Clause-head be-form secondary stress
+
+The reduced be-forms `is`/`are`/`was`/`were` open the dictionary with their
+primary stress stripped (`is.` cites `[S1, IH, Z]`; the in-context form is the
+bare `[IH, Z]`). At the head of the **sentence's first clause** the C keeps a
+residual secondary stress on them -- `is it cold.` and `are you there?` both open
+`[WBOUND, S2, ...]`, while a post-comma clause head (`no, is it cold?`) and the
+auxiliaries `am`/`be`/`has`/`have`/`did`/`does`/`do` do not (verified against the
+oracle across ten voices). `sentence_us._HEAD_STRESS_AUX`
+(`sentence_us.py`, `_with_head_stress`) inserts the `S2` (`l_com_ph.h`) before
+the word's first vowel, matching the C's citation-form demotion. This closes the
+`is it cold?`/`are you there?`/`was it good?`/`were you here?`/`is she home?`/
+`are they ready?` yes/no battery to text->PCM sample-exact across all ten voices.
+The one framing residue (`are you there` keeps the pronoun `you` at `S2` where the
+oracle raises it to `S1`) is the general nuclear-stress reassignment of the
+unported `cmd/par_*.c` parser; it is PCM-exact, so it is a framing-only note.
 
 ### Wh-question terminator
 
@@ -729,10 +748,37 @@ A `?` clause opening with a wh-word takes the falling `PERIOD` terminator, not t
 `what is that?`, `who are you?`, `what time is it?`, `where is it?` and
 `which way?` render text -> PCM sample-exact across all ten voices;
 `test/test_dectalk_question.py` gates it (terminator selection in CI, oracle-gated
-PCM across the ten voices, and a mutation gate). The residual `?` cases are yes/no
-questions on a `be`-form auxiliary (`are you there?`, `is it cold?` -- a leading
-`S2` on the auxiliary; note `do`/`can` yes/no questions already render exact) and
-a `why` text-reading edge, both still open.
+PCM across the ten voices, and a mutation gate). The yes/no questions on a
+`be`-form auxiliary (`are you there?`, `is it cold?`) are now closed by the
+clause-head `S2` above (`test_yesno_aux_pcm_all_voices`, mutation-gated by
+`test_gate_bites_without_head_aux_stress`); `do`/`can` yes/no questions already
+rendered exact.
+
+### `why` and the `y`-vowel speller decision
+
+A token whose only vowel letter is `y` (`why`, `my`, `gym`, `rhythm`) must be
+pronounced by the word layer, not letter-spelled: `ls_feat.tab` marks lowercase
+`y` (`0x79`) and uppercase `Y` (`0x59`) as `CFEAT_cons+CFEAT_vowel`, so the
+`IS_VOWEL` macro (`ls_char.h:62`) is true for it. `spell_us.is_spelled` previously
+tested only `aeiou`, so `why` (dictionary `[W, S2, AY]`) was wrongly spelled
+letter by letter. Adding `y` to `spell_us._VOWELS` makes `why not?` and the
+`y`-word set text->PCM sample-exact across ten voices
+(`test/test_dectalk_residual.py`, mutation-gated by
+`test_gate_bites_without_y_vowel`). A token with no `a/e/i/o/u/y` (`pqr`, `tv`)
+is still spelled.
+
+### `dr. smith` -- still open (parser subsystem)
+
+`Dr.` is context-disambiguated by the C: before a proper name it reads as the
+**destressed** title `doctor` (oracle `[D, AA, K, T, RR]` -- no `S1`, `AA` vowel),
+elsewhere (`the dr. is in`) as `drive` (`[D, RR, S1, AY, V]`). Both forms are
+dedicated data symbols `pdoctor`/`pdrive` (`lts/ltsnames.h:193-194`) selected by
+the capitalization/name-detection logic in the unported `cmd/par_*.c` parser; the
+`AA` title vowel is not derivable from the full-word `doctor` entry (dictionary
+`[D, S1, AO, K, T, RR]`, which `doctor smith` renders exactly). Reproducing this
+is a parser subsystem, not a small rule, so it is left as the one open residual:
+`sentence_us.ABBREVIATIONS` expands `dr` -> the full word `doctor`, so `dr. smith`
+diverges from the oracle (`test_dr_title_abbreviation_is_open` locks the gap).
 
 The 52 framing-exact and 54 voice-0 PCM-exact texts are locked by
 `test/dectalk_grammar_golden.json`; `test_pcm_exact_all_voices` verifies each
@@ -796,8 +842,8 @@ The stress edits above this -- the clause-final function-word promotion
 (`ph_sort.c:1116`) and the general reductions -- run inside `phclause`'s `phsort`
 stage (`allophones.py`), so where the port feeds the correct pre-`phsort`
 markers, the PCM is already sample-exact even when the captured (post-`phsort`)
-`symbols[]` differ by that promotion (e.g. `what is that`, `give it to me`,
-`went` are PCM-exact despite a framing diff on the final function word).
+`symbols[]` differ by that promotion (e.g. `what is that`, `are you there`,
+`give it to me`, `went` are PCM-exact despite a framing diff on a function word).
 
 ## The inflectional-suffix morphology (`morph_us.py`)
 
@@ -820,14 +866,23 @@ re-enters the same `Dictionary`; a stem miss falls through to the rules.
 
 ### Is full US DECtalk text-to-speech parity reached?
 
-**Nearly, for general running text.** Plain statements, comma/semicolon lists,
-spelled words, dictionary-verb sentences, `for`/`and`/`to` conjunction/prep
-sentences, **inflected words (plurals, `-ed`, `-ing`, possessive)**, **the schwa
-article `a`**, **digit-path numbers / currency / ordinals / decimals**, and most
-abbreviations are whole-sentence text -> PCM **sample-exact vs the oracle across
-all ten voices** (the 54 PCM-exact battery texts). The in-context article
-reduction and the digit-path number reading, two of the residuals named in the
-last pass, are now closed.
+**NO -- one text-reading residual remains: `dr. smith`.** Everything else in the
+general running-text battery is whole-sentence text -> PCM **sample-exact vs the
+oracle across all ten voices**: plain statements, comma/semicolon lists, spelled
+words, dictionary-verb sentences, `for`/`and`/`to` conjunction/prep sentences,
+**inflected words (plurals, `-ed`, `-ing`, possessive)**, **the schwa article
+`a`**, **digit-path numbers / currency / ordinals / decimals**, **wh-questions**,
+**yes/no questions on a `be`-form auxiliary**, and **`y`-vowel words (`why`)**
+(the 55 PCM-exact battery texts). This pass closed two of the three residuals
+named last time: the clause-head be-form `S2` (yes/no `is it cold?`/`are you
+there?`) and the `y`-vowel speller decision (`why not?`).
+
+The **one remaining gap** is `dr. smith`: the `Dr.`-title abbreviation
+disambiguation (`pdoctor`/`pdrive`, `lts/ltsnames.h:193-194`, selected by the
+unported `cmd/par_*.c` capitalization/name parser). It is a parser subsystem, not
+a small rule, so full US DECtalk text->speech parity is **not yet reached**; the
+exact and only outstanding residual is `dr. smith` (destressed `AA`-vowel title
+`doctor`, C site `cmd/par_*.c` + `lts/ltsnames.h:193`).
 
 ## The in-context article reduction (`grammar_us.article_a_codes`)
 
