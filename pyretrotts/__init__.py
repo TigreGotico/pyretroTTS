@@ -13,6 +13,7 @@ The lower-level API works one voice at a time:
 
     pcm_to_wav(synthesize_text(Fred_Voice, "hello."), "out.wav")
 """
+from . import ipa
 from .api import (
     PhonemePlan,
     build_phoneme_plan,
@@ -25,19 +26,26 @@ from .api import (
 from .dictionaries import UserDictionary, load_dictionary, use_dictionary
 from .engines import DECtalkEngine, Engine, MacInTalkEngine, SAMEngine
 from .g2p import phonemize, phonemize_words
+from .ipa import IPA_LOSS, IpaClause, IpaPhone, Stress, parse_ipa
 from .version import __version__
 
 __all__ = [
     "DECtalkEngine",
     "Engine",
+    "IPA_LOSS",
+    "IpaClause",
+    "IpaPhone",
     "MacInTalkEngine",
     "PhonemePlan",
+    "Stress",
     "UserDictionary",
     "SAMEngine",
     "__version__",
     "build_phoneme_plan",
+    "ipa",
     "load_dictionary",
     "new_voice",
+    "parse_ipa",
     "phonemize",
     "phonemize_words",
     "pcm_to_wav",
