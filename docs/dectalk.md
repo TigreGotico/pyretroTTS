@@ -1284,3 +1284,94 @@ stage, not an oracle dependency.
 - **The oracle instrumentation is not vendored.** The frame dump depends on a
   temporary C patch to `vtmiont.c` (documented above); the read-only checkout
   stays clean, so the oracle test skips unless you build an instrumented copy.
+
+## Multilingual (UK / gr / fr / sp / la)
+
+DECtalk ships six front ends. The US port above is complete; the other five
+(British English `uk`, German `gr`, Castilian Spanish `sp`, Latin-American
+Spanish `la`, French `fr`) reuse the *shared* lower layers and diverge only in
+the language-specific data. This section records the parameterization seam and
+the measured UK delta; UK is Phase 1 of the five-language program.
+
+### What is shared vs per-language (from the C)
+
+The compiled multilanguage build (`dtalkml/src/dtalk_ml.c:379`) dlopens
+`libtts_<lang>.so` and, inside it, tags every phoneme with a per-language *font
+byte* (`include/l_all_ph.h`: `PFUSA 0x1E`, `PFUK 0x1D`, `PFGR 0x1C`,
+`PFSP 0x1B`, `PFLA 0x1A`, `PFFR 0x19`) so a phoneme code is `(font << 8) | index`.
+
+- **Shared, must not regress** (one code path, language macros only): the `vtm/`
+  synthesizer (`VTM1`), the `phdraw` frame loop (`ph_draw.c`), the clause
+  orchestrator (`ph_claus.c`), and `send_pars`. The port keeps these in the
+  language-agnostic modules (`vtm.py`, `ph.py`, `phclause.py`, ...).
+- **Per-language**: the phoneme render/parse alphabet (`<lang>_arpa[]`,
+  `<lang>_phon.tab`), the dictionary (`dtalk_<lang>.dic`), the LTS rules
+  (`lts/l_<lang>_*`), and the whole `ph/` target layer -- ROM (`p_<lang>_rom.c`),
+  gettar (`p_uk_st1.c` `uk_gettar` vs `p_us_st0.c` `us_gettar`), locus/transitions
+  (`p_<lang>_sr1.c`), syllabification (`p_<lang>_sy1.c`), timing (`p_<lang>_tim.c`),
+  and the voice-definition / intonation tunes (`p_<lang>_vdf*.c`).
+
+### The language-parameterization seam
+
+`pyretrotts/dectalk/language.py` is the selector: a `Language` enum keys a
+frozen `LanguageProfile` naming the font byte, the phoneme inventory
+(`phoneme_names`/`phoneme_codes`), the ARPABET render table (`arpa_pairs`), and
+the `LOG_PHONEMES` language tag. US is registered from the existing `lts` module
+tables verbatim, so the US path is byte-identical (its goldens do not move); UK
+is registered from `pyretrotts/dectalk/uk_phonemes.py`. Heavier per-language
+data (dictionary, LTS rules, `ph/` ROM) attaches to the profile as it is ported.
+
+### UK status (measured)
+
+The UK oracle is driven by `tools/uksay.c` + `tools/dump_dectalk_uk.py`: the
+stock `say` refuses `-l uk` (its `MultiLang` guard, `say.c:491`, is false on
+Linux), so the harness calls `TextToSpeechStartLang("uk")` directly to dlopen
+`libtts_uk.so`, renders to WAV, and captures the raw pre-`ph/` phoneme+stress
+stream from the `DECTALK_LTS_DUMP` instrumentation of `ls_util_send_phone`
+(`lts/ls_util.c`) -- the same instrumentation-boundary the US LTS port used.
+
+- **Phoneme alphabet -- ported, bit-exact, gated** (`uk_phonemes.py`,
+  `test/test_dectalk_uk_phonemes.py`, 8 tests). The UK inventory is 57 allophones
+  (`UK_TOT_ALLOPHONES`), position-for-position identical to US 1..56 **except**
+  index 29 (`UK_OH`, the RP LOT/CLOTH vowel, vs `US_RX`) and index 51
+  (`UK_YR`/`UK_DX` alias vs `US_DX`); US also has 57..60 (`TZ/CZ/LY/RE`) with no
+  UK counterpart. The `uk_arpa[]` render table differs from `usa_arpa[]` only at
+  indices 25 (`y ` vs `yx`), 27 (`l ` vs `ll`), 29 (`oh` vs `rx`), 51 (`yr` vs
+  `dx`). A committed real capture of 37 UK words
+  (`test/dectalk_uk_lts_golden.json`) decodes 100% through the ported inventory;
+  the render round-trip and an arpa-mutation gate bite.
+- **UK non-rhoticity is realized downstream, not in the inventory.** The centring
+  vowels `IR/ER/AR/OR/UR` (19..23) and the NURSE vowel `RR` (15) share their US
+  codes; the post-vocalic `R` (26) the UK dictionary/LTS still emit
+  (`water` -> `w ao t ax r`, raw) is dropped by the shared `ph/` reduction, so
+  `car` reaches `phclause` as `k aa` (49, S1, 6) with no `r`. Verified against the
+  oracle.
+- **UK intonation/timing differ.** The oracle's per-clause `T` line for UK voice 0
+  is `200 160 19114 17749 ...` vs US `180 180 18245 17314 ...` -- the UK
+  `p_uk_vdf_tune*.c` / `p_uk_tim.c` layer, distinct from US.
+
+### What remains for full UK (and what gr/fr/sp/la will each need)
+
+UK **phoneme -> PCM is not yet bit-exact**: it cannot route through the US `ph/`
+chain, because UK has its own target ROM (`p_uk_rom.c`), its own `uk_gettar`
+(`p_uk_st1.c`), its own locus/syllable/timing (`p_uk_sr1.c`, `p_uk_sy1.c`,
+`p_uk_tim.c`), and its own voice/intonation tunes (`p_uk_vdf*.c`). Porting UK to
+the US 56/56 standard therefore requires, in order:
+
+1. extract the UK `ph/` ROMs from `libtts_uk.so` (a dumper like the US
+   `tools/dump_dectalk_targets.py`), then port `uk_gettar` + the UK `phsettar`
+   path and UK timing/intonation, gating phoneme -> PCM against the UK oracle;
+2. load `dtalk_uk.dic` (the loader is shared) and port the UK LTS rules
+   (`lts/l_uk_ru1.c`/`l_uk_rta.c`/`l_uk_suf*.c`/`l_uk_ad1.c`), gating the pre-`ph/`
+   stream against the `DECTALK_LTS_DUMP` capture;
+3. UK number/abbreviation reading (`l_uk_pr1.c`/`l_uk_con.c`) and the UK sentence
+   front end, then text -> PCM across the UK voices.
+
+Each of **gr/fr/sp/la** needs the identical five-part port against its own font
+byte, `libtts_<lang>.so`, and `dtalk_<lang>.dic`: (a) the phoneme alphabet
+(`<lang>_phon.tab`, one `<lang>_phonemes.py` + profile registration -- cheap,
+like UK here), (b) the `ph/` ROM + gettar + timing + intonation
+(`p_<lang>_*` -- the expensive part, structurally like the US `settar`/`phsettar`
+port), (c) the dictionary, (d) the LTS rules, (e) numbers/abbreviations and the
+sentence front end. The shared `vtm`/`phdraw`/`phclause` and the `tools/uksay.c`
+capture harness (which already takes any `-l <lang>`) are reused unchanged.
