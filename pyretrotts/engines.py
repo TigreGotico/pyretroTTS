@@ -29,6 +29,33 @@ __all__ = ["Engine", "MacInTalkEngine", "DECtalkEngine", "SAMEngine"]
 _UNTIMED_MS = 70
 
 
+def _load_native_dict():
+    """Locate and load the FONIX `dtalk_us.dic`, or return None if unavailable.
+
+    Searched at `$DECTALK_DIR/dtalk_us.dic` and the built oracle `dist/`. The
+    dictionary is FONIX data, not shipped; without it the native DECtalk path is
+    unavailable and rendering falls back to the MacinTalk substitute voices.
+    """
+    import glob
+    import os
+
+    from .dectalk.dictionary import Dictionary
+
+    candidates: list[str] = []
+    env = os.environ.get("DECTALK_DIR")
+    if env:
+        candidates.append(os.path.join(env, "dtalk_us.dic"))
+    candidates += glob.glob(
+        os.path.expanduser("~/AgentWorkspaces/ovos/dectalk-c/dist/dic/dtalk_us.dic"))
+    for path in candidates:
+        if os.path.exists(path):
+            try:
+                return Dictionary.load(path)
+            except Exception:
+                return None
+    return None
+
+
 class Engine(ABC):
     """A speech synthesizer: text or markup in, 16-bit mono PCM out."""
 
@@ -109,8 +136,27 @@ class DECtalkEngine(Engine):
         "Variable Val": "Fred",
     }
 
+    #: native DECtalk voice index (`-s N`) per voice name.
+    _NATIVE_INDEX = {name: i for i, name in enumerate((
+        "Perfect Paul", "Beautiful Betty", "Huge Harry", "Frail Frank",
+        "Doctor Dennis", "Kit the Kid", "Uppity Ursula", "Rough Rita",
+        "Whispering Wendy", "Variable Val"))}
+
     def __init__(self, backend: MacInTalkEngine | None = None) -> None:
         self._backend = backend or MacInTalkEngine()
+        self._native_dict = _load_native_dict()
+
+    def _native_synthesize(self, text: str, voice: str) -> bytes | None:
+        """Render plain text through the ported DECtalk chain, or None if it can't.
+
+        Requires the FONIX `dtalk_us.dic`; when it is absent (as in CI) this
+        returns None and `synthesize` falls back to the MacinTalk substitute.
+        """
+        if self._native_dict is None or voice not in self._NATIVE_INDEX:
+            return None
+        from .dectalk.sentence_us import sentence_to_pcm
+
+        return sentence_to_pcm(self._NATIVE_INDEX[voice], text, self._native_dict)
 
     @property
     def voices(self) -> dict[str, Voice]:
@@ -126,7 +172,11 @@ class DECtalkEngine(Engine):
         score = self.parse(source)
         if score.notes:
             return self.render(score, default_voice=voice)
-        return self._backend.synthesize(score.text or source, self.VOICE_SUBSTITUTES[voice])
+        text = score.text or source
+        native = self._native_synthesize(text, voice)
+        if native is not None:
+            return native
+        return self._backend.synthesize(text, self.VOICE_SUBSTITUTES[voice])
 
     def sing(self, source: str, path: str, voice: str = "Perfect Paul") -> str:
         return pcm_to_wav(self.synthesize(source, voice), path)
