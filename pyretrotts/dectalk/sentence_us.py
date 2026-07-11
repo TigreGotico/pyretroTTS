@@ -55,6 +55,20 @@ _WH_WORDS = frozenset(
     {"what", "why", "who", "how", "where", "when", "which", "whose", "whom"}
 )
 
+# The reduced be-forms `is`/`are`/`was`/`were` open the dictionary with their
+# primary stress stripped; at the head of the sentence's first clause the C keeps
+# a residual secondary stress (`S2`) on them instead of fully reducing (verified
+# against the oracle: `is it cold.`/`are you there?` both open with `S2`, a
+# post-comma clause head does not, and `am`/`be`/`has`/`do` do not). The `S2` is
+# inserted before the word's first vowel. The general nuclear-stress reassignment
+# that also raises a following pronoun (`are you THERE?`) is the unported
+# `cmd/par_*.c` parser; see `docs/dectalk.md`.
+_HEAD_STRESS_AUX = frozenset({"is", "are", "was", "were"})
+_S2 = 102
+# `l_us_ph.h` vowel/syllabic phoneme codes (IY..UR); a stress mark sits before
+# the first of these in a word body.
+_VOWEL_CODES = frozenset(range(1, 24))
+
 # US abbreviation expansions (`l_us_con.c` abbreviation handling). Each maps a
 # lowercased token (period stripped) to the word sequence it reads as.
 ABBREVIATIONS: dict[str, list[str]] = {
@@ -129,8 +143,16 @@ def _expand_token(tok: str) -> list[str]:
     return [tok]
 
 
+def _with_head_stress(body: tuple[int, ...]) -> tuple[int, ...]:
+    """Insert `S2` before the first vowel of a sentence-head be-form's body."""
+    for i, code in enumerate(body):
+        if code in _VOWEL_CODES:
+            return (*body[:i], _S2, *body[i:])
+    return body
+
+
 def _word_symbols(
-    word: str, dictionary: Dictionary | None, clause_final: bool
+    word: str, dictionary: Dictionary | None, clause_final: bool, head_aux: bool
 ) -> list[int]:
     """Font-shifted send codes for a single word, spelling vowelless tokens."""
     number = number_token_send_codes(word)
@@ -151,15 +173,24 @@ def _word_symbols(
         body = SDIC[low]
     else:
         body, _src = word_to_codes(low, dictionary)
+    if head_aux:
+        body = _with_head_stress(tuple(body))
     lead = list(markers) if markers is not None else [_WBOUND]
     return [*lead, *(_font(c) for c in body)]
 
 
-def _clause_symbols(clause: _Clause, dictionary: Dictionary | None) -> tuple[int, ...]:
+def _clause_symbols(
+    clause: _Clause, dictionary: Dictionary | None, sentence_initial: bool
+) -> tuple[int, ...]:
     syms: list[int] = [_FONT]
     last = len(clause.words) - 1
     for i, word in enumerate(clause.words):
-        syms.extend(_word_symbols(word, dictionary, clause_final=i == last))
+        head_aux = (
+            sentence_initial and i == 0 and word.lower() in _HEAD_STRESS_AUX
+        )
+        syms.extend(
+            _word_symbols(word, dictionary, clause_final=i == last, head_aux=head_aux)
+        )
     syms.append(clause.terminator)
     return tuple(syms)
 
@@ -172,7 +203,10 @@ def sentence_to_clauses(text: str, dictionary: Dictionary | None):
     """
     from .phclause import Clause
 
-    return [Clause(_clause_symbols(c, dictionary)) for c in _split_clauses(text)]
+    return [
+        Clause(_clause_symbols(c, dictionary, sentence_initial=i == 0))
+        for i, c in enumerate(_split_clauses(text))
+    ]
 
 
 def sentence_to_pcm(voice: int, text: str, dictionary: Dictionary | None) -> bytes:
