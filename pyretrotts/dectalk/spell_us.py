@@ -46,7 +46,10 @@ LETTER_NAMES: dict[str, tuple[int, ...]] = {
     "z": (42, 103, 1),
 }
 
-_VOWELS = frozenset("aeiou")
+# `ls_feat.tab` (0x79 `y` = `CFEAT_lower+CFEAT_cons+CFEAT_vowel`, 0x59 `Y`
+# likewise) marks `y` as a vowel, so `IS_VOWEL` (`ls_char.h:62`) is true for it:
+# a token carrying a `y` is pronounced by the word layer, never letter-spelled.
+_VOWELS = frozenset("aeiouy")
 
 
 def is_spelled(token: str) -> bool:
