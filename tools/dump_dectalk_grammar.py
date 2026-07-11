@@ -60,6 +60,8 @@ BATTERY: dict[str, list[str]] = {
                  "it is on the table"],
     "conj": ["a dog and a cat", "dogs and cats", "he runs and jumps",
              "run for the hills"],
+    "inflection": ["dogs", "cats", "the dogs", "walks", "she walks",
+                   "the books", "cats and dogs", "he walks home"],
 }
 
 

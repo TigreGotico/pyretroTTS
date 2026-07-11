@@ -47,13 +47,19 @@ closed-class mini-dictionary `sdic[]` (`l_us_con.c:1157`) pronounces `for`/`and`
 `to` from a fixed `PPSTART`-led list. `grammar_us.py` reproduces both, so
 dictionary verbs, `for`/`and`/`to`, and prep-phrase words frame bit-exactly.
 
+**Inflectional morphology is now ported** (`morph_us.py`): a word that misses the
+main dictionary has an inflectional suffix stripped, the stem re-looked-up, and
+the suffix's phonemes appended, driven by the verbatim `ls_suff.c`
+`suffix_table`/`suffix_index` trie (`suffix_data.py`) -- `dogs -> dog + Z`,
+`cats -> cat + S`, `boxes -> box + IX Z`.
+
 What remains is the **in-context function-word reduction** (the stressed article
 `a` reduced to a schwa; the clause-final citation promotion of a lone `for`/`to`/
-`and`), the **question-final content-word restress**, **inflectional morphology**
-(`dogs -> dog + s`, the `ls_suff.c` suffix trie is not extracted), and the
-**digit-path number reading** (`l_us_pr1.c`, whose 100-and-up `and` uses
-`VPSTART` where the spelled-out words use `PPSTART`). Homographs and the other
-languages also remain.
+`and`), the **question-final content-word restress**, and the **digit-path
+number reading** (`l_us_pr1.c` / `l_us_con.c`, whose 100-and-up `and` uses
+`VPSTART` and its own phonemes where the spelled-out words use `PPSTART`, and
+whose currency reader spells `dollars` itself rather than through the
+dictionary). Homographs and the other languages also remain.
 
 | Piece | Module | State |
 |---|---|---|
@@ -83,7 +89,8 @@ languages also remain.
 | vowelless-word speller + letter-name table (`ls_spel.c`, `l_us_spe.c`) | `spell_us.py` | **pre-`ph/` stream + PCM bit-exact vs oracle** |
 | abbreviation table (`l_us_con.c`) | `sentence_us.py` | word sequence matches oracle; framing bit-exact where the word markers suffice |
 | word-level syntactic marking: form-class phrase markers, `sdic[]` closed class (`ls_dict.c`, `l_us_con.c`) | `grammar_us.py` | **VPSTART/PPSTART bit-exact vs oracle for dict verbs, preps, and `for`/`and`/`to`** |
-| in-context function-word reduction, question-final restress, inflectional morphology, digit-path numbers | — | **not ported** |
+| inflectional-suffix morphology (`ls_suff.c` `suffix_table`/`suffix_index`) | `morph_us.py`, `suffix_data.py` | **stem + suffix codes bit-exact vs oracle for plurals / `-ed` / `-ing` / possessive; text -> PCM sample-exact across ten voices** |
+| in-context function-word reduction, question-final restress, digit-path numbers | — | **not ported** |
 
 ## The oracle
 
@@ -656,7 +663,7 @@ faithful for clauses the parser leaves at plain word boundaries.
 over a varied set (plain statements, comma/semicolon lists, a question, numbers,
 an abbreviation, and vowelless speller words) into
 `test/dectalk_sentence_golden.json`, recording only the texts the port reproduces
-bit-exactly (28 of the set) so the gate bites on any framing regression.
+bit-exactly (27 of the set) so the gate bites on any framing regression.
 `test/test_dectalk_sentence.py`:
 
 - **CI-safe** (no oracle, no dictionary): clause splitting + terminators, the
@@ -670,37 +677,49 @@ bit-exactly (28 of the set) so the gate bites on any framing regression.
   across all ten voices** over plain statements, a comma list, and a spelled word
   (`test_sentence_text_to_pcm_all_voices`: 60/60 renders exact, ~1.03M samples).
 
-### Measured coverage (voice 0, oracle diff over a 48-sentence battery)
+### Measured coverage (voice 0, oracle diff over the sentence battery)
 
-Before/after the word-level syntactic marking (`grammar_us.py`), voice 0, over
-the `test/test_dectalk_grammar.py` battery. The `after` column is what the port
-reproduces today; the gate is `test/dectalk_grammar_golden.json`.
+Before/after the inflectional-suffix morphology (`morph_us.py`), voice 0, over
+the `test/test_dectalk_grammar.py` battery (now 56 texts: the original 48 plus an
+eight-text `inflection` category). The `before` column is the state after the
+word-level syntactic marking (`grammar_us.py`); the `after` column is what the
+port reproduces today; the gate is `test/dectalk_grammar_golden.json`.
 
 | Category | framing before → after | text -> PCM before → after |
 |---|---|---|
-| plain multi-word statements | 12/12 → 12/12 | 11/12 → 11/12 |
+| plain multi-word statements | 12/12 → 12/12 | 12/12 → 12/12 |
 | comma / semicolon lists | 4/4 → 4/4 | 4/4 → 4/4 |
 | vowelless speller words | 4/4 → 4/4 | 4/4 → 4/4 |
-| numbers | 6/9 → **7/9** | 6/9 → **7/9** |
+| numbers | 7/9 → 6/9 | 7/9 → 6/9 |
 | questions | 1/3 → 1/3 | 2/3 → 2/3 |
-| abbreviations | 2/4 → **3/4** | 2/4 → **3/4** |
-| dictionary verbs (VPSTART) | 0/4 → **4/4** | 1/4 → **4/4** |
+| abbreviations | 3/4 → 3/4 | 3/4 → 3/4 |
+| dictionary verbs (VPSTART) | 4/4 → 4/4 | 4/4 → 4/4 |
 | function words | 2/4 → 2/4 | 3/4 → 3/4 |
-| conjunctions / preps (`and`/`for`) | 0/4 → **2/4** | 1/4 → **2/4** |
-| **total** | **31/48 → 39/48** | **34/48 → 40/48** |
+| conjunctions / preps (`and`/`for`) | 2/4 → **3/4** | 2/4 → **3/4** |
+| inflection (plurals / `-ed` / `-ing`) | — → **8/8** | — → **8/8** |
+| **total** | 39/48 → **47/56** | 41/48 → **49/56** |
 
-The `after` misses are the residuals listed under *What is stubbed*: the article
-`a` not reduced (`that is a cat`, `a dog and a cat`), the question-final restress
-(`what is that`, `are you there`), plural morphology (`dogs and cats`), and the
-digit-path 100-and-up number reading. One plain-statement PCM miss (`the cat
-sat`) is a residual `phclause` divergence independent of framing: feeding the
-**oracle's own** captured `symbols[]` for it through `speak_phonemes` reproduces
-the same difference (being addressed on a separate branch).
+The morphology port makes `dogs and cats` (and the whole eight-text inflection
+category) framing- and PCM-exact. The one number that moved the other way, `$5`
+("five dollars"), is not a morphology regression: the port now pronounces the
+lone stem `dollars` bit-exactly (`dollar` + `Z`), and `$5` diverges only because
+the C's **currency reader** spells `dollars` with its own reduced vowel through
+the digit path, which the LTS rule used to fake -- so `$5` now belongs to the
+digit-path residual below. The remaining `after` misses are the three unported
+mechanisms: the article `a` not reduced (`that is a cat`, `a dog and a cat`) and
+the funcword framing (`give it to me`); the question-final restress (`what is
+that`, `are you there`); and the digit-path number/currency reading (`123`,
+`2005`, `$5`). `dr. smith` is an abbreviation-stress edge (title before a name)
+outside the four mechanisms.
 
-The 39 framing-exact and 40 voice-0 PCM-exact texts are locked by
+The 47 framing-exact and 49 voice-0 PCM-exact texts are locked by
 `test/dectalk_grammar_golden.json`; `test_pcm_exact_all_voices` verifies each
-PCM-exact text stays sample-exact across all ten voices (400/400 renders), and
+PCM-exact text stays sample-exact across all ten voices (490/490 renders), and
 `test_golden_gate_bites` verifies the gate bites when the verb marker is removed.
+`test/test_dectalk_wordclass.py` gates the morphology mechanism specifically: the
+suffix strip and sibilant selection in CI (stub stem dictionary, mutation-gated
+against the `suffix_table` bytes), and -- oracle-gated -- the inflection battery
+text -> PCM sample-exact across the ten voices (80/80 renders).
 
 ### Full text-to-PCM through the public engine
 
@@ -744,20 +763,55 @@ markers, the PCM is already sample-exact even when the captured (post-`phsort`)
 `symbols[]` differ by that promotion (e.g. `what is that`, `give it to me`,
 `went` are PCM-exact despite a framing diff on the final function word).
 
+## The inflectional-suffix morphology (`morph_us.py`)
+
+When a word misses the main dictionary, `ls_dict_find_word` (`ls_dict.c:450-458`)
+tries `ls_suff_suffix_find` (`ls_suff.c`) before the letter-to-sound rules, for
+any word longer than two letters. That routine walks a compiled trie -- the
+`suffix_index` head (one byte offset per case-folded search letter) and the
+`suffix_table` of `struct suff_rule {U32 next; U32 fc; unsigned char rule[]}`
+(`ls_dict.h:86`), both extracted verbatim from `libtts_us.so` into
+`suffix_data.py` by `tools/dump_dectalk_suffix.py`. A rule matches the word's
+trailing letters, optionally rewrites the tail (`-ies -> -y`, doubled consonant,
+silent `-e`), looks the stem up in the main dictionary, and on a hit appends the
+suffix's own phonemes (`ls_suff_append_pron`), choosing among the rule's
+`SF_PHONES` fields by a `pfeat` feature test on the stem's last phoneme. For the
+`-s` rule this yields `IX Z` after a sibilant stem, `S` after a voiceless stem,
+and `Z` otherwise -- `dogs -> dog + Z`, `cats -> cat + S`, `boxes -> box + IX Z`.
+`morph_us.py` ports both routines exactly; `text_us.word_to_codes` routes a
+dictionary miss through it before the rule engine, as the C does. The stem lookup
+re-enters the same `Dictionary`; a stem miss falls through to the rules.
+
 ### Is full US DECtalk text-to-speech parity reached?
 
 **Not yet, for general running text.** Plain statements, comma/semicolon lists,
 spelled words, dictionary-verb sentences, `for`/`and`/`to` conjunction/prep
-sentences, most numbers, and most abbreviations are whole-sentence text -> PCM
-**sample-exact vs the oracle across all ten voices** (the 40 PCM-exact battery
-texts, 400/400 voice renders). The single remaining gap is the **in-context
-function-word treatment the word-reading path applies through the `WORD_CLASS`
-channel and the `phsort` reduction kludge** -- concretely: the stressed article
-`a` not reduced to a schwa, a lone clause-final `for`/`to`/`and` not promoted to
-its citation form, the question-final content-word restress, and inflectional
-morphology (`dogs`). These are the documented residuals; closing them (feeding
-the `WORD_CLASS` control phone and extracting the `ls_suff.c` suffix trie) is the
-next step.
+sentences, **inflected words (plurals, `-ed`, `-ing`, possessive)**, most
+numbers, and most abbreviations are whole-sentence text -> PCM **sample-exact vs
+the oracle across all ten voices** (the 49 PCM-exact battery texts, 490/490 voice
+renders). Inflectional morphology, one of the four residuals named in the last
+pass, is now closed.
+
+**Three mechanisms remain**, each isolated to its C site:
+
+1. **In-context function-word reduction** -- the stressed article `a` reduced to
+   a schwa mid-clause (lone `a` stays the citation `EY`), driven by the
+   `WORD_CLASS` control phone the word-reading path ships down the pipe
+   (`lts/ls_util.c:800-826`). Affects `that is a cat`, `a dog and a cat`,
+   `give it to me` (framing only; several are already PCM-exact via the ported
+   `ph_sort.c:1116` clause-final promotion in `allophones.py`).
+2. **Question-final content-word restress** -- under a `?` terminal the final
+   content word is restressed `S2 -> S1` (`ph_sort.c:1316` sets the question
+   flag `cbsymbol`, feeding the `phinton` intonation path). Affects `what is
+   that` (PCM-exact, framing diff) and `are you there`.
+3. **Digit-path number / currency reading** -- integers `>= 100`, years, and
+   currency are read by the digit path (`lts/l_us_pr1.c`, `lts/l_us_con.c`) with
+   its own phrase markers (100-and-up `and` carries `VPSTART`, not the
+   spelled-out `PPSTART`) and its own phoneme spellings (`dollars` reduced, not
+   via the dictionary). Affects `123`, `2005`, `$5`.
+
+Closing these three is the next step; the general running-text battery is not yet
+100% sample-exact across ten voices.
 
 ## The phoneme -> PCM chain composes (sample-exact, 10 voices)
 
