@@ -6,9 +6,8 @@ Tim Schaaff, Copyright (c) 1991-1992 by Apple Computer, Inc."*). Text goes in
 one end, 16-bit mono PCM comes out the other, and every stage in between mirrors
 a function in the original C source.
 
-For the DECtalk engine — a different codebase by different authors, whose
-markup this repository also understands — see
-[dectalk-port-plan.md](dectalk-port-plan.md).
+For the DECtalk engine, a different codebase by different authors, whose
+markup this repository also understands. See [dectalk-port-plan.md](dectalk-port-plan.md).
 
 This document maps the C onto the Python, describes the state the pipeline
 threads through, explains how the port is kept honest, and lists what it does
@@ -25,7 +24,7 @@ matters, read [history.md](history.md).
 | `mt4.h`, `Fsynth.h`, `SpeechEqu.h` | `_consts.py` | Constants and bit-field masks |
 | `mt4.h` phoneme enum | `_phonemes.py` | Phoneme ids, names, categories |
 | `Data.c` | `_data.py` | Voice definitions and coefficient tables |
-| — | `_voice.py` | `Voice`: the 72 keys a voice definition may set |
+| - | `_voice.py` | `Voice`: the 72 keys a voice definition may set |
 | `English.lex` | `_lexicon.py` | Pronunciation dictionary lookup |
 | `EngToP.c` | `_engtop.py` | Letter-to-sound rules, for words the dictionary misses |
 | `Morph.c` | `_morph.py` | Suffix stripping, part-of-speech resolution |
@@ -33,7 +32,7 @@ matters, read [history.md](history.md).
 | `FrontEnd.c` (number reading) | `_numbers.py` | Cardinals, years, currency, decimals, clock times |
 | `FrontEnd.c` (`kAlphaTok`) | `_letters.py` | Spelling a word out letter by letter |
 | `EmbeddedCmd.c`, `BackEnd.c` (`DoCtrl`) | `_embeddedcmd.py` | The `[[...]]` inline commands |
-| — | `_rawphon.py` | Literal phoneme mnemonics, for `[[mode PHON]]` |
+| - | `_rawphon.py` | Literal phoneme mnemonics, for `[[mode PHON]]` |
 | `BackEnd.c` (`Collect_FE_Tokens`, `Flag_PhonBuf_1`) | `_assembly.py` | Words into a flagged phoneme-opcode buffer |
 | `BackEnd.c` (`Fill_Phon_Buf_2`) | `_phonbuf2.py` | Allophone selection and plosive releases |
 | `BackEnd.c` (`Pitch_RaiseAndFall`) | `_pitchcontour.py` | Where pitch rises and falls |
@@ -41,7 +40,7 @@ matters, read [history.md](history.md).
 | `BackEnd.c` (`Fill_Pitch_Buf`) | `_pitchbuf.py` | The contour, as a pitch/time curve |
 | `Say.c`, `formantSynth.c`, `BackEnd.c` | `_backend.py` | The formant synthesizer itself |
 | `Engine.c` | `_engine.py` | Rate, pitch, volume, tempo, pause and resume |
-| — | `api.py` | The public entry points |
+| - | `api.py` | The public entry points |
 
 `Sounds.c` has no Python counterpart. Its embedded PCM sample blobs live in
 `_data.py` as each voice's `sample` key, and seven voices use one as their
@@ -61,19 +60,19 @@ overwriting it.
 one through the stages below, in `ParseSentence`'s own order:
 
 ```
-_frontend.split_clauses              text -> clauses, split on . , ! ?
-_embeddedcmd.scan_bracket_commands   strip [[...]] commands out of the clause
-_frontend.scan_tokens                clause -> words + punctuation
-_lexicon.lookup                      each word's pronunciation, if it is known
-_morph / _engtop                     otherwise: strip a suffix, or sound it out
-_assembly.collect_fe_tokens          words -> phoneme opcodes, stress, boundaries
-_phonbuf2.fill_phon_buf_2            allophones: flapped T, dark L, R-coloring
-_pitchcontour.pitch_raise_and_fall   mark where pitch moves
-_moduration.mod_duration             assign each phoneme a duration
-_phonbuf2.insert_closure_release     plosive releases
-_backend.calc_ramp_steps             the clause's pitch decline
-_pitchbuf.fill_pitch_buf             the contour as a curve
-_backend.say_frame                   formant synthesis, frame by frame -> PCM
+_frontend.split_clauses text -> clauses, split on . , ! ?
+_embeddedcmd.scan_bracket_commands strip [[...]] commands out of the clause
+_frontend.scan_tokens clause -> words + punctuation
+_lexicon.lookup each word's pronunciation, if it is known
+_morph / _engtop otherwise: strip a suffix, or sound it out
+_assembly.collect_fe_tokens words -> phoneme opcodes, stress, boundaries
+_phonbuf2.fill_phon_buf_2 allophones: flapped T, dark L, R-coloring
+_pitchcontour.pitch_raise_and_fall mark where pitch moves
+_moduration.mod_duration assign each phoneme a duration
+_phonbuf2.insert_closure_release plosive releases
+_backend.calc_ramp_steps the clause's pitch decline
+_pitchbuf.fill_pitch_buf the contour as a curve
+_backend.say_frame formant synthesis, frame by frame -> PCM
 ```
 
 A comma splits a clause just as a period does: `Collect_FE_Tokens` ends its
@@ -81,7 +80,7 @@ cycle on either (`BackEnd.c:3991-4006`). One English sentence containing a
 comma is therefore two clauses, spoken without a seam.
 
 Every clause of one call shares a single `VoiceVar` and a single frame loop,
-mirroring `Talk()` (`BackEnd.c:4264-4298`). `Start_Talk` runs once; each later
+mirroring `Talk()` (`BackEnd.c:4264-4298`). `Start_Talk` runs once. Each later
 clause re-enters `ParseSentence` alone. Pitch and a singing voice's note
 position do restart per clause, because `ParseSentence` resets them every call.
 
@@ -109,7 +108,7 @@ The frontend passes data forward in small dataclasses instead: `BracketCommands`
 ## Fixed-point arithmetic
 
 The C reference computes in fixed point with `kPrecision = 13`. `_backend.py`'s
-helpers — `mMul2`, `mDiv`, `mScale`, `mUnScale`, `rshort`, `clip14` — keep
+helpers, `mMul2`, `mDiv`, `mScale`, `mUnScale`, `rshort`, `clip14`, keep
 intermediate values numerically identical to it.
 
 Where the C code leans on implicit 16-bit integer wraparound (`rShort`-typed
@@ -141,9 +140,9 @@ python3 test/test_voices.py --all
 It shells out to a compiled `test_harness` for a voice and a text, captures the
 phoneme plan and the per-frame synthesis state, feeds the identical plan
 through the Python backend, and diffs both the frame controls and the PCM
-samples. Comparing frame controls alone is not enough — a voice can match every
+samples. Comparing frame controls alone is not enough, a voice can match every
 control value and still emit silence, which is how a `SampleWave` bug once
-survived. Run it with `python3 test/test_voices.py --all`; it needs
+survived. Run it with `python3 test/test_voices.py --all`. It needs
 `lintalker-c` built as a sibling directory.
 
 The unit tests hold values extracted from that harness as inline literals, so
@@ -184,7 +183,7 @@ out. `svox` parses and queues, and then changes nothing, exactly as upstream.
 
 **Number grouping is unverified end to end.** Individual number words are
 bit-exact. The reference's `Symbols` dictionary has corrupt `"100"`/`"1000"`
-keys — they resolve to the phonemes of the digit `"1"` — so its own bare-digit
+keys, they resolve to the phonemes of the digit `"1"`, so its own bare-digit
 path is broken too (`"123"` comes out as "one ONE and twenty three"). The scale
 words are taken from the ordinary dictionary instead, and the algorithm that
 combines them is a faithful transcription with no working reference to check
@@ -199,3 +198,7 @@ sample-for-sample instead, as the golden gate does.
 **`e_SpeakBuffer` and `e_UseVoice` are absent.** They drive `FrontEnd.c`'s
 streaming parser and `fsynth.c`'s voice loader. `api.synthesize_text` and
 `_backend.init_voice` do those jobs instead.
+
+
+---
+[← Engine comparison](engines.md) · [Home](../README.md) · [Creating voices →](creating-voices.md)
