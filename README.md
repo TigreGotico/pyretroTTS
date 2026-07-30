@@ -4,7 +4,7 @@
 >
 > **Every line of this code was written by an AI.** No human wrote, edited, or
 > reviewed a single line. A human set the goals, answered questions, and pointed
-> at the source; the AI read the original C and produced the Python. That is the
+> at the source. The AI read the original C and produced the Python. That is the
 > whole authorship story.
 >
 > **The AI had access to the original sources.** These are transpilations, not
@@ -14,20 +14,20 @@
 >
 > **Nobody knows what any of that means legally.** Under current US law an AI is
 > not an author and its output cannot be copyrighted. So it is unclear who, if
-> anyone, holds copyright in this code — and unclear whether an AI transpilation
+> anyone, holds copyright in this code, and unclear whether an AI transpilation
 > of copyrighted source is a derivative work of it at all. There is no precedent
 > for either question. Anyone telling you otherwise is guessing.
 >
 > The `LICENSE` file says MIT because a licence has to say *something*. To the
 > extent copyright can be asserted here, treat this as MIT or public domain,
 > whichever you find more convincing. To the extent the upstream engines have
-> owners — and they do — that licence cannot reach them, and `NOTICE` says so.
+> owners, and they do, that licence cannot reach them, and `NOTICE` says so.
 >
 > **This is vibe-coded software.** It is tested hard: 574 tests, bit-exact
 > against compiled C references. It has never been read by a human. Use it
 > accordingly.
 
-Standalone Python ports of the **classic speech synthesizers** — the
+Standalone Python ports of the **classic speech synthesizers**, the
 "robot voices" of 1980s and 1990s computing. No neural network, no audio
 corpus, no GPU: a few hundred kilobytes of tables and rules, and integer
 arithmetic.
@@ -35,26 +35,26 @@ arithmetic.
 Two of the three engines descend from Dennis Klatt's formant synthesis
 research at MIT:
 
-- **MacinTalk** (Apple, 1991-1995) — the Macintosh `say -v Fred` voices.
+- **MacinTalk** (Apple, 1991-1995), the Macintosh `say -v Fred` voices.
   Ported bit-exact against the original C.
-- **DECtalk** (Digital Equipment Corporation, 1984) — Stephen Hawking's
-  voice. Only its inline markup and singing notation are implemented; the
+- **DECtalk** (Digital Equipment Corporation, 1984), Stephen Hawking's
+  voice. Only its inline markup and singing notation are implemented. The
   engine is **not ported**, and its scores currently render in MacinTalk's
   voices. See `docs/dectalk-port-plan.md`.
 
 The third is older and works nothing like the other two:
 
-- **SAM** (Don't Ask Software, 1982) — the Commodore 64 / Apple II
+- **SAM** (Don't Ask Software, 1982), the Commodore 64 / Apple II
   "Software Automatic Mouth." Not a formant synthesizer at all: three
   additive oscillators plus 1-bit sampled consonants. Ported bit-exact
   against the C reference. It is separately encumbered and kept in its
-  own subpackage — see `NOTICE` and `docs/sam.md`.
+  own subpackage. See `NOTICE` and `docs/sam.md`.
 
 They are different codebases by different authors. Fred is not Perfect
 Paul, and neither is Sam. See `docs/history.md`.
 
-The DECtalk community — its singing notation, and a large archive of
-songs written in it — lives at <https://dectalk.de/>. `songs/` holds a
+The DECtalk community, its singing notation, and a large archive of
+songs written in it, lives at <https://dectalk.de/>. `songs/` holds a
 handful of public-domain scores from that tradition, rendered.
 
 ```python
@@ -69,11 +69,11 @@ DECtalkEngine().sing("[:phone on] hxeh<200,13>lb<100>ow<400,20>", "hello.wav")
 SAMEngine().say("i am sam.", "sam.wav", "Little Robot")
 ```
 
-That's it — text or a score in, a WAV file out, computed in real time on
+That's it, text or a score in, a WAV file out, computed in real time on
 whatever you're running this on right now.
 
 This package has no OVOS/plugin dependencies and no external runtime
-dependencies at all; it's a plain, standalone synthesizer library. An
+dependencies at all. It's a plain, standalone synthesizer library. An
 OVOS TTS plugin wrapper around it lives in a separate repo.
 
 ## Why these engines
@@ -81,13 +81,13 @@ OVOS TTS plugin wrapper around it lives in a separate repo.
 Read `docs/history.md` for the full story. The short version: Klatt's
 research at MIT produced two famous commercial descendants. DEC shipped
 DECtalk in 1984, one of the first machines that could read arbitrary
-text aloud in real time; its Perfect Paul voice became world-famous as
+text aloud in real time. Its Perfect Paul voice became world-famous as
 Stephen Hawking's. Apple shipped MacinTalk on the Macintosh a few years
 later, and its Fred, Zarvox and Trinoids voices are still shorthand for
 "how computers used to sound."
 
 Because the whole engine is deterministic arithmetic over small
-parameter tables — no training data, no model weights, no corpus — it
+parameter tables, no training data, no model weights, no corpus, it
 remains genuinely useful today: tiny, fully inspectable, and endlessly
 re-tunable into new voices.
 
@@ -103,11 +103,11 @@ currency, and clock times into words → convert the resulting word list
 into a stream of **phonemes** (the ~70 distinct speech sounds English
 uses) with **allophone** adjustments (flapped T, dark L, R-coloring, and
 so on) → assign each phoneme a **duration** and a place on the sentence's
-**pitch contour** → and finally drive a **formant synthesizer** — a
+**pitch contour** → and finally drive a **formant synthesizer**, a
 cascade of resonant filters modeling the vocal tract, fed by a
-buzzing/hissing source modeling the vocal cords — frame by frame into
+buzzing/hissing source modeling the vocal cords, frame by frame into
 raw PCM audio. Every one of those stages is a small, readable Python
-module; see `docs/architecture.md` for exactly which C source file each
+module. See `docs/architecture.md` for exactly which C source file each
 one replaces and how to verify it, and `docs/creating-voices.md` for the
 formant-synthesis theory in depth and how to build an entirely new voice
 from scratch.
@@ -135,8 +135,8 @@ from pyretrotts import synthesize_text, pcm_to_wav
 from pyretrotts._data import Fred_Voice
 
 text = (
-    "In 1984, Mr. Smith paid $5.25 for a coffee at 3:45. "
-    "[[char LTRL]]DEC[[char NORM]] made this. [[rate240]]Now I'm talking fast!"
+  "In 1984, Mr. Smith paid $5.25 for a coffee at 3:45. "
+  "[[char LTRL]]DEC[[char NORM]] made this. [[rate240]]Now I'm talking fast!"
 )
 pcm = synthesize_text(Fred_Voice, text)
 pcm_to_wav(pcm, "out.wav")
@@ -166,13 +166,12 @@ single-word letter-to-sound example and a voice-listing script.
 All 17 original MacinTalk voices, verified bit-exact against the
 reference engine:
 
-**Fred**, **Kathy**, **Princess**, **Junior**, **Ralph**, **Whisper** —
-the ordinary male/female/child/breathy registers — plus the novelty
+**Fred**, **Kathy**, **Princess**, **Junior**, **Ralph**, **Whisper**, 
+the ordinary male/female/child/breathy registers, plus the novelty
 voices **Zarvox**, **Trinoids**, **Bubbles**, **Boing**, **Bells**,
 **Hysterical**, **Deranged**, **GoodNews**, **BadNews**, **PipeOrgan**,
 and **Cellos**. Each is nothing more than a different parameter table
-fed into the same formant model (`pyretrotts/_data.py`) — see
-`docs/creating-voices.md` to build your own.
+fed into the same formant model (`pyretrotts/_data.py`). See `docs/creating-voices.md` to build your own.
 
 ## Text features
 
@@ -195,7 +194,7 @@ Beyond plain word-by-word synthesis, the text frontend supports:
   syntax: pitch/pitch-modulation/volume changes, word emphasis, inserted
   silence, part-of-speech overrides, speaking-rate changes, digit-by-
   digit number reading, letter-by-letter word spelling, and raw phoneme
-  mnemonic input — see `docs/architecture.md` for the full command
+  mnemonic input. See `docs/architecture.md` for the full command
   reference and exact positioning semantics.
 
 `docs/architecture.md` maps each feature onto the original C source, and
@@ -214,13 +213,13 @@ differing byte. Those hashes were captured from output checked
 sample-for-sample against a compiled build of the original C engine, so
 they hold the port to the reference without needing it installed.
 
-To re-run that comparison yourself — frame by frame and sample by sample
-against the real engine — build the C reference as a sibling directory
+To re-run that comparison yourself, frame by frame and sample by sample
+against the real engine, build the C reference as a sibling directory
 and run `python3 test/test_voices.py --all`. See `docs/architecture.md`.
 
 ## License
 
-MIT — see `LICENSE`.
+MIT. See `LICENSE`.
 
 That covers the code written for this project. It does not cover the
 synthesizers it ports: MacinTalk is Apple's, DECtalk is DEC's, and SAM's C
