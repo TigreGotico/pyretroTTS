@@ -1,8 +1,8 @@
 # Two synthesizers, one ancestor
 
-`pyretrotts` ports two engines. Both are formant synthesizers, both descend
-from the same research, and they are routinely confused with each other, 
-including, for a while, by this repository's own documentation.
+`pyretrotts` ports three engines. Two of them — MacinTalk and DECtalk — are
+formant synthesizers that descend from the same research, and they are routinely
+confused with each other. The third, SAM, is older and works differently.
 
 ## Origins: MIT and the Klatt synthesizer
 
@@ -20,7 +20,7 @@ Two commercial descendants matter here.
 ## DECtalk (Digital Equipment Corporation, 1984)
 
 DEC commercialized Klatt's work as **DECtalk**, first shipping in 1984 as a
-standalone hardware box, the DECtalk DTC01, that took plain text over a
+standalone hardware box — the DECtalk DTC01 — that took plain text over a
 serial port and spoke it through a built-in speaker. It was remarkably
 intelligible for the time, and cheap enough in CPU terms to run in real time on
 1980s hardware, which is exactly why formant synthesis rather than
@@ -31,8 +31,8 @@ Frank**, **Doctor Dennis**, **Kit the Kid**, **Uppity Ursula**, **Rough Rita**,
 **Whispering Wendy**, and **Variable Val**.
 
 DECtalk's most famous association is with physicist **Stephen Hawking**, who
-began using a DECtalk-based synthesizer, the **CallText 5010**, running the
-DECtalk engine in the Perfect Paul voice, after losing his own voice to a
+began using a DECtalk-based synthesizer — the **CallText 5010**, running the
+DECtalk engine in the Perfect Paul voice — after losing his own voice to a
 tracheotomy in 1985. He kept that exact voice for the rest of his life by
 choice, turning down later, more natural-sounding replacements because they no
 longer sounded like *him*.
@@ -52,7 +52,7 @@ Computer, Inc."*, and its version string reads `1.4d7, © Apple Computer, Inc.
 
 Its voices are the ones Mac users know from `say -v`: **Fred**, **Kathy**,
 **Princess**, **Junior**, **Ralph**, **Whisper**, plus a cast of novelty voices
-showing how far one parameter set can be pushed, **Zarvox**, **Trinoids**,
+showing how far one parameter set can be pushed — **Zarvox**, **Trinoids**,
 **Bubbles**, **Boing**, **Bells**, **Hysterical**, **Deranged**, **Good News**,
 **Bad News**, **Pipe Organ**, and **Cellos**. Several of the last few drive the
 formant model from a musical note script instead of ordinary prosody, turning
@@ -84,8 +84,8 @@ up far beyond their original assistive-technology and telephony markets.
 
 ## Why formant synthesis still matters
 
-Modern TTS, concatenative unit selection, and especially neural
-sequence-to-sequence and diffusion models, sounds dramatically more natural.
+Modern TTS — concatenative unit selection, and especially neural
+sequence-to-sequence and diffusion models — sounds dramatically more natural.
 But formant synthesis has properties neither of those can offer:
 
 - **No training data or corpus.** The entire "model" is a few hundred small
@@ -94,36 +94,35 @@ But formant synthesis has properties neither of those can offer:
   and run in real time on decades-old hardware. No GPU, no inference latency,
   no model to load.
 - **Every voice is a parameter set.** Building a new voice, or a deliberately
-  inhuman one, means tuning formant, bandwidth, and pitch parameters, not
+  inhuman one, means tuning formant, bandwidth, and pitch parameters — not
   recording and training on a new corpus. See
   [creating-voices.md](creating-voices.md).
 - **Fully inspectable.** Every stage from text to waveform is explicit,
   deterministic arithmetic. There is no black box to probe.
 
 See [architecture.md](architecture.md) for how the MacinTalk engine maps onto
-this codebase, and [dectalk-port-plan.md](dectalk-port-plan.md) for the state
-of the DECtalk port.
+this codebase, and [dectalk.md](dectalk.md) for the DECtalk port.
 
-## SAM (Don't Ask Software, 1982), the odd one out
+## SAM (Don't Ask Software, 1982) — the odd one out
 
 The third engine in this repository is not a Klatt descendant at all. **SAM**,
 the **Software Automatic Mouth**, was written by **Don't Ask Software** and
-published in 1982 for the Commodore 64 and Apple II, years before either
+published in 1982 for the Commodore 64 and Apple II — years before either
 DECtalk or MacinTalk, and running on an 8-bit machine with a fraction of their
 power. It was sold commercially, later bundled as the C64's on-board speech,
 and its buzzy, robotic voice is one of the most recognizable sounds of early
 home computing.
 
-Where MacinTalk and DECtalk are **formant synthesizers**, resonant filters
-modelling the vocal tract, SAM is **additive**. Each 10 ms frame is three
+Where MacinTalk and DECtalk are **formant synthesizers** — resonant filters
+modelling the vocal tract — SAM is **additive**. Each 10 ms frame is three
 oscillators (two sine waves and one rectangle wave) summed open-loop, with no
-resonators and no bandwidths. Consonants that cannot be built that way, the
-fricatives and plosives, are played back from a compressed **1-bit sample
+resonators and no bandwidths. Consonants that cannot be built that way — the
+fricatives and plosives — are played back from a compressed **1-bit sample
 table** instead. The whole synthesizer is integer-only 8-bit arithmetic
 producing 8-bit unsigned PCM, small enough to have run on a 6502.
 
-SAM has no formant voices to tune. Instead it has four integer knobs, 
-**speed, pitch, throat, mouth**, and the well-known preset voices ("Sam",
+SAM has no formant voices to tune. Instead it has four integer knobs —
+**speed, pitch, throat, mouth** — and the well-known preset voices ("Sam",
 "Elf", "Little Robot", "Stuffy Guy", "Little Old Lady", "Extra-Terrestrial")
 are just settings of those four numbers. Its input is either English text,
 converted by an on-board rule engine (the "reciter"), or phoneme mnemonics
@@ -133,7 +132,3 @@ Because SAM descends from a reverse-engineered commercial program whose
 copyright is still held by SoftVoice, Inc., it is **not** covered by this
 project's MIT licence and lives in its own subpackage. See
 [sam.md](sam.md) for the port and `NOTICE` for the licensing position.
-
-
----
-[Home](../README.md) · [Engine comparison →](engines.md)

@@ -2,8 +2,8 @@
 
 The MacinTalk synthesizer computes in fixed point: `1.0` is `0x2000`, and every
 scaled multiply is a right shift by 13 (`Fsynth.h:275-279`). This document
-records what that costs, what a higher-precision mode changes, and, most
-importantly, what has and has not been verified.
+records what that costs, what a higher-precision mode changes, and — most
+importantly — what has and has not been verified.
 
 ## What the integer arithmetic actually costs
 
@@ -29,13 +29,13 @@ the one arithmetic effect large enough to hear about.
 upsample of the identical 11 kHz core samples, the engine carries **+18.7 dB of
 excess energy above the 5512 Hz internal Nyquist** for a sustained `/s/`. That is
 imaging, not signal, and it is why the fricatives sound gritty. Float arithmetic
-does nothing for it. Only oversampling the resonator loop or a proper polyphase
+does nothing for it; only oversampling the resonator loop or a proper polyphase
 interpolator would, and both depart from the original.
 
 ## Exact mode
 
 `exact_arithmetic(True)` keeps the same `1.0 == 2**13` scaling and replaces the
-shifts with division truncated toward zero. Magnitudes are unchanged. Only the
+shifts with division truncated toward zero. Magnitudes are unchanged; only the
 rounding direction moves, so the downward bias no longer accumulates. Values stay
 integers.
 
@@ -59,11 +59,11 @@ deviation of 776 (LSB is 4).
 
 ```c
 #if FLOAT_SYNTH_MT3
-  #define mMul2(x,y,s) (x * y) typedef double rShort;
-  #define kOnePtOh 1.0
+    #define mMul2(x,y,s)  (x * y)        typedef double rShort;
+    #define kOnePtOh      1.0
 #else
-  #define mMul2(x,y,s) ((x * y) >> s) typedef short rShort;
-  #define kOnePtOh 0x2000
+    #define mMul2(x,y,s)  ((x * y) >> s) typedef short  rShort;
+    #define kOnePtOh      0x2000
 #endif
 ```
 
@@ -73,14 +73,14 @@ magnitudes, `{0, 16382, 32764}`, while the frame control values remain normal.
 The reason is `Say.c:122-125`:
 
 ```c
-*Ccoeff = *(zz->CcoeffTblPtr + bwIndex); /* raw table short, 1.0 == 8192 */
+*Ccoeff = *(zz->CcoeffTblPtr + bwIndex);                    /* raw table short, 1.0 == 8192 */
 *Bcoeff = mMul2(*(zz->BcoeffTblPtr + bwIndex), cosVal, kPrecision-1);
-*Acoeff = kOnePtOh - *Bcoeff - *Ccoeff; /* kOnePtOh is now 1.0 */
+*Acoeff = kOnePtOh - *Bcoeff - *Ccoeff;                     /* kOnePtOh is now 1.0 */
 ```
 
-Under `FLOAT_SYNTH_MT3` the coefficient tables in `Data.c` are still fixed point:
-`Data.c` contains no `FLOAT_SYNTH_MT3` at all, and its 49 tables are `const
-short` scaled by 8192, while `kOnePtOh` has become `1.0`. The two scales are
+Under `FLOAT_SYNTH_MT3` the coefficient tables in `Data.c` are still fixed point
+— `Data.c` contains no `FLOAT_SYNTH_MT3` at all, and its 49 tables are `const
+short` scaled by 8192 — while `kOnePtOh` has become `1.0`. The two scales are
 mixed in one expression and the filters diverge immediately.
 
 A working float build needs a float `Data.c` that is not in this source tree.
@@ -103,13 +103,13 @@ scale, division instead of shifts.
 samples out of 32,592 on `hello world.`, and 68/68 on the full voice sweep.
 
 **Exact mode is not bit-exact against the exact C build.** They differ by
-35.2 dB SNR, the same order as the effect being measured. Something in the
+35.2 dB SNR — the same order as the effect being measured. Something in the
 placement of the truncations differs between the two, and it has not been found.
 
 So exact mode is:
 
-- **deterministic**, the same input yields the same bytes, pinned by tests.
-- **inert when off**, no golden digest moves, no oracle case regresses.
+- **deterministic** — the same input yields the same bytes, pinned by tests;
+- **inert when off** — no golden digest moves, no oracle case regresses;
 - **not validated against any C reference.** It is a defensible reading of what
   the original intended, not a port of something Apple shipped.
 
@@ -121,12 +121,8 @@ build matters to you, use the default integer mode, which has it.
 In descending order of audible effect:
 
 1. **Oversample the resonator loop, or replace the linear interpolator.** Worth
-  about 19 dB of imaging in the fricative band. Departs from the original.
+   about 19 dB of imaging in the fricative band. Departs from the original.
 2. **Exact arithmetic.** Removes the accumulated DC bias. Available today, off
-  by default, unvalidated.
+   by default, unvalidated.
 3. **16-bit output.** Worth roughly 12 dB of quantization headroom that nothing
-  is currently using. Below the noise floor of everything above it.
-
-
----
-[← Creating voices](creating-voices.md) · [Home](../README.md) · [DECtalk port plan →](dectalk-port-plan.md)
+   else uses. Below the noise floor of everything above it.

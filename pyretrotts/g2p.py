@@ -7,27 +7,37 @@ front ends on their own, so they can be used without producing any audio.
     from pyretrotts.g2p import phonemize
 
     phonemize("hello, this is a test.")
+    phonemize("photograph", engine="dectalk")
     phonemize("photograph", engine="sam")
 
-The three front ends do not agree, and they are not meant to. MacinTalk and
-DECtalk share one: a 7,173-word pronunciation dictionary, a suffix-stripping
-morphology pass, and a set of letter-to-sound rules for whatever is left. SAM's
-reciter is a single rule engine with no dictionary at all, which is why it is
-smaller, faster, and wronger.
+The three front ends do not agree, and they are not meant to. Each is the
+engine's own, ported from its own source: MacinTalk reads a 7,173-word
+dictionary, then a suffix-stripping morphology pass, then letter-to-sound rules;
+DECtalk runs its own letter-to-sound rules and inflectional morphology; SAM's
+reciter is a single rule engine with no dictionary at all.
 
     >>> phonemize("photograph")
     ['f', 'OW', 'DX', 'AX', 'g', 'r', 'AE', 'f']
+    >>> phonemize("photograph", engine="dectalk")
+    ['f', 'ow', 't', 'ax', 'g', 'r', 'ae', 'f']
     >>> phonemize("photograph", engine="sam")
     ['F', 'AA', 'T', 'AA', 'G', 'R', 'AE', 'F']
 
-They disagree about both vowels. MacinTalk has the word in its dictionary and
-flaps the `t`; SAM sounds it out letter by letter and gets `AA` twice.
+    >>> phonemize("photograph", notation="ipa")
+    ['f', 'oʊ', 'ɾ', 'ə', 'g', 'ɹ', 'æ', 'f']
+
+They disagree about the vowels and the notation. MacinTalk has the word in its
+dictionary and flaps the `t`; DECtalk sounds it out with its own rules; SAM does
+too, letter by letter, and gets `AA` twice.
+
+DECtalk's dictionary is not distributed with this package, so its front end here
+pronounces every word from rules and morphology. Install a DECtalk dictionary to
+give it dictionary lookups.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ._dectalk import PHONEMES as _DECTALK_MNEMONICS
 from ._frontend import scan_tokens, words_to_phonemes
 from ._phonemes import PHONEME_NAMES_BY_INDEX, kNumPhoneme
 from ._rawphon import MAGIC_MAP
@@ -41,14 +51,19 @@ ENGINES = {
     "sam": "SAM mnemonics (`IY`, `P`, `AA`)",
 }
 
-# phoneme id -> the mnemonic each dialect writes it with
+# MacinTalk phoneme id -> the mnemonic its dialect writes it with
 _MACINTALK: dict[int, str] = {}
 for (_a, _b), _p in MAGIC_MAP.items():
     _MACINTALK.setdefault(_p, _a + (_b or ""))
 
-_DECTALK: dict[int, str] = {}
-for _m, _p in _DECTALK_MNEMONICS.items():
-    _DECTALK.setdefault(_p, _m)
+# DECtalk's own control symbols (stress, boundaries, clause terminators), by the
+# raw code value the front end emits. `phonemize(..., markers=True)` keeps these.
+_DECTALK_CONTROL: dict[int, str] = {
+    101: "s3", 102: "s2", 103: "s1", 104: "semph",
+    108: "sbound", 109: "mbound", 110: "hyphen", 111: "wbound",
+    112: "ppstart", 113: "vpstart", 114: "relstart",
+    115: "comma", 116: "period", 117: "quest", 118: "exclaim",
+}
 
 
 @dataclass(frozen=True)
@@ -82,6 +97,38 @@ def _macintalk_phonemes(text: str, table: dict[int, str], markers: bool) -> list
     return out
 
 
+def _dectalk_names(codes: list[int], markers: bool) -> list[str]:
+    """DECtalk send codes -> mnemonics. Sounds are lowercase ARPABET; the stress
+    and boundary symbols come through only with `markers`."""
+    from .dectalk.lts import SIL, US_PHONEME_NAMES, arpa_name
+
+    out: list[str] = []
+    for code in codes:
+        value = code & 0x00FF
+        if value in US_PHONEME_NAMES and value != SIL:
+            out.append(arpa_name(code))
+        elif markers and value in _DECTALK_CONTROL:
+            out.append(_DECTALK_CONTROL[value])
+    return out
+
+
+def _dectalk_phonemes(text: str, markers: bool) -> list[str]:
+    """DECtalk's front end over whole text: numbers and punctuation expand, and
+    each clause is framed as the synthesizer would receive it."""
+    from .dectalk.sentence_us import sentence_to_clauses
+
+    out: list[str] = []
+    for clause in sentence_to_clauses(text, _dectalk_dictionary()):
+        out.extend(_dectalk_names(list(clause.symbols), markers))
+    return out
+
+
+def _dectalk_dictionary():
+    """The DECtalk dictionary to consult, or None to pronounce from rules. The
+    dictionary is not distributed with this package."""
+    return None
+
+
 def _sam_phonemes(text: str, phonetic: bool = False) -> list[str]:
     """SAM's reciter turns text into phoneme mnemonics; parser1 turns those
     mnemonics into the phoneme indices the synthesizer speaks."""
@@ -108,21 +155,69 @@ def _sam_phonemes(text: str, phonetic: bool = False) -> list[str]:
     return out
 
 
-def phonemize(text: str, engine: str = "macintalk", markers: bool = False) -> list[str]:
-    """The phonemes `engine` would say `text` with, as its own mnemonics.
+def _ipa_phonemes(text: str, engine: str) -> list[str]:
+    """The engine's own front end, its native ids re-expressed as IPA."""
+    from .ipa import native_to_ipa
+
+    if engine == "macintalk":
+        ids = [p for p in words_to_phonemes(text) if p < kNumPhoneme]
+        return native_to_ipa("macintalk", ids)
+    if engine == "dectalk":
+        from .dectalk.sentence_us import sentence_to_clauses
+
+        codes: list[int] = []
+        for clause in sentence_to_clauses(text, _dectalk_dictionary()):
+            codes.extend(clause.symbols)
+        return native_to_ipa("dectalk", codes)
+    return native_to_ipa("sam", _sam_indices(text))
+
+
+def _sam_indices(text: str) -> list[int]:
+    """SAM's reciter output as phoneme indices (the ids the synthesizer speaks)."""
+    from .sam import prosody, reciter
+    from .sam.phonemes import END
+
+    upper = text.upper().encode("latin-1", "replace")
+    encoded = reciter.text_to_phonemes(upper)
+    if encoded is None:
+        return []
+    state = prosody.Buffers(encoded[:254])
+    state.phonemeindex[255] = 32
+    if not prosody.parser1(state):
+        return []
+    out: list[int] = []
+    for index in state.phonemeindex:
+        if index == END:
+            break
+        out.append(index)
+    return out
+
+
+def phonemize(
+    text: str, engine: str = "macintalk", notation: str = "native", markers: bool = False
+) -> list[str]:
+    """The phonemes `engine` would say `text` with.
+
+    With `notation="native"` (the default) the phonemes come back in the
+    engine's own mnemonics; with `notation="ipa"` they are re-expressed as IPA,
+    which is lossy in the same way `say_ipa` is (see `pyretrotts.ipa.IPA_LOSS`).
 
     With `markers`, MacinTalk and DECtalk also emit the word-boundary and
     stress opcodes their engines carry alongside the sounds. SAM has none.
     Use `phonemize_words` to keep the words apart.
     """
     engine = engine.lower()
+    if engine not in ENGINES:
+        raise ValueError(f"unknown engine {engine!r}; expected one of {sorted(ENGINES)}")
+    if notation == "ipa":
+        return _ipa_phonemes(text, engine)
+    if notation != "native":
+        raise ValueError(f"unknown notation {notation!r}; expected 'native' or 'ipa'")
     if engine == "macintalk":
         return _macintalk_phonemes(text, _MACINTALK, markers)
     if engine == "dectalk":
-        return _macintalk_phonemes(text, _DECTALK, markers)
-    if engine == "sam":
-        return _sam_phonemes(text)
-    raise ValueError(f"unknown engine {engine!r}; expected one of {sorted(ENGINES)}")
+        return _dectalk_phonemes(text, markers)
+    return _sam_phonemes(text)
 
 
 def phonemize_words(text: str, engine: str = "macintalk") -> list[Pronunciation]:
@@ -135,17 +230,30 @@ def phonemize_words(text: str, engine: str = "macintalk") -> list[Pronunciation]
     if engine not in ENGINES:
         raise ValueError(f"unknown engine {engine!r}; expected one of {sorted(ENGINES)}")
 
-    from ._lexicon import lookup
-
     out: list[Pronunciation] = []
     for word, _punct in scan_tokens(text).tokens:
         if engine == "sam":
             out.append(Pronunciation(word, _sam_phonemes(word), from_dictionary=False))
+        elif engine == "dectalk":
+            out.append(_dectalk_word(word))
         else:
-            table = _MACINTALK if engine == "macintalk" else _DECTALK
+            from ._lexicon import lookup
             out.append(Pronunciation(
                 word,
-                _macintalk_phonemes(word, table, markers=False),
+                _macintalk_phonemes(word, _MACINTALK, markers=False),
                 from_dictionary=lookup(word) is not None,
             ))
     return out
+
+
+def _dectalk_word(word: str) -> Pronunciation:
+    """One word through DECtalk's front end: dictionary if installed, else the
+    rules and inflectional morphology."""
+    from .dectalk.text_us import word_to_codes
+
+    codes, source = word_to_codes(word, _dectalk_dictionary())
+    return Pronunciation(
+        word,
+        _dectalk_names(codes, markers=False),
+        from_dictionary=source == "dict",
+    )

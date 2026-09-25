@@ -11,18 +11,17 @@ difference is audible.
 | Synthesis | Klatt source-filter | Klatt source-filter | additive, 3 oscillators |
 | Voices | 17 named | 10 named | 4 knobs, 6 presets here |
 | Phonemes | 56 | 55 used here | 81 slots |
-| Dictionary | 7,173 words | 6 of its own, unported | none |
+| Dictionary | 7,173 words | its own, not distributed | none |
 | Markup | `[[pbas 60]]` | `[:ra 170]`, `weh<250,13>` | stress digits |
-| Native output | 16-bit, 22050 Hz | - | 8-bit unsigned, 22050 Hz |
-| Ported here | fully, bit-exact | **not ported** | fully, bit-exact |
-| Python lines | 11,460 + 9,045 generated | 320 markup + 179 translate | 2,408 |
+| Native output | 16-bit, 22050 Hz | 16-bit | 8-bit unsigned, 22050 Hz |
+| Ported here | fully, bit-exact | phoneme→PCM bit-exact; rules+morphology front end | fully, bit-exact |
 
 ## How they make sound
 
 ### MacinTalk and DECtalk: a model of a throat
 
 Both descend from Dennis Klatt's research at MIT, and both are **source-filter**
-synthesizers. A source, a buzz for voiced sounds, a hiss for unvoiced ones, 
+synthesizers. A source — a buzz for voiced sounds, a hiss for unvoiced ones —
 is pushed through a bank of resonant filters. Each filter is tuned to a formant:
 one of the peaks the vocal tract's shape imposes on the spectrum. Move the
 formants and you move the tongue.
@@ -44,14 +43,14 @@ filter and no feedback. `sam/render.py:343-346` is the entire voiced source:
 ```python
 tmp = MULTTABLE[SINUS[phase1] | self.amplitude1[y]]
 tmp += MULTTABLE[SINUS[phase2] | self.amplitude2[y]]
-tmp += 1 if tmp > 255 else 0 # the 6502's carry flag
+tmp += 1 if tmp > 255 else 0          # the 6502's carry flag
 tmp += MULTTABLE[RECTANGLE[phase3] | self.amplitude3[y]]
 ```
 
 Two sine oscillators and a rectangle wave, summed open-loop. Each is given a
 frequency and an amplitude per 10 ms frame, and the frame tables are indexed by
-phoneme. Consonants that cannot be approximated that way, the fricatives, the
-plosive bursts, are played back from a 1-bit compressed sample table.
+phoneme. Consonants that cannot be approximated that way — the fricatives, the
+plosive bursts — are played back from a 1-bit compressed sample table.
 
 This is **additive synthesis** imitating a formant synthesizer's output rather
 than modelling its cause. The three oscillators sit roughly where F1, F2 and F3
@@ -65,48 +64,64 @@ monotonic**: some pitch values render an octave from where the arithmetic says
 they should. And every sample is an unsigned byte, masked at each step, because
 a 6502 had nothing wider.
 
-## What `DECtalkEngine` actually is
+## What `DECtalkEngine` is
 
-It is a markup shim, not a port. `engines.py:99-119` maps each DECtalk voice to
-the nearest MacinTalk one, `Perfect Paul` renders as `Fred`, and hands the
-work to `MacInTalkEngine`. No DECtalk engine code, no DECtalk tables, and no
-DECtalk dictionary are in this repository. What is real here is the `[: ]`
-markup, the phoneme mnemonics, and the singing notation.
+It is a genuine port of the DECtalk synthesizer, built from the DECtalk C
+source rather than layered over MacinTalk. Phoneme-to-PCM synthesis is bit-exact
+against the reference for all ten voices, and the US-English text front end —
+dictionary lookup, letter-to-sound rules, inflectional morphology, number and
+currency expansion, sentence framing, and punctuation-driven intonation — is
+ported and bit-exact over a large scope.
 
-So the DECtalk column above describes a synthesizer that is absent. Its
-dictionary is not shared with MacinTalk. The original ships six of its own
-(`dic/Dic_us.txt` at 15,537 lines, plus uk, fr, gr, sp, la), each with its own
-letter-to-sound rule set. `docs/dectalk-port-plan.md` scopes the real work.
+`DECtalkEngine.synthesize` renders natively through the DECtalk synthesizer for
+the ten voices when a DECtalk dictionary is installed, and substitutes the
+nearest MacinTalk voice otherwise. The DECtalk dictionary itself is not
+distributed (licensing), so out of the box the front end pronounces every word
+from its letter-to-sound rules and morphology rather than from dictionary
+lookups. Install a DECtalk dictionary to restore dictionary pronunciations.
+
+[dectalk.md](dectalk.md) is the authoritative reference for the DECtalk port:
+every stage, its module, and its measured parity.
 
 ## How they decide what to say
 
-MacinTalk's front end has three stages: look the word up in a 7,173-word
-dictionary. Failing that, strip a suffix and look up the root. Failing that,
-sound it out with letter-to-sound rules. It knows that `photograph` flaps its
-`t`, because the word is in the book. `DECtalkEngine` borrows this front end,
-which is one more reason it is not DECtalk.
+Each engine has its own front end, ported from its own source.
+
+MacinTalk's has three stages: look the word up in a 7,173-word dictionary;
+failing that, strip a suffix and look up the root; failing that, sound it out
+with letter-to-sound rules. It knows that `photograph` flaps its `t`, because
+the word is in the book.
+
+DECtalk's has the same shape but its own rules and morphology. Its dictionary is
+not distributed, so it sounds words out from its letter-to-sound rules and
+inflectional morphology, and consults a dictionary only when one is installed.
 
 SAM has no dictionary. Its reciter is rules alone. It sounds every word out,
-which is why it says `photograph` as `F AA T AA G R AE F`, two flat `AA`s where
+which is why it says `photograph` as `F AA T AA G R AE F` — two flat `AA`s where
 MacinTalk has `OW` and `AX`, and no flap. It is smaller, faster, and wronger.
 
-Both front ends are exposed without synthesis, in `pyretrotts.g2p`:
+All three front ends are exposed without synthesis, in `pyretrotts.g2p`. Each
+returns its own engine's phonemes in its own notation:
 
 ```python
 >>> phonemize("photograph")
 ['f', 'OW', 'DX', 'AX', 'g', 'r', 'AE', 'f']
+>>> phonemize("photograph", engine="dectalk")
+['f', 'ow', 't', 'ax', 'g', 'r', 'ae', 'f']
 >>> phonemize("photograph", engine="sam")
 ['F', 'AA', 'T', 'AA', 'G', 'R', 'AE', 'F']
 ```
+
+See [g2p.md](g2p.md) for the full API.
 
 ## How they are told what to do
 
 Each engine has its own inline markup, and they are not compatible.
 
 ```
-MacinTalk [[rate 240]] [[pbas 60]] [[note 60.4]] [[char LTRL]]
-DECtalk [:ra 170] [:dv hs 95] [:np] weh<250,13>
-SAM /HEHLOW, stress digits: AA5
+MacinTalk   [[rate 240]] [[pbas 60]] [[note 60.4]] [[char LTRL]]
+DECtalk     [:ra 170] [:dv hs 95] [:np] weh<250,13>
+SAM         /HEHLOW, stress digits: AA5
 ```
 
 `pyretrotts.translate` maps between the first two. Every one of DECtalk's 55
@@ -116,8 +131,8 @@ MacinTalk gives a note one of twelve tempo-derived length codes, so 350 ms comes
 back as 375.
 
 `SAMEngine.sing` reads a DECtalk score directly. SAM's phoneme inventory is
-coarser, no `yu`, no distinct r-coloured vowels, one `t` where DECtalk also has
-`tx`, so `DECTALK_TO_SAM` collapses several. Notes land within a semitone.
+coarser — no `yu`, no distinct r-coloured vowels, one `t` where DECtalk also has
+`tx` — so `DECTALK_TO_SAM` collapses several. Notes land within a semitone.
 
 ## Which is the most intelligible
 
@@ -127,11 +142,7 @@ rate. That is a proxy, not a verdict: the recognizer was trained on human speech
 and penalizes a voice for being synthetic as well as for being unclear. The
 ranking is worth more than the numbers.
 
-Only MacinTalk and SAM appear below. `DECtalkEngine` renders through MacinTalk,
-so each of its voices scores identically to its substitute, `Perfect Paul` and
-`Fred` both land at 24.9%, `Frail Frank` and `Junior` both at 14.9%. Those rows
-measure MacinTalk, not DECtalk. That the pairs agree exactly is a useful check
-that the harness measures the voice and not the noise.
+Only MacinTalk and SAM appear below.
 
 | WER | voice | |
 |---:|---|---|
@@ -155,29 +166,31 @@ that the harness measures the voice and not the noise.
 | 87.0% | Hysterical | barely words at all |
 
 Two things stand out. `Fred`, the voice everyone remembers, is not
-MacinTalk's clearest, `Junior` beats it by ten points, and even the singing
+MacinTalk's clearest -- `Junior` beats it by ten points, and even the singing
 `Cellos` is easier to transcribe. And **the whole of SAM sits below the worst
 ordinary MacinTalk voice.** Nine years and a filter bank are the difference
 between 25% and 57%.
 
 The novelty voices deserve their scores. `Bubbles` and `Hysterical` are the two
-that drive the formant model from a sampled glottal source. The recognizer hears
+that drive the formant model from a sampled glottal source; the recognizer hears
 gurgling and laughter, and so do you.
 
 ## Which one to use
 
-Use **MacinTalk** for anything you want to be intelligible. It has the
-dictionary, the morphology, the allophone rules, real part-of-speech tagging,
-and seventeen voices. It is the only engine here ported bit-exact end to end.
+Use **MacinTalk** for a Macintosh-era voice with the full English front end:
+dictionary, morphology, allophone rules, real part-of-speech tagging, and
+seventeen voices, ported bit-exact end to end.
 
-Use **DECtalk's markup** to sing. Its notation gives every phoneme an explicit
-duration and pitch, which is what four decades of hand-written songs are written
-in. The synthesizer under it is MacinTalk's, so the notes and rhythm are
-DECtalk's and the timbre is not. Until `docs/dectalk-port-plan.md` is executed,
-nothing here sounds like Perfect Paul.
+Use **DECtalk** for Perfect Paul and its nine siblings, and for singing. Its
+synthesizer is ported and its phoneme-to-PCM output is bit-exact for all ten
+voices; its singing notation gives every phoneme an explicit duration and pitch,
+which is what four decades of hand-written songs are written in. Native voices
+require a DECtalk dictionary to be installed; without one, the front end
+pronounces from rules and morphology, and `DECtalkEngine` substitutes the
+nearest MacinTalk voice. See [dectalk.md](dectalk.md).
 
-Use **SAM** when you want a 1982 Commodore 64 to talk. It is 2,408 lines, needs
-no dictionary, and sounds exactly like what it is.
+Use **SAM** when you want a 1982 Commodore 64 to talk. It needs no dictionary
+and sounds exactly like what it is.
 
 ## History
 
@@ -188,7 +201,3 @@ Perfect Paul.
 The short version is that DECtalk and MacinTalk are cousins, born eight years
 apart from the same research, and SAM is a stranger that arrived first and
 sounds it.
-
-
----
-[← History](history.md) · [Home](../README.md) · [Architecture →](architecture.md)

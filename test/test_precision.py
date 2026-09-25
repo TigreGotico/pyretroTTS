@@ -42,7 +42,7 @@ def test_the_two_differ_only_on_negatives():
     exact = [mMul2(-x, 3, 4) for x in range(1, 200)]
     exact_arithmetic(False)
     assert integer != exact
-    assert all(e >= i for i, e in zip(integer, exact))   # exact never floors lower
+    assert all(e >= i for i, e in zip(integer, exact, strict=True))  # exact never floors lower
 
 
 def test_exact_returns_integers(exact_mode):

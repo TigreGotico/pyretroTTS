@@ -29,6 +29,33 @@ __all__ = ["Engine", "MacInTalkEngine", "DECtalkEngine", "SAMEngine"]
 _UNTIMED_MS = 70
 
 
+def _load_native_dict():
+    """Locate and load the FONIX `dtalk_us.dic`, or return None if unavailable.
+
+    Searched at `$DECTALK_DIR/dtalk_us.dic` and the built oracle `dist/`. The
+    dictionary is FONIX data, not shipped; without it the native DECtalk path is
+    unavailable and rendering falls back to the MacinTalk substitute voices.
+    """
+    import glob
+    import os
+
+    from .dectalk.dictionary import Dictionary
+
+    candidates: list[str] = []
+    env = os.environ.get("DECTALK_DIR")
+    if env:
+        candidates.append(os.path.join(env, "dtalk_us.dic"))
+    candidates += glob.glob(
+        os.path.expanduser("~/AgentWorkspaces/ovos/dectalk-c/dist/dic/dtalk_us.dic"))
+    for path in candidates:
+        if os.path.exists(path):
+            try:
+                return Dictionary.load(path)
+            except Exception:
+                return None
+    return None
+
+
 class Engine(ABC):
     """A speech synthesizer: text or markup in, 16-bit mono PCM out."""
 
@@ -50,6 +77,28 @@ class Engine(ABC):
         """Render `source` and write it to a WAV file. Returns the path."""
         voice = voice or next(iter(self.voices))
         return pcm_to_wav(self.synthesize(source, voice), path)
+
+    def say_ipa(
+        self, ipa: str, voice: str | None = None, path: str | None = None
+    ) -> bytes:
+        """Render an IPA string in `voice`, returning raw 16-bit mono PCM.
+
+        The IPA is translated into this engine's own phonetic alphabet and
+        rendered through its existing synthesis seam; it never runs the text
+        front end. When `path` is given the PCM is also written to a WAV file.
+        See `pyretrotts.ipa.IPA_LOSS` for what each engine cannot represent.
+        """
+        from .ipa import parse_ipa
+
+        voice = voice or next(iter(self.voices))
+        pcm = self._render_ipa(parse_ipa(ipa), voice)
+        if path is not None:
+            pcm_to_wav(pcm, path, self.sample_rate)
+        return pcm
+
+    def _render_ipa(self, clauses: list, voice: str) -> bytes:
+        """Render parsed IPA clauses to PCM through this engine's seam."""
+        raise NotImplementedError
 
     @property
     def sample_rate(self) -> int:
@@ -78,6 +127,17 @@ class MacInTalkEngine(Engine):
 
     def synthesize(self, source: str, voice: str = "Fred") -> bytes:
         return synthesize_text(self.voices[voice], source)
+
+    def _render_ipa(self, clauses: list, voice: str) -> bytes:
+        from .api import synthesize_plan
+        from .ipa import ipa_to_native
+
+        voice_dict = self.voices[voice]
+        plans, _fallbacks = ipa_to_native("macintalk", clauses)
+        out = bytearray()
+        for plan in plans:
+            out += synthesize_plan(voice_dict, plan)
+        return bytes(out)
 
 
 class DECtalkEngine(Engine):
@@ -109,8 +169,31 @@ class DECtalkEngine(Engine):
         "Variable Val": "Fred",
     }
 
+    #: native DECtalk voice index (`-s N`) per voice name.
+    _NATIVE_INDEX = {name: i for i, name in enumerate((
+        "Perfect Paul", "Beautiful Betty", "Huge Harry", "Frail Frank",
+        "Doctor Dennis", "Kit the Kid", "Uppity Ursula", "Rough Rita",
+        "Whispering Wendy", "Variable Val"))}
+
     def __init__(self, backend: MacInTalkEngine | None = None) -> None:
         self._backend = backend or MacInTalkEngine()
+        self._native_dict = _load_native_dict()
+
+    def _native_synthesize(self, text: str, voice: str) -> bytes | None:
+        """Render plain text through the ported DECtalk chain, or None if it can't.
+
+        The DECtalk synthesizer runs at 11025 Hz; its output is doubled to the
+        22050 Hz this engine reports, so every voice speaks at one rate. Requires
+        the FONIX `dtalk_us.dic`; when it is absent (as in CI) this returns None
+        and `synthesize` falls back to the MacinTalk substitute.
+        """
+        if self._native_dict is None or voice not in self._NATIVE_INDEX:
+            return None
+        from .dectalk.consts import SAMPLE_RATE_HZ
+        from .dectalk.sentence_us import sentence_to_pcm
+
+        native = sentence_to_pcm(self._NATIVE_INDEX[voice], text, self._native_dict)
+        return _upsample_2x(native) if SAMPLE_RATE_HZ * 2 == SamplingRate else native
 
     @property
     def voices(self) -> dict[str, Voice]:
@@ -126,10 +209,31 @@ class DECtalkEngine(Engine):
         score = self.parse(source)
         if score.notes:
             return self.render(score, default_voice=voice)
-        return self._backend.synthesize(score.text or source, self.VOICE_SUBSTITUTES[voice])
+        text = score.text or source
+        native = self._native_synthesize(text, voice)
+        if native is not None:
+            return native
+        return self._backend.synthesize(text, self.VOICE_SUBSTITUTES[voice])
 
     def sing(self, source: str, path: str, voice: str = "Perfect Paul") -> str:
         return pcm_to_wav(self.synthesize(source, voice), path)
+
+    def _render_ipa(self, clauses: list, voice: str) -> bytes:
+        """Render IPA through the ported DECtalk phoneme synthesizer.
+
+        Unlike plain text, phoneme rendering needs no FONIX dictionary, so this
+        path runs on every DECtalk voice. The 11025 Hz core is doubled to the
+        22050 Hz this engine reports, matching `_native_synthesize`.
+        """
+        from .dectalk.consts import SAMPLE_RATE_HZ
+        from .dectalk.phclause import speak_phonemes
+        from .ipa import ipa_to_native
+
+        index = self._NATIVE_INDEX.get(voice, 0)
+        native_clauses, _fallbacks = ipa_to_native("dectalk", clauses)
+        samples = speak_phonemes(index, native_clauses)
+        pcm = struct.pack(f"<{len(samples)}h", *samples)
+        return _upsample_2x(pcm) if SAMPLE_RATE_HZ * 2 == SamplingRate else pcm
 
     def render(self, score: DECtalkScore, default_voice: str = "Perfect Paul") -> bytes:
         """Render a parsed score, honouring each segment's voice."""
@@ -216,6 +320,24 @@ def scale_to_headroom(pcm: bytes, headroom: float = _HEADROOM) -> bytes:
         return pcm
     gain = limit / peak
     return struct.pack(f"<{len(samples)}h", *(int(v * gain) for v in samples))
+
+
+def _upsample_2x(pcm: bytes) -> bytes:
+    """Double a 16-bit PCM stream's rate by linear interpolation.
+
+    A sample is emitted, then the midpoint to the next, matching how the
+    MacinTalk synthesizer doubles its own 11025 Hz core to 22050 Hz.
+    """
+    if len(pcm) < 2:
+        return pcm
+    samples = struct.unpack(f"<{len(pcm) // 2}h", pcm)
+    doubled: list[int] = []
+    for current, following in zip(samples, samples[1:], strict=False):
+        doubled.append(current)
+        doubled.append((current + following) // 2)
+    doubled.append(samples[-1])
+    doubled.append(samples[-1])
+    return struct.pack(f"<{len(doubled)}h", *doubled)
 
 
 def pcm_duration(pcm: bytes) -> float:
