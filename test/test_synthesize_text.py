@@ -10,6 +10,10 @@ This is the capstone test for the whole assembly pipeline
 these pass, `synthesize_text()` produces audio frame-for-frame identical
 to feeding the C reference the same plain-text sentence.
 
+Named `oracle_*`, not `test_*`: the reference binary (`test_voices.C_BIN`)
+exists only on a dev box, so pytest never collects these -- run this file
+directly to check it, matching `test_dectalk_oracle.py`/`test_sam_oracle.py`.
+
 IMPORTANT HISTORY -- read before trusting a green run of this file: this
 module previously called `parse_frames(c_stderr)` instead of
 `parse_frames(c_stdout)` (`parse_frames` reads the harness's `F `-prefixed
@@ -157,26 +161,26 @@ def _check(text, voice_name):
     assert not mismatches, f"{voice_name} {text!r}: {len(mismatches)} frame mismatches: {mismatches[:3]}"
 
 
-def test_hello_frame_exact_fred():
+def oracle_hello_frame_exact_fred():
     _check("hello", "Fred")
 
 
-def test_goodbye_frame_exact_fred():
+def oracle_goodbye_frame_exact_fred():
     _check("goodbye", "Fred")
 
 
-def test_i_am_frame_exact_fred():
+def oracle_i_am_frame_exact_fred():
     _check("I am.", "Fred")
 
 
-def test_hello_world_frame_exact_all_voices():
+def oracle_hello_world_frame_exact_all_voices():
     """The real regression test for both bugs described in the module
     docstring: a genuine two-word sentence, across all 17 voices."""
     for voice_name in _VOICES:
         _check("hello world", voice_name)
 
 
-def test_comma_clause_boundary_frame_exact():
+def oracle_comma_clause_boundary_frame_exact():
     """Regression test for a real bug: `Collect_FE_Tokens` ends its cycle
     on a comma exactly the same way it does on `. ! ?` (confirmed by
     reading `BackEnd.c:3991-4006` -- a comma sets `gotSentence = true` and
@@ -197,7 +201,7 @@ def test_comma_clause_boundary_frame_exact():
     _check("good morning everyone, welcome to the show.", "Fred")
 
 
-def test_wh_question_vs_yesno_question_frame_exact():
+def oracle_wh_question_vs_yesno_question_frame_exact():
     """Regression test for a real bug: a trailing "?" was always mapped to
     _Quest_/kBND_Quest (rising question intonation), but the real engine
     (Morph.c's PlacePhrasing/YesNo_Phrase, BackEnd.c's Fill_Pitch_Buf RAISE
@@ -223,7 +227,7 @@ def test_wh_question_vs_yesno_question_frame_exact():
     _check("are you happy?", "Fred")
 
 
-def test_end_punctuation_propagation_frame_exact():
+def oracle_end_punctuation_propagation_frame_exact():
     """Regression test for a real bug: `build_phoneme_plan`'s internal
     `VoiceVar` set `end_Punctuation` correctly before running its own
     `Calc_Ramp_Steps`, but that value was never passed to the SEPARATE
@@ -244,7 +248,7 @@ def test_end_punctuation_propagation_frame_exact():
     _check("are you happy?", "Fred")
 
 
-def test_sep6_phrase_boundary_frame_exact():
+def oracle_sep6_phrase_boundary_frame_exact():
     """Regression test for a real bug: `_assembly.collect_fe_tokens` did
     not model ANY non-punctuation phrase boundary. The pre-existing,
     narrower `kBND_Sep6` gap (previously only observed on the single word
@@ -273,7 +277,7 @@ def test_sep6_phrase_boundary_frame_exact():
     _check("welcome to the show.", "Fred")
 
 
-def test_sep1_to_sep5_phrase_boundary_frame_exact():
+def oracle_sep1_to_sep5_phrase_boundary_frame_exact():
     """Regression test for `_assembly._place_phrasing`'s SEP1-5 rules
     (`Morph.c:148-256`), the rest of `PlacePhrasing`'s boundary cascade
     beyond the previously-ported SEP6. Unlike SEP6, a SEP1-5 boundary
@@ -299,7 +303,7 @@ def test_sep1_to_sep5_phrase_boundary_frame_exact():
     _check("i think that this is a very good idea.", "Fred")
 
 
-def test_note_driven_singing_voices_frame_exact():
+def oracle_note_driven_singing_voices_frame_exact():
     """Regression test for a real bug: api.new_voice() used to force
     vv.singing = False unconditionally, overriding init_voice()'s correct
     derivation from numOfNotes (BackEnd.c's ResetVoice sets singing=true
@@ -318,7 +322,7 @@ def test_note_driven_singing_voices_frame_exact():
     _check("hello world", "Deranged")
 
 
-def test_cross_clause_voicevar_sharing_frame_exact():
+def oracle_cross_clause_voicevar_sharing_frame_exact():
     """Regression test for a real bug reported by a user: a note-driven
     singing voice (Cellos) still sounded wrong on a comma+question
     sentence even after the SEP6/end_Punctuation fixes above.
@@ -354,7 +358,7 @@ def test_cross_clause_voicevar_sharing_frame_exact():
     _check("good morning everyone, welcome to the show.", "BadNews")
 
 
-def test_kusesyncsnd_marker_frame_exact():
+def oracle_kusesyncsnd_marker_frame_exact():
     """Regression test for a real bug: Bells/Hysterical (the two
     `waveType == kUseSyncSnd` voices) previously mismatched the C
     reference only in `Frame.marker` (a metadata field used for external
@@ -378,7 +382,7 @@ def test_kusesyncsnd_marker_frame_exact():
     _check("testing one two three", "Hysterical")
 
 
-def test_s_morph_frame_exact():
+def oracle_s_morph_frame_exact():
     """Regression test for `_morph.try_s_morph` (`Morph.c`'s `Do_S_Morph`/
     `Store_S_or_Z`, `Morph.c:2306-2322`/`1236-1266`): a word ending in "S"
     with no direct dictionary entry (e.g. "DOGS", "CATS", "WISHES") whose
@@ -394,7 +398,7 @@ def test_s_morph_frame_exact():
     _check("buses and cars.", "Fred")
 
 
-def test_do_morph_suffix_frame_exact():
+def oracle_do_morph_suffix_frame_exact():
     """Regression test for `_morph.try_do_morph` (`Morph.c`'s `DoMorph`
     suffix functions beyond plain `-S`): a word with no direct dictionary
     entry, ending in one of the ported suffixes, whose root IS a
@@ -444,7 +448,7 @@ def test_do_morph_suffix_frame_exact():
     _check("several itemizers helped.", "Fred")
 
 
-def test_do_morph_pos_from_suffix():
+def oracle_do_morph_pos_from_suffix():
     """Regression test for `_morph.pos_select_for_suffix` (`Morph.c`'s
     `SetPOS_FromSuffix`, `Morph.c:1027-1189`): a word's dictionary root
     can have an AMBIGUOUS POS (e.g. "time" is noun/adj/verb), but most
@@ -469,7 +473,7 @@ def test_do_morph_pos_from_suffix():
     _check("he timed it perfectly.", "Fred")
 
 
-def test_do_morph_pos_from_suffix_hasalt_zap_pos():
+def oracle_do_morph_pos_from_suffix_hasalt_zap_pos():
     """Regression test for `_morph.apply_pos_from_suffix`'s `hasAlt`-true
     branch (`SetPOS_FromSuffix`'s `Zap_POS` re-selection, `Morph.c:1027
     -1189`): a homograph root (e.g. "lead" is verb/noun, "tear" is
@@ -505,7 +509,8 @@ def test_do_morph_pos_from_suffix_hasalt_zap_pos():
 
 if __name__ == "__main__":
     mod = sys.modules[__name__]
-    tests = [obj for name, obj in vars(mod).items() if name.startswith("test_") and callable(obj)]
+    tests = [obj for name, obj in vars(mod).items()
+             if (name.startswith("test_") or name.startswith("oracle_")) and callable(obj)]
     failures = []
     for t in tests:
         try:
