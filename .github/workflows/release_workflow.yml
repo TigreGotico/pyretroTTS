@@ -1,4 +1,4 @@
-name: Release Workflow
+name: Release Alpha
 
 on:
   pull_request:
@@ -6,9 +6,21 @@ on:
     branches: [dev]
   workflow_dispatch:
 
+permissions:
+  contents: write
+  pull-requests: write
+
 jobs:
   release:
+    if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch'
     uses: OpenVoiceOS/gh-automations/.github/workflows/publish-alpha.yml@dev
     secrets: inherit
     with:
+      branch: dev
       version_file: pyretrotts/version.py
+      update_changelog: true
+      publish_prerelease: true
+      propose_release: false
+      changelog_max_issues: 100
+      publish_pypi: true
+      notify_matrix: false

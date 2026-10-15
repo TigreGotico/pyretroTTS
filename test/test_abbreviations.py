@@ -44,7 +44,9 @@ def test_abbreviation_at_end_of_input_is_still_a_real_boundary():
     assert split_clauses("i work with mr.") == ["i work with mr."]
 
 
-def test_end_to_end_frame_exact_against_c_reference():
+def oracle_end_to_end_frame_exact_against_c_reference():
+    """Not collected by pytest: needs the lintalker-c reference binary,
+    which exists only on a dev box. Run this file directly to check it."""
     from test_synthesize_text import _check
 
     _check("mr. smith went home.", "Fred")
@@ -53,7 +55,8 @@ def test_end_to_end_frame_exact_against_c_reference():
 
 
 if __name__ == "__main__":
-    tests = [v for k, v in list(globals().items()) if k.startswith("test_")]
+    tests = [v for k, v in list(globals().items())
+             if k.startswith("test_") or k.startswith("oracle_")]
     for t in tests:
         t()
         print(f"OK: {t.__name__}")

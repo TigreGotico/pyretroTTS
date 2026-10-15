@@ -10,7 +10,10 @@ silently diverge from the C reference (see `_phonbuf2.py`'s module
 docstring).
 
 Validated directly against the C reference via `test_voices.py`'s existing
-`run_c()`/`parse_sentence_plan()` helpers -- unlike `_assembly.py`'s
+`run_c()`/`parse_sentence_plan()` helpers. Named `oracle_*`, not `test_*`:
+the reference binary exists only on a dev box, so pytest never collects
+these -- run this file directly to check it, matching
+`test_dectalk_oracle.py`/`test_sam_oracle.py`. Unlike `_assembly.py`'s
 `Collect_FE_Tokens` stage, this pipeline's output (`phon_Buf_2`/
 `phon_Ctrl_Buf_2`/`dur_Buf`) IS exposed by the standard `test_harness`, so
 no throwaway C instrumentation is needed here.
@@ -58,7 +61,7 @@ def _run_c_plan(voice_idx, text):
     return phon, ctrl, dur
 
 
-def test_hello_fully_bit_exact():
+def oracle_hello_fully_bit_exact():
     py_phon, py_ctrl, py_dur = _run_python("hello")
     c_phon, c_ctrl, c_dur = _run_c_plan(0, "hello")
     assert py_phon == c_phon
@@ -66,7 +69,7 @@ def test_hello_fully_bit_exact():
     assert py_dur == c_dur
 
 
-def test_goodbye_fully_bit_exact():
+def oracle_goodbye_fully_bit_exact():
     py_phon, py_ctrl, py_dur = _run_python("goodbye")
     c_phon, c_ctrl, c_dur = _run_c_plan(0, "goodbye")
     assert py_phon == c_phon
@@ -74,7 +77,7 @@ def test_goodbye_fully_bit_exact():
     assert py_dur == c_dur
 
 
-def test_i_am_fully_bit_exact():
+def oracle_i_am_fully_bit_exact():
     """Exercises insert_closure_release's inserted release phoneme
     (_IX_/_AX_ before word-final silence after nasal _m_)."""
     py_phon, py_ctrl, py_dur = _run_python("I am.")
@@ -84,7 +87,7 @@ def test_i_am_fully_bit_exact():
     assert py_dur == c_dur
 
 
-def test_testing_one_two_three_fully_bit_exact():
+def oracle_testing_one_two_three_fully_bit_exact():
     """Index 7 ("ONE", dictionary-tagged kAdj) carries a kBND_Sep6
     phrase-boundary marker (see test_assembly.py's oracle test)."""
     py_phon, py_ctrl, py_dur = _run_python("testing one two three")
@@ -94,7 +97,7 @@ def test_testing_one_two_three_fully_bit_exact():
     assert py_ctrl == c_ctrl
 
 
-def test_matches_across_voices():
+def oracle_matches_across_voices():
     """Same four sentences, three more voices (Kathy/Junior/Zarvox)."""
     texts = ["hello", "goodbye", "testing one two three", "I am."]
     for voice_name in ("Kathy", "Junior", "Zarvox"):
@@ -108,7 +111,8 @@ def test_matches_across_voices():
 
 if __name__ == "__main__":
     mod = sys.modules[__name__]
-    tests = [obj for name, obj in vars(mod).items() if name.startswith("test_") and callable(obj)]
+    tests = [obj for name, obj in vars(mod).items()
+             if (name.startswith("test_") or name.startswith("oracle_")) and callable(obj)]
     failures = []
     for t in tests:
         try:

@@ -3,7 +3,10 @@ the port of `Fill_Pitch_Buf`/`Store_F0_and_Time` (`BackEnd.c:337-671`).
 
 Validated directly against the C reference's pitch buffer dump (the `N`
 lines in `test_harness`'s output, parsed by `test_voices.parse_sentence_plan`
-into `pitch_freq`/`pitch_time`/`pitch_flags`).
+into `pitch_freq`/`pitch_time`/`pitch_flags`). Named `oracle_*`, not
+`test_*`: the reference binary exists only on a dev box, so pytest never
+collects these -- run this file directly to check it, matching
+`test_dectalk_oracle.py`/`test_sam_oracle.py`.
 
 Pipeline call order (matching `ParseSentence`):
 `Fill_Phon_Buf_2 -> Pitch_RaiseAndFall -> Mod_Duration ->
@@ -61,25 +64,25 @@ def _run_c_pitch(voice_idx, text):
     return freq, time, flags
 
 
-def test_hello_pitch_buf_bit_exact():
+def oracle_hello_pitch_buf_bit_exact():
     py = _run_python("hello")
     c = _run_c_pitch(0, "hello")
     assert py == c
 
 
-def test_goodbye_pitch_buf_bit_exact():
+def oracle_goodbye_pitch_buf_bit_exact():
     py = _run_python("goodbye")
     c = _run_c_pitch(0, "goodbye")
     assert py == c
 
 
-def test_i_am_pitch_buf_bit_exact():
+def oracle_i_am_pitch_buf_bit_exact():
     py = _run_python("I am.")
     c = _run_c_pitch(0, "I am.")
     assert py == c
 
 
-def test_pitch_buf_matches_across_voices():
+def oracle_pitch_buf_matches_across_voices():
     for voice_name in ("Kathy", "Junior", "Zarvox"):
         for text in ("hello", "goodbye", "I am."):
             py = _run_python(text, voice_name)
@@ -89,7 +92,8 @@ def test_pitch_buf_matches_across_voices():
 
 if __name__ == "__main__":
     mod = sys.modules[__name__]
-    tests = [obj for name, obj in vars(mod).items() if name.startswith("test_") and callable(obj)]
+    tests = [obj for name, obj in vars(mod).items()
+             if (name.startswith("test_") or name.startswith("oracle_")) and callable(obj)]
     failures = []
     for t in tests:
         try:
