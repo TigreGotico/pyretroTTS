@@ -23,8 +23,8 @@ test = [
 Homepage = "https://github.com/TigreGotico/pyretroTTS"
 Repository = "https://github.com/TigreGotico/pyretroTTS"
 
-[tool.setuptools]
-packages = ["pyretrotts", "pyretrotts.sam"]
+[tool.setuptools.packages.find]
+include = ["pyretrotts*"]
 
 [tool.setuptools.dynamic]
 version = {attr = "pyretrotts.version.__version__"}
