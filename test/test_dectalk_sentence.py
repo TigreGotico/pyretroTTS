@@ -32,9 +32,16 @@ from pyretrotts.dectalk.sentence_us import (  # noqa: E402
     _PERIOD,
     _QUEST,
     ABBREVIATIONS,
+    _TitleWord,
     _expand_token,
     _split_clauses,
     sentence_to_clauses,
+)
+from pyretrotts.dectalk.title_abbrev_us import (  # noqa: E402
+    _PDOCTOR,
+    _PDRIVE,
+    _PSAINT,
+    _PSTREET,
 )
 from pyretrotts.dectalk.spell_us import is_spelled  # noqa: E402
 
@@ -126,9 +133,34 @@ def test_abbreviation_expansion() -> None:
     assert _expand_token("Dr") == ["doctor"]
     assert _expand_token("etc") == ["etcetera"]
     # A period closing a known abbreviation does not split the clause.
-    (clause,) = _split_clauses("Dr. Smith")
-    assert clause.words == ("doctor", "Smith")
+    (clause,) = _split_clauses("etc. and so on")
+    assert clause.words == ("etcetera", "and", "so", "on")
     assert clause.terminator == _PERIOD
+    # Without the period, `Dr` is an ordinary abbreviation and expands to a word.
+    (clause,) = _split_clauses("Dr Smith")
+    assert clause.words == ("doctor", "Smith")
+
+
+def test_title_abbreviation_reaches_the_clause() -> None:
+    """`Dr.`/`St.` route into the fixed title phone list, not the word table.
+
+    `title_abbrev_body` is unit-tested in `test_dectalk_title.py`. This asserts
+    the other half: that `_split_clauses` reaches that path, carries the body
+    into `clause.words` as a `_TitleWord`, and consumes the period. Both
+    readings appear, so the test fails if the router always picks one.
+    """
+    # Capitalized follower -> title reading (`pdoctor`), period consumed.
+    (clause,) = _split_clauses("Dr. Smith")
+    assert clause.words == (_TitleWord(_PDOCTOR), "Smith")
+    assert clause.terminator == _PERIOD
+    # Clause-final -> word reading (`pdrive`), so the router is not fixed.
+    (clause,) = _split_clauses("the Dr.")
+    assert clause.words == ("the", _TitleWord(_PDRIVE))
+    # `St.` uses its own pair, not `Dr.`'s.
+    (clause,) = _split_clauses("St. Peter")
+    assert clause.words == (_TitleWord(_PSAINT), "Peter")
+    (clause,) = _split_clauses("the St.")
+    assert clause.words == ("the", _TitleWord(_PSTREET))
 
 
 def test_all_abbreviations_have_words() -> None:
