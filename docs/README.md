@@ -42,6 +42,10 @@ Jump straight to the internals.
   caveat.
 - **[ipa.md](ipa.md)** — IPA as a universal input notation: `say_ipa`,
   `phonemize(notation="ipa")`, the per-engine mapping, and the honest loss table.
+- **[modern-engines.md](modern-engines.md)** — experimental generative front
+  ends (ModernTalk, ModernSAM) that synthesize *arbitrary* IPA from articulatory
+  features instead of collapsing each sound to the nearest English preset:
+  IPA → features → parameters, the frame-level seam, and measured coverage.
 
 ## The engines at a glance
 
