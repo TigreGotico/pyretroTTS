@@ -45,7 +45,7 @@ from .ph import (
     finalize_av,
     send_pars,
 )
-from .phsettar import PhsettarState, phsettar, to_draw_params
+from .phsettar import PhsettarState, build_rawbuf, phsettar, to_draw_params
 from .timing import TimingConfig, us_phtiming
 from .voices import SPEAKERS
 
@@ -133,6 +133,9 @@ class _ClauseStream:
     allodurs: list[int]
     nallotot: int
     malfem: int
+    phonemes: list[int]
+    nphonetot: int
+    alloph_ph: list[int]
     f0tar: list[int]
     f0tim: list[int]
     nf0tot: int
@@ -169,7 +172,9 @@ def _front_end(clause: Clause, spk: PhSpeaker, sprate: int) -> _ClauseStream:
 
     return _ClauseStream(
         allophons=st.allophons, allofeats=st.allofeats, allodurs=st.allodurs,
-        nallotot=st.nallotot, malfem=spk.malfem, f0tar=st.f0tar, f0tim=st.f0tim,
+        nallotot=st.nallotot, malfem=spk.malfem,
+        phonemes=list(phonemes), nphonetot=nphonetot, alloph_ph=list(allophons),
+        f0tar=st.f0tar, f0tim=st.f0tim,
         nf0tot=st.nf0tot, newparagsw=newparagsw)
 
 
@@ -198,6 +203,9 @@ def _draw_clause(
     st.allodurs = tuple(stream.allodurs)
     st.nallotot = stream.nallotot
     st.malfem = stream.malfem
+    st.rawbuf = build_rawbuf(
+        tuple(stream.phonemes), stream.nphonetot, tuple(stream.alloph_ph),
+        st.allophons, stream.nallotot)
     fls = _FrameScalars()
     frames: list[list[int]] = []
 

@@ -197,3 +197,16 @@ class Dictionary:
             return None
         nul = ent.text.index(0)
         return list(ent.text[nul + 1:])
+
+    def lookup_fc(self, word: str) -> int | None:
+        """Return the form-class bitfield (`ls_dict.c` `pent->fc[0]`), or None.
+
+        The compiled US path is `CHEESY_DICT_COMPRESSION` off, so
+        `DICT_FC_ACCESS` is the identity (`ls_dict.h:246`): the stored 32-bit
+        field is the form-class mask (`include/fc_def.tab`) directly.
+        """
+        comp = word.encode("latin-1", "replace")
+        if not comp:
+            return None
+        ent = self._find(comp)
+        return None if ent is None else ent.fc

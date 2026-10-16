@@ -23,7 +23,7 @@
 > whichever you find more convincing. To the extent the upstream engines have
 > owners, and they do, that licence cannot reach them, and `NOTICE` says so.
 >
-> **This is vibe-coded software.** It is tested hard: 574 tests, bit-exact
+> **This is vibe-coded software.** It is tested hard: 753 tests, bit-exact
 > against compiled C references. It has never been read by a human. Use it
 > accordingly.
 
@@ -38,9 +38,12 @@ research at MIT:
 - **MacinTalk** (Apple, 1991-1995), the Macintosh `say -v Fred` voices.
   Ported bit-exact against the original C.
 - **DECtalk** (Digital Equipment Corporation, 1984), Stephen Hawking's
-  voice. Only its inline markup and singing notation are implemented. The
-  engine is **not ported**, and its scores currently render in MacinTalk's
-  voices. See `docs/dectalk-port-plan.md`.
+  voice. Ported bottom-up: phoneme-to-PCM is bit-exact for all ten voices,
+  and the US-English text front end pronounces from letter-to-sound rules
+  and inflectional morphology. `DECtalkEngine` renders natively through the
+  DECtalk synthesizer when a DECtalk dictionary is installed, and uses the
+  nearest MacinTalk voice otherwise. The dictionary itself is not
+  distributed. See `docs/dectalk.md`.
 
 The third is older and works nothing like the other two:
 

@@ -15,8 +15,7 @@ A phoneme in DECtalk singing carries its own duration and pitch:
 `weh<250,13>` is the phonemes `w` and `eh`, lasting 250 ms, on tone 13.
 Silence is `_`, so `_<500>` is half a second of nothing.
 
-See docs/history.md for how the two engines relate, and
-docs/dectalk-port-plan.md for the state of the native DECtalk port.
+See docs/history.md for how the two engines relate.
 """
 from __future__ import annotations
 

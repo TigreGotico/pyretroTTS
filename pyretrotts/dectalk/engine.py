@@ -4,11 +4,11 @@ Derived from the Fonix/Force DECtalk C source (`dectalk/dectalk`). FONIX
 Corporation declares that source proprietary and confidential. This file is
 NOT covered by this project's MIT licence. See NOTICE.
 
-Phase 1 ports only the synthesizer (`vtm/`). It turns a sequence of Klatt
-parameter frames into 16-bit PCM, exactly as the C `speech_waveform_generator`
-does. The stage that turns text into those frames (`cmd/`, `lts/`, `ph/`) is
-not ported, so there is no `synthesize_text` here yet; the shipping DECtalk
-markup still renders through MacinTalk (`pyretrotts.engines.DECtalkEngine`).
+This module is the synthesizer (`vtm/`): it turns a sequence of Klatt parameter
+frames into 16-bit PCM, exactly as the C `speech_waveform_generator` does. The
+stage that turns text into those frames (`cmd/`, `lts/`, `ph/`) is ported in the
+sibling modules (`sentence_us.py`, `text_us.py`, `lts_rules.py`);
+`pyretrotts.engines.DECtalkEngine` drives the whole path.
 """
 from __future__ import annotations
 

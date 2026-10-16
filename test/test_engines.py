@@ -72,6 +72,33 @@ def test_dectalk_speaks_plain_text_through_the_backend():
     assert pcm_peak(pcm) > 1000
 
 
+def test_dectalk_warns_on_an_unreadable_dictionary(tmp_path, monkeypatch):
+    """A corrupt FONIX file warns and falls back, instead of failing silently."""
+    (tmp_path / "dtalk_us.dic").write_bytes(b"\x00\x01 not a fonix dictionary")
+    monkeypatch.setenv("DECTALK_DIR", str(tmp_path))
+    with pytest.warns(RuntimeWarning, match="could not read the DECtalk dictionary"):
+        engine = DECtalkEngine()
+    assert engine._native_dict is None
+    assert engine.synthesize("hello there")
+
+
+@pytest.mark.oracle
+def test_dectalk_speaks_plain_text_natively_with_the_dictionary(monkeypatch):
+    """Plain text runs through the ported DECtalk chain when the FONIX dict is present."""
+    dic = (pathlib.Path.home() / "AgentWorkspaces" / "ovos" / "dectalk-c"
+           / "dist" / "dic" / "dtalk_us.dic")
+    if not dic.exists():
+        pytest.skip("FONIX dtalk_us.dic not available")
+    monkeypatch.setenv("DECTALK_DIR", str(dic.parent))
+    native = DECtalkEngine()
+    assert native._native_dict is not None
+    monkeypatch.delenv("DECTALK_DIR")
+    fallback = DECtalkEngine()
+    assert fallback._native_dict is None
+    assert (native.synthesize("hello world", "Perfect Paul")
+            != fallback.synthesize("hello world", "Perfect Paul"))
+
+
 def test_dectalk_sings_a_score():
     pcm = DECtalkEngine().synthesize("[:phone on][:np] hxeh<200,13>lb<100>ow<400,20>")
     assert pcm_duration(pcm) > 0.5

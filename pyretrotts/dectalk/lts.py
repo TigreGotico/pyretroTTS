@@ -7,8 +7,9 @@ confidential. This file is NOT covered by this project's MIT licence. See
 NOTICE.
 
 The full US letter-to-sound path (`lts/`: the `dtalk_us.dic` trie lookup and the
-`l_us_*` rule engine) is not ported. What is ported here is the phoneme+stress
-*alphabet* that layer emits: the phoneme codes (`l_us_ph.h`), the ARPABET render
+`l_us_*` rule engine) is ported in `lts_rules.py` and `dictionary.py`. What this
+module ports is the phoneme+stress *alphabet* that layer emits: the phoneme codes
+(`l_us_ph.h`), the ARPABET render
 table and single-character input alphabet (`usa_phon.tab`), and the
 `LOG_PHONEMES` text renderer (`phlog.c`) that the C oracle prints for a
 phoneme+stress stream. This pins the boundary the allophone stage consumes and
