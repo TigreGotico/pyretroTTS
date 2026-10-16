@@ -119,6 +119,7 @@ def _run():
 @pytest.mark.skipif(
     not ORACLE_BIN or not os.path.exists(ORACLE_BIN),
     reason="instrumented DECtalk oracle not built (set DECTALK_SAY)")
+@pytest.mark.oracle
 def test_phinton_matches_oracle():
     cases, pi_total, pi_bad, t0_total, t0_bad = _run()
     assert cases > 0

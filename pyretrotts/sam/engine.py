@@ -78,6 +78,13 @@ class SAMEngine(Engine):
         """Render SAM phoneme mnemonics directly, bypassing the reciter."""
         return self.synthesize(source, voice, phonetic=True)
 
+    def _render_ipa(self, clauses: list, voice: str) -> bytes:
+        """Render IPA by translating it to SAM mnemonics and voicing them."""
+        from ..ipa import ipa_to_native
+
+        source, _fallbacks = ipa_to_native("sam", clauses)
+        return self.synthesize(source, voice, phonetic=True)
+
     def sing(self, source: str, voice: str = "Sam") -> bytes:
         """Sing a DECtalk score, in SAM's voice.
 

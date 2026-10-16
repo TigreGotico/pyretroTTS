@@ -71,6 +71,7 @@ def _run() -> tuple[int, ...]:
 @pytest.mark.skipif(
     not ORACLE_BIN or not os.path.exists(ORACLE_BIN),
     reason="instrumented DECtalk oracle not built (set DECTALK_SAY)")
+@pytest.mark.oracle
 def test_phsort_phalloph_match_oracle():
     (cases, p_ok, p_tot, s_ok, s_tot, nph_bad,
      a_ok, a_tot, f_ok, f_tot, nal_bad) = _run()

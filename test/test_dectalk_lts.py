@@ -73,6 +73,7 @@ def _phonemes(codes: list[int]) -> list[int]:
 
 
 @pytest.mark.skipif(not os.path.exists(DIC), reason="dtalk_us.dic absent")
+@pytest.mark.oracle
 def test_dictionary_phonemes_match_oracle() -> None:
     d = Dictionary.load(DIC)
     golden = _load_golden()
@@ -88,6 +89,7 @@ def test_dictionary_phonemes_match_oracle() -> None:
 
 
 @pytest.mark.skipif(not os.path.exists(DIC), reason="dtalk_us.dic absent")
+@pytest.mark.oracle
 def test_out_of_dictionary_words_miss() -> None:
     """OOD words are dictionary misses (the rule engine is not ported)."""
     d = Dictionary.load(DIC)

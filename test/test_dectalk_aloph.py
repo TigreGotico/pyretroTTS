@@ -56,6 +56,7 @@ def _run() -> tuple[int, int, int, int, int]:
 @pytest.mark.skipif(
     not ORACLE_BIN or not os.path.exists(ORACLE_BIN),
     reason="instrumented DECtalk oracle not built (set DECTALK_SAY)")
+@pytest.mark.oracle
 def test_us_phtiming_matches_oracle():
     cases, clauses, durs, mism, rate_bad = _run()
     assert cases > 0

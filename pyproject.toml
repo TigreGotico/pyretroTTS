@@ -29,6 +29,19 @@ include = ["pyretrotts*"]
 [tool.setuptools.dynamic]
 version = {attr = "pyretrotts.version.__version__"}
 
+[tool.pytest.ini_options]
+# The DECtalk/FONIX parity tests compare the port against the instrumented C
+# oracle and the proprietary FONIX dictionary. Neither ships with the package,
+# so those tests read as skipped in CI and hide whether the suite ran. They are
+# marked `oracle` and deselected by default; run `pytest -m oracle` on a machine
+# with the oracle and the dictionary present. A by-nodeid run of one also
+# deselects it, so select with `-m oracle` there too.
+markers = [
+    "oracle: DECtalk/FONIX parity tests that need the instrumented C oracle and/or the FONIX dictionary",
+]
+addopts = "-m 'not oracle'"
+
+
 [tool.ruff]
 line-length = 100
 target-version = "py310"

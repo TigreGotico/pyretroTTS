@@ -26,8 +26,8 @@ python3 songs/render.py --voice "Huge Harry"
 `songs/wav/` holds one render of each score, committed so the result can be
 heard without running anything.
 
-These are voiced on the **MacinTalk** synthesizer, because the DECtalk
-synthesizer is not ported yet (see `docs/dectalk-port-plan.md`). The notes, the
+These are voiced on the **MacinTalk** synthesizer: DECtalk's singing notation is
+compiled onto MacinTalk's phoneme plan. The notes, the
 rhythm and the phonemes are the score's; the timbre is not DECtalk's. Each
 DECtalk voice is standing in as the nearest MacinTalk voice — Perfect Paul is
 sung by Fred.
